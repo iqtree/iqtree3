@@ -23,32 +23,17 @@ endif(ZLIB_FOUND)
 
 target_link_libraries(utils lbfgsb sprng)
 
-##################################################################
-# Whether to build the decenttree executable file (default: ON)
-##################################################################
-option(BUILD_DECENTTREE "build decenttree" ON)
+add_executable(decentTree
+  decenttree.cpp
+  starttree.cpp bionj.cpp bionj2.cpp
+  gzstream.cpp progress.cpp operatingsystem.cpp)
 
-#if(BUILD_DECENTTREE)
-#    add_executable(decentTree
-#        decenttree.cpp
-#        starttree.cpp bionj.cpp bionj2.cpp
-#        gzstream.cpp progress.cpp operatingsystem.cpp)
-
+if(ZLIB_FOUND)
+  target_link_libraries(decentTree ${ZLIB_LIBRARIES})
+else(ZLIB_FOUND)
+  target_link_libraries(decentTree zlibstatic)
+endif(ZLIB_FOUND)
 
 if(CLANG AND WIN32)
-    target_link_libraries(decentTree ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
-
-    if(ZLIB_FOUND)
-      target_link_libraries(decentTree ${ZLIB_LIBRARIES})
-    else(ZLIB_FOUND)
-      target_link_libraries(decentTree zlibstatic)
-    endif(ZLIB_FOUND)
-
-    if(CLANG AND WIN32)
-        if (BINARY32)
-            target_link_libraries(decentTree ${PROJECT_SOURCE_DIR}/lib32/libiomp5md.dll)
-        else()
-            target_link_libraries(decentTree ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
-        endif()
-    endif()
+  target_link_libraries(decentTree ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
 endif()
