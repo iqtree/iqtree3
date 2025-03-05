@@ -191,6 +191,20 @@ void PhyloTree::saveCheckpoint() {
 //    CKP_VECTOR_SAVE(leafNames);
     string newick = PhyloTree::getTreeString();
     CKP_SAVE(newick);
+    
+    // if using mcmctree, save the id of the traversal starting node
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        int traversal_starting_node_id = -1;
+        if (traversal_starting_node)
+        {
+            // make sure the ids of nodes are correct
+            initializeTree();
+            traversal_starting_node_id = ((Node*) traversal_starting_node)->id;
+        }
+        CKP_SAVE(traversal_starting_node_id);
+    }
+    
 //    CKP_SAVE(curScore);
     endCheckpoint();
     CheckpointFactory::saveCheckpoint();
@@ -214,6 +228,21 @@ void PhyloTree::restoreCheckpoint() {
     if (CKP_RESTORE(newick)) {
         PhyloTree::readTreeString(newick);
     }
+    
+    // if using mcmctree, restore the traversal starting node (if any)
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        int traversal_starting_node_id;
+        if (CKP_RESTORE(traversal_starting_node_id)) {
+            if (traversal_starting_node_id != -1)
+            {
+                // make sure the ids of nodes are correct
+                initializeTree();
+                traversal_starting_node = findNodeID(traversal_starting_node_id);
+            }
+        }
+    }
+    
     endCheckpoint();
 }
 
@@ -356,6 +385,18 @@ void PhyloTree::copyTree(MTree *tree) {
 }
 
 void PhyloTree::copyTree(MTree *tree, string &taxa_set) {
+    // if using mcmctree, memorize the id of the traversal starting node before it is deleted
+    int traveral_starting_node_id = -1;
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        if (traversal_starting_node)
+        {
+            // make sure the ids of nodes are correct
+            initializeTree();
+            traveral_starting_node_id = ((Node*)traversal_starting_node)->id;
+        }
+    }
+    
     MTree::copyTree(tree, taxa_set);
     if (rooted)
         computeBranchDirection();
@@ -363,6 +404,17 @@ void PhyloTree::copyTree(MTree *tree, string &taxa_set) {
         return;
     // reset the ID with alignment
     setAlignment(aln);
+    
+    // if using mcmctree, restore the traversal_starting_node (if any)
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        if (traveral_starting_node_id != -1)
+        {
+            // make sure the ids of nodes are correct
+            initializeTree();
+            traversal_starting_node = findNodeID(traveral_starting_node_id);
+        }
+    }
 }
 
 void PhyloTree::copyPhyloTree(PhyloTree *tree, bool borrowSummary) {

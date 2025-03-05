@@ -152,11 +152,59 @@ void PhyloSuperTree::saveCheckpoint() {
 //    }
 //    checkpoint->endStruct();
     IQTree::saveCheckpoint();
+    
+    // if using mcmctree, save the id of the traversal starting node of each partition
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        checkpoint->startStruct("PhyloSuperTree");
+        int part = 0;
+        for (iterator it = begin(); it != end(); it++, part++)
+        {
+            // generate key
+            string key = "traversal_starting_node_id" + convertIntToString(part);
+            
+            // extract value
+            int traversal_starting_node_id = -1;
+            if ((*it)->traversal_starting_node)
+            {
+                // make sure the ids of nodes are correct
+                (*it)->initializeTree();
+                traversal_starting_node_id = ((Node*) (*it)->traversal_starting_node)->id;
+            }
+            
+            // save
+            checkpoint->put(key, traversal_starting_node_id);
+        }
+        checkpoint->endStruct();
+        CheckpointFactory::saveCheckpoint();
+    }
 }
 
 void PhyloSuperTree::restoreCheckpoint() {
     IQTree::restoreCheckpoint();
     
+    // if using mcmctree, restore the traversal starting node of each partition (if any)
+    if (Params::getInstance().dating_method == "mcmctree")
+    {
+        checkpoint->startStruct("PhyloSuperTree");
+        int part = 0;
+        for (iterator it = begin(); it != end(); it++, part++)
+        {
+            string key = "traversal_starting_node_id" + convertIntToString(part);
+            int traversal_starting_node_id;
+            if (checkpoint->get(key, traversal_starting_node_id))
+            {
+                // find the node
+                if (traversal_starting_node_id != -1)
+                {
+                    // make sure the ids of nodes are correct
+                    (*it)->initializeTree();
+                    (*it)->traversal_starting_node = findNodeID(traversal_starting_node_id);
+                }
+            }
+        }
+        checkpoint->endStruct();
+    }
     // first get the newick string of super tree
 //    checkpoint->startStruct("PhyloTree");
 //    string newick;
