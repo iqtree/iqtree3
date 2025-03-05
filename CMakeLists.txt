@@ -586,9 +586,8 @@ endif()
 ##################################################################
 # configure OpenACC compilation
 ##################################################################
-if (IQTREE_FLAGS MATCHES "acc")
+if (USE_OPENACC STREQUAL "ON")
     message("OpenACC       : Yes")
-    add_definitions(-D_USE_OPENACC)
     if (GCC)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenacc")
     elseif (NVHPC)
