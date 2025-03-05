@@ -1500,7 +1500,9 @@ void writeASequenceToFile(Alignment *aln, int sequence_length, int num_threads, 
     if ((!(node->isLeaf() && write_sequences_from_tmp_data))
         &&((node->isLeaf() && node->name!=ROOT_NAME) || (Params::getInstance().alisim_write_internal_sequences && Params::getInstance().alisim_insertion_ratio + Params::getInstance().alisim_deletion_ratio > 0))) {
         #ifdef _OPENMP
+        #if !defined(USE_NVHPC) // todo: HK FInd a solution for this
         #pragma omp task firstprivate(node, num_threads, keep_seq_order) shared(out, out_indels, state_mapping)
+        #endif
         #endif
         {
             int num_sites_per_state = aln->seq_type == SEQ_CODON?3:1;
@@ -1558,7 +1560,9 @@ void writeASequenceToFile(Alignment *aln, int sequence_length, int num_threads, 
 */
 void clearoutSequencesSuperTree(Node *node, Node *dad){
     #ifdef _OPENMP
+    #if !defined(USE_NVHPC)
     #pragma omp task firstprivate(node)
+    #endif
     #endif
     if (node->isLeaf())
         node->sequence->sequence_chunks[0].clear();
