@@ -2822,7 +2822,7 @@ double PhyloTree::computeFundiLikelihood() {
         taxa_set.insert(*it);
     }
 
-    cout << "rho = " << params->alisim_fundi_proportion << endl;
+    cout << "Fundi proportion rho: " << params->alisim_fundi_proportion << endl;
 
     findNodeNames(taxa_set, central_branch, root, nullptr);
     if (!central_branch.first) {
@@ -2898,7 +2898,7 @@ double PhyloTree::computeFundiLikelihood() {
         int ndim = getNDim();
         ASSERT(ndim == 2);
 
-        cout << "Optimizing FunDi model parameters..." << endl;
+        cout << "Optimizing FunDi model parameters (epsilson=" << params->fundiEps << ")..." << endl;
         //if (freq_type == FREQ_ESTIMATE) scaleStateFreq(false);
 
         double *variables = new double[ndim+1]; // used for BFGS numerical recipes
@@ -2910,6 +2910,16 @@ double PhyloTree::computeFundiLikelihood() {
         // by BFGS algorithm
         current_it = (PhyloNeighbor*)central_branch.second;
         current_it_back = (PhyloNeighbor*)central_branch.second->node->findNeighbor(central_branch.first);
+
+        params->alisim_fundi_proportion = params->fundi_init_proportion;
+        if (params->fundi_init_branch_length > 0.0) {
+            current_it->length = params->fundi_init_branch_length;
+            current_it_back->length = params->fundi_init_branch_length;
+        }
+
+        cout << "Init rho = " << params->alisim_fundi_proportion
+            << " and init branch length = " << current_it->length << endl;
+        
         variables[1] = params->alisim_fundi_proportion;
         variables[2] = current_it->length;
         lower_bound[1] = 0.0;
@@ -2918,7 +2928,7 @@ double PhyloTree::computeFundiLikelihood() {
         upper_bound[2] = params->max_branch_length;
         bound_check[1] = true;
         bound_check[2] = true;
-        minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, TOL_RATE);
+        minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, params->fundiEps);
 
         best_length = variables[2];
         best_score = -targetFunk(variables);
