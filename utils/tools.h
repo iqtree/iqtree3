@@ -766,6 +766,11 @@ public:
 	double modelEps;
     
     /**
+     * logl epsilon for fundi model parameter optimization
+     */
+    double fundiEps;
+
+    /**
      logl epsilon for ModelFinder
      */
     double modelfinder_eps;
@@ -2624,7 +2629,17 @@ public:
     *  fundi model - proportion
     */
     double alisim_fundi_proportion;
-    
+
+    /**
+    *  fundi model - initial proportion for optimisation
+    */
+    double fundi_init_proportion;
+
+    /**
+    *  fundi model - initial branch length for optimisation
+    */
+    double fundi_init_branch_length;
+
     /**
     *  distribution_definition_file
     */

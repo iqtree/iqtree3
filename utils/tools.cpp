@@ -1412,6 +1412,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.pll = false;
 #endif
     params.modelEps = 0.01;
+    params.fundiEps = 0.000001;
     params.modelfinder_eps = 0.1;
     params.treemix_eps = 0.001;
     params.treemixhmm_eps = 0.01;
@@ -1570,7 +1571,9 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.alisim_length_ratio = 2;
     params.birth_rate = 0.8;
     params.death_rate = 0.2;
-    params.alisim_fundi_proportion = 0;
+    params.alisim_fundi_proportion = 0.0;
+    params.fundi_init_proportion = 0.5;
+    params.fundi_init_branch_length = 0.0;
     params.alisim_distribution_definitions = NULL;
     params.alisim_skip_checking_memory = false;
     params.alisim_write_internal_sequences = false;
@@ -2920,13 +2923,34 @@ void parseArg(int argc, char *argv[], Params &params) {
                     params.alisim_fundi_proportion = 0.0;
                 } else {
                     params.alisim_fundi_proportion = convert_double(fundi_input.c_str());
-                    if (params.alisim_fundi_proportion > 1 || params.alisim_fundi_proportion < 0)
+                    if (params.alisim_fundi_proportion > 1 || params.alisim_fundi_proportion <= 0)
                         throw "Proportion in FunDi model must be positive and not greater than 1";
                 }
                 
                 continue;
             }
-			if (strcmp(argv[cnt], "-ngs_gap") == 0) {
+
+            if (strcmp(argv[cnt], "--fundi-init-rho") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --fundi-init-rho <proportion>";
+                params.fundi_init_proportion = convert_double(argv[cnt]);
+                if (params.fundi_init_proportion >= 1 || params.fundi_init_proportion <= 0)
+                    throw "Initial proportion in FunDi model must be positive and smaller than 1";
+                continue;
+            }
+
+            if (strcmp(argv[cnt], "--fundi-init-branch") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --fundi-init-branch <branch_legth>";
+                params.fundi_init_branch_length = convert_double(argv[cnt]);
+                if (params.fundi_init_branch_length >= params.max_branch_length || params.fundi_init_branch_length <= 0)
+                    throw "Initial branch length in FunDi model must be positive and smaller than 10";
+                continue;
+            }
+
+            if (strcmp(argv[cnt], "-ngs_gap") == 0) {
 				params.ngs_ignore_gaps = false;
 				continue;
 			}
@@ -4757,6 +4781,18 @@ void parseArg(int argc, char *argv[], Params &params) {
 				continue;
 			}
 
+            if (strcmp(argv[cnt], "-fundi-epsilon") == 0 || strcmp(argv[cnt], "--fundi-epsilon") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --fundi-epsilon <fundi_epsilon>";
+                params.fundiEps = convert_double(argv[cnt]);
+                if (params.fundiEps <= 0.0)
+                    throw "Fundi epsilon must be positive";
+                if (params.fundiEps > 1.0)
+                    throw "Fundi epsilon must not be larger than 1.0";
+                continue;
+            }
+
             if (strcmp(argv[cnt], "--mf-epsilon") == 0) {
                 cnt++;
                 if (cnt >= argc)
@@ -4764,7 +4800,7 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.modelfinder_eps = convert_double(argv[cnt]);
                 if (params.modelfinder_eps <= 0.0)
                     throw "ModelFinder epsilon must be positive";
-                if (params.modelEps > 1.0)
+                if (params.modelfinder_eps > 1.0)
                     throw "ModelFinder epsilon must not be larger than 1.0";
                 continue;
             }

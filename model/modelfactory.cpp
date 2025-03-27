@@ -270,41 +270,22 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     if (!Params::getInstance().model_joint.empty()) {
         model_str = Params::getInstance().model_joint;
         freq_str = "";
-        size_t fmix_pos = model_str.find("+FMIX{");
-        if (fmix_pos != string::npos) {
-            // for frequency mixture model
-            size_t fmix_end_pos = model_str.find_last_of("}");
-            size_t model_end_pos = model_str.find_first_of("+");
-            if (fmix_end_pos != string::npos && model_end_pos != string::npos) {
-                freq_str = model_str.substr(fmix_pos, fmix_end_pos - fmix_pos + 1);
-                model_str = model_str.substr(0, model_end_pos);
-            }
-        } else if (model_str.find("MIX{") != string::npos) {
+        size_t mx_end_pos = 0;
+        if (model_str.substr(0,4) == "MIX{") {
             // for model mixture
-            size_t mx_start_pos = model_str.find("MIX{");
-            size_t mx_end_pos = model_str.find_last_of("}");
-            if (mx_end_pos != string::npos) {
-                string models_str = model_str.substr(mx_start_pos + 4, mx_end_pos - mx_start_pos - 4);
-                size_t end_pos = 0;
-                while ((spec_pos = models_str.find("+F", end_pos)) != string::npos) {
-                    end_pos = models_str.find_first_of("+,", spec_pos+1);
-                    if (end_pos == string::npos) {
-                        freq_str += models_str.substr(spec_pos);
-                    } else {
-                        freq_str += models_str.substr(spec_pos, end_pos - spec_pos);
-                    }
-                }
-            }
-        } else {
-            while ((spec_pos = model_str.find("+F")) != string::npos) {
-                size_t end_pos = model_str.find_first_of("+*", spec_pos+1);
-                if (end_pos == string::npos) {
-                    freq_str += model_str.substr(spec_pos);
-                    model_str = model_str.substr(0, spec_pos);
-                } else {
-                    freq_str += model_str.substr(spec_pos, end_pos - spec_pos);
-                    model_str = model_str.substr(0, spec_pos) + model_str.substr(end_pos);
-                }
+            mx_end_pos = model_str.find_last_of("}");
+            if (mx_end_pos == string::npos)
+                outError("Missing } in the joint model name " + model_str);
+            
+        }
+        while ((spec_pos = model_str.find("+F", mx_end_pos)) != string::npos) {
+            size_t end_pos = model_str.find_first_of("+*", spec_pos+1);
+            if (end_pos == string::npos) {
+                freq_str += model_str.substr(spec_pos);
+                model_str = model_str.substr(0, spec_pos);
+            } else {
+                freq_str += model_str.substr(spec_pos, end_pos - spec_pos);
+                model_str = model_str.substr(0, spec_pos) + model_str.substr(end_pos);
             }
         }
     }
@@ -602,11 +583,18 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             else
                 freq_type = FREQ_DNA_MK;
         } else {
-            // might be "+F####" where # are digits
-            try {
-                freq_type = parseStateFreqDigits(fstr.substr(2)); // throws an error if not in +F#### format
-            } catch (...) {
-                outError("Unknown state frequency type ",fstr);
+            // others, for example, fstr == +FC10pi1
+            NxsModel *freq_mod = models_block->findModel(fstr.substr(2));
+            if (freq_mod) {
+                freq_type = FREQ_USER_DEFINED;
+                freq_params = freq_mod->description;
+            } else {
+                // might be "+F####" where # are digits
+                try {
+                    freq_type = parseStateFreqDigits(fstr.substr(2)); // throws an error if not in +F#### format
+                } catch (...) {
+                    outError("Unknown state frequency type ",fstr);
+                }
             }
         }
 //          model_str = model_str.substr(0, posfreq);

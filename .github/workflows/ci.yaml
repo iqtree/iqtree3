@@ -51,7 +51,7 @@ jobs:
         cd build
         cmake .. -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which gcc-${{ matrix.gcc-version }}) -DCMAKE_CXX_COMPILER=$(which g++-${{ matrix.gcc-version }})
         make -j
-        file iqtree2 | grep x86-64
+        file iqtree3 | grep x86-64
 
     - name: Upload Built Binary
       # Only upload for one of the gcc & cmake tests
@@ -59,7 +59,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Linux x86-64
-        path: build/iqtree2
+        path: build/iqtree3
         if-no-files-found: error
 
   build-linux-aarch64:
@@ -83,13 +83,13 @@ jobs:
            cd build
            cmake .. -DIQTREE_FLAGS=static
            make -j
-           file iqtree2 | grep aarch64
+           file iqtree3 | grep aarch64
 
        - name: Upload Built Binary
          uses: actions/upload-artifact@v4
          with:
            name: Linux AArch64
-           path: build/iqtree2
+           path: build/iqtree3
            if-no-files-found: error
 
   build-macos-x86_64:
@@ -110,18 +110,17 @@ jobs:
           set -x
           mkdir build
           cd build
-          export LDFLAGS="-L/usr/local/opt/libomp/lib"
           export CPPFLAGS="-I/usr/local/opt/libomp/include"
           export CXXFLAGS="-I/usr/local/opt/libomp/include"
           cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           gmake -j
-          file iqtree2 | grep x86_64
+          file iqtree3 | grep x86_64
           
       - name: Upload Built Binary
         uses: actions/upload-artifact@v4
         with:
           name: Mac x86-64
-          path: build/iqtree2
+          path: build/iqtree3
           if-no-files-found: error
 
   build-macos-arm:
@@ -142,18 +141,17 @@ jobs:
           set -x
           mkdir build
           cd build
-          export LDFLAGS="-L/opt/homebrew/opt/libomp/lib"
           export CPPFLAGS="-I/opt/homebrew/opt/libomp/include"
           export CXXFLAGS="-I/opt/homebrew/opt/libomp/include"
           cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           gmake -j
-          file iqtree2 | grep arm64
+          file iqtree3 | grep arm64
 
       - name: Upload Built Binary
         uses: actions/upload-artifact@v4
         with:
           name: Mac Arm
-          path: build/iqtree2
+          path: build/iqtree3
           if-no-files-found: error
 
   compile-mac-universal:
@@ -170,16 +168,16 @@ jobs:
           pattern: Mac *
 
       - name: Combine Artifacts
-        run: lipo -create -output iqtree2 "Mac x86-64/iqtree2" "Mac Arm/iqtree2"
+        run: lipo -create -output iqtree3 "Mac x86-64/iqtree3" "Mac Arm/iqtree3"
 
       - name: Check Architectures
-        run: lipo -archs iqtree2
+        run: lipo -archs iqtree3
 
       - name: Upload Built Binary
         uses: actions/upload-artifact@v4
         with:
           name: Mac Universal
-          path: iqtree2
+          path: iqtree3
           if-no-files-found: error
 
   build-windows-x86-64:
@@ -230,11 +228,11 @@ jobs:
         shell: bash
         run: |
           cd build
-          file iqtree2.exe | grep x86-64
+          file iqtree3.exe | grep x86-64
 
       - name: Upload Built Binary
         uses: actions/upload-artifact@v4
         with:
           name: Windows x86-64
-          path: build/iqtree2.exe
+          path: build/iqtree3.exe
           if-no-files-found: error
