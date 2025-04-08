@@ -2824,6 +2824,24 @@ public:
      * TRUE to make the processes of outputting->re-inputting a tree consistent
      */
     bool make_consistent;
+    
+    /**
+     * @private
+     * TRUE to compute the SPRTA branch supports
+     */
+    bool compute_SPRTA;
+
+    /**
+     * @private
+     * TRUE to compute the SPRTA for zero-length branches
+     */
+    bool SPRTA_zero_branches;
+
+    /**
+     * @private
+     * TRUE to output the alternative SPRs with their supports in the tree
+     */
+    bool out_alter_spr;
 
     /**
     *  Mutation file that specifies pre-defined mutations occurs at nodes

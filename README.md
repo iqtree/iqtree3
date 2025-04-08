@@ -3,6 +3,8 @@ IQ-TREE
 
 [![Github IQ-TREE 1 Releases](https://img.shields.io/github/downloads/Cibiv/IQ-TREE/total.svg?style=social&logo=github&label=iqtree1%20download)](https://github.com/Cibiv/IQ-TREE/releases)
 [![Github IQ-TREE 2 Releases](https://img.shields.io/github/downloads/iqtree/iqtree2/total.svg?style=social&logo=github&label=iqtree2%20download)](https://github.com/iqtree/iqtree2/releases)
+[![Github IQ-TREE 3 Releases](https://img.shields.io/github/downloads/iqtree/iqtree3/total.svg?style=social&logo=github&label=iqtree3%20download)](https://github.com/iqtree/iqtree3/releases)
+
 [![BioConda downloads](https://img.shields.io/conda/dn/bioconda/iqtree.svg?style=flag&label=BioConda%20install)](https://anaconda.org/bioconda/iqtree)
 [![BioConda platforms](https://img.shields.io/conda/pn/bioconda/iqtree?style=flag)](https://github.com/bioconda/bioconda-recipes/tree/master/recipes/iqtree)
 [![Build Status](https://github.com/iqtree/iqtree2/workflows/Build/badge.svg)](https://github.com/iqtree/iqtree2/actions)
@@ -62,22 +64,44 @@ For feature requests bug reports please post a topic at
 Citations
 ---------
 
-General citation for IQ-TREE 2:
+General citation for IQ-TREE 3:
 
-* B.Q. Minh, H.A. Schmidt, O. Chernomor, D. Schrempf, M.D. Woodhams, A. von Haeseler, R. Lanfear (2020) 
-  IQ-TREE 2: New models and efficient methods for phylogenetic inference in the genomic era.
-  *Mol. Biol. Evol.*, 37:1530-1534. <https://doi.org/10.1093/molbev/msaa015>
+* T.K.F. Wong, N. Ly-Trong, H. Ren, H. Banos,
+  A.J. Roger, E. Susko, C. Bielow, N. De Maio,
+  N. Goldman, M.W. Hahn, G. Huttley, R. Lanfear, B.Q. Minh (2025)
+  IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models.
+  Submitted.
 
 Moreover, there are other papers associated with notable features in IQ-TREE,
 which are normally mentioned in the corresponding documentation. We ask that you also
 cite these papers, which are important for us to obtain fundings to 
 continuously maintain the code of IQ-TREE. These papers are also listed below.
 
+> **NOTE**: You can also obtain the citations in `.iqtree` output file.
+
+When using MixtureFinder please cite:
+
+* H. Ren, T.K.F. Wong, B.Q. Minh, R. Lanfear (2025) 
+  MixtureFinder: Estimating DNA mixture models for phylogenetic analyses.
+  _Mol. Biol. Evol._, 42:msae264. <https://doi.org/10.1093/molbev/msae264>
+
+When using GTRpmix model please cite:
+
+* H. Banos, T.K.F. Wong, J. Daneau, E. Susko, B.Q. Minh, R. Lanfear, M.W. Brown, L. Eme, A.J. Roger (2024)
+  GTRpmix: A linked general-time reversible model for profile mixture models.
+  _Mol. Biol. Evol._, 92:msae174. <https://doi.org/10.1093/molbev/msae174>
+
+When using CMAPLE please cite:
+
+* N. Ly-Trong, C. Bielow, N. De Maio, B.Q. Minh (2024)
+  CMAPLE: Efficient phylogenetic inference in the pandemic era.
+  _Mol. Biol. Evol._, 41:msae134. <https://doi.org/10.1093/molbev/msae134>
+
 When using tree mixture models (MAST) please cite:
 
 * T.K.F. Wong, C. Cherryh, A.G. Rodrigo, M.W. Hahn, B.Q. Minh, R. Lanfear (2024)
   MAST: Phylogenetic Inference with Mixtures Across Sites and Trees.
-  _Syst. Biol._, in press. <https://doi.org/10.1093/sysbio/syae008>
+  _Syst. Biol._, 73:375–391. <https://doi.org/10.1093/sysbio/syae008>
 
 When computing concordance factors please cite:
 
@@ -89,7 +113,7 @@ When using AliSim to simulate alignments please cite:
 
 * N. Ly-Trong, G.M.J. Barca, B.Q. Minh (2023)
   AliSim-HPC: parallel sequence simulator for phylogenetics.
-  *Bioinformatics*, 39:btad540. <https://doi.org/10.1093/bioinformatics/btad540>
+  _Bioinformatics_, 39:btad540. <https://doi.org/10.1093/bioinformatics/btad540>
 
 When estimating amino-acid Q matrix please cite:
 
@@ -151,6 +175,13 @@ When using IQ-TREE version 1 please cite:
 * L. Nguyen, H.A. Schmidt, A. von Haeseler, B.Q. Minh (2015)
   IQ-TREE: A Fast and Effective Stochastic Algorithm for Estimating Maximum-Likelihood Phylogenies.
   _Mol. Biol. and Evol._, 32:268-274. <https://doi.org/10.1093/molbev/msu300>
+
+When using IQ-TREE version 2 please cite:
+
+* B.Q. Minh, H.A. Schmidt, O. Chernomor, D. Schrempf, M.D. Woodhams, A. von Haeseler, R. Lanfear (2020) 
+  IQ-TREE 2: New models and efficient methods for phylogenetic inference in the genomic era.
+  *Mol. Biol. Evol.*, 37:1530-1534. <https://doi.org/10.1093/molbev/msaa015>
+
 
 #### Credits and Acknowledgements
 

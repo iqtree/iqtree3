@@ -9,9 +9,6 @@
 #include <string>
 
 
-const double MIN_OMEGA_KAPPA = 0.001;
-const double MAX_OMEGA_KAPPA = 50.0;
-
 /* Empirical codon model restricted (Kosiol et al. 2007), source: http://www.ebi.ac.uk/goldman/ECM/ */
 string model_ECMrest1 =
 "11.192024 \
@@ -396,6 +393,8 @@ void ModelCodon::init(const char *model_name, string model_params, StateFreqType
     size_t pos;
 	if ((pos=name.find('_')) == string::npos) {
 		def_freq = initCodon(model_name, freq, true, freq_params);
+        if (freq == FREQ_USER_DEFINED && def_freq != FREQ_USER_DEFINED) // mechanistic model
+            freq = def_freq;
 	} else {
 		def_freq = initCodon(name.substr(0, pos).c_str(), freq, false, freq_params);
 		if (def_freq != FREQ_USER_DEFINED)
@@ -427,12 +426,23 @@ void ModelCodon::init(const char *model_name, string model_params, StateFreqType
             outError("Sorry! Omega is not existed or unable to be set in the model "+model_name_str);
         }
         size_t pos = model_params.find(delimiter);
-        omega = convert_double_with_distribution(model_params.substr(0, pos).c_str(), true);
-        if (omega < 0)
-            outError("Omega cannot be negative!");
-        if (!Params::getInstance().optimize_from_given_params)
-            fix_omega = true;
         
+        string model_params_str = model_params.substr(0, pos);
+        if (model_params_str.substr(0,1) == ">") {
+            min_omega = convert_double(model_params_str.substr(1).c_str());
+            if (omega < min_omega)
+                omega = min(min_omega + omega, max_omega);
+        } else if (model_params_str.substr(0,1) == "<") {
+            max_omega = convert_double(model_params_str.substr(1).c_str());
+            if (omega > max_omega)
+                omega = max(min_omega, max_omega/2);
+        } else {
+            omega = convert_double_with_distribution(model_params.substr(0, pos).c_str(), true);
+            if (omega < 0)
+                outError("Omega cannot be negative!");
+            if (!Params::getInstance().optimize_from_given_params)
+                fix_omega = true;
+        }
         // delete omega from model_params
         if (pos!= std::string::npos)
             model_params.erase(0, pos + 1);
@@ -1095,8 +1105,16 @@ void ModelCodon::setBounds(double *lower_bound, double *upper_bound, bool *bound
 
 	for (i = 1; i <= ndim; i++) {
 		//cout << variables[i] << endl;
-		lower_bound[i] = MIN_OMEGA_KAPPA;
-		upper_bound[i] = MAX_OMEGA_KAPPA;
+        if (i == 1 && !fix_omega) {
+            // setting omega
+            lower_bound[i] = min_omega;
+            upper_bound[i] = max_omega;
+            //ASSERT(lower_bound[i] <= omega && omega <= upper_bound[i]);
+        } else {
+            // setting kappa
+            lower_bound[i] = MIN_OMEGA_KAPPA;
+            upper_bound[i] = MAX_OMEGA_KAPPA;
+        }
 		bound_check[i] = false;
 	}
 

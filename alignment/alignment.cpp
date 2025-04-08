@@ -2118,10 +2118,10 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
 //            		state = non_stop_codon[state*16 + state2*4 + state3];
             		state = state*16 + state2*4 + state3;
             		if (genetic_code[(int)state] == '*') {
-                        err_str << "Sequence " << seq_names[seq] << " has stop codon " <<
+                        cout << "Info: Sequence " << seq_names[seq] << " has stop codon " <<
                         		sequences[seq][site] << sequences[seq][site+1] << sequences[seq][site+2] <<
-                        		" at site " << site+1 << endl;
-                        num_error++;
+                        		" at site " << site+1 << " being treated as missing data" << endl;
+                        //num_error++;
                         state = STATE_UNKNOWN;
             		} else if (nt2aa) {
                         state = AA_to_state[(int)genetic_code[(int)state]];

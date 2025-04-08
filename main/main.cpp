@@ -117,8 +117,8 @@ void printCopyright(ostream &out) {
     #ifdef _IQTREE_MPI
     out << " MPI";
     #endif
-    #ifdef _OPENMP
-    out << " multicore";
+    #ifndef _OPENMP
+    out << " single-core";
     #endif
     #ifdef __AVX512KNL
     out << " Xeon Phi KNL";
@@ -135,8 +135,10 @@ void printCopyright(ostream &out) {
 #endif
 
 #ifdef IQ_TREE
-    out << endl << "Developed by Bui Quang Minh, Nguyen Lam Tung, Olga Chernomor, Heiko Schmidt,"
-        << endl << "Dominik Schrempf, Michael Woodhams, Ly Trong Nhan, Thomas Wong" << endl << endl;
+    out << endl 
+        << "Developed by Bui Quang Minh, Thomas Wong, Nhan Ly-Trong, Huaiyan Ren" << endl
+        << "Contributed by Lam-Tung Nguyen, Dominik Schrempf, Chris Bielow," << endl
+        << "Olga Chernomor, Michael Woodhams, Diep Thi Hoang, Heiko Schmidt" << endl << endl;
 #else
     out << endl << "Copyright (c) 2006-2014 Olga Chernomor, Arndt von Haeseler and Bui Quang Minh." << endl << endl;
 #endif

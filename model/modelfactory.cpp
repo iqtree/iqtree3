@@ -31,6 +31,7 @@
 #include "modelpomo.h"
 #include "modelset.h"
 #include "modelmixture.h"
+#include "modelcodonmixture.h"
 #include "ratemeyerhaeseler.h"
 #include "ratemeyerdiscrete.h"
 #include "ratekategory.h"
@@ -261,6 +262,19 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             rate_str = rate_str.substr(0, spec_pos);
         } else {
             freq_str += rate_str.substr(spec_pos, end_pos - spec_pos);
+            rate_str = rate_str.substr(0, spec_pos) + rate_str.substr(end_pos);
+        }
+    }
+        
+    // decompose +CMIX (codon mixture) from rate_str
+    string cmix_str = "";
+    if ((spec_pos = rate_str.find("+CMIX")) != string::npos) {
+        size_t end_pos = rate_str.find_first_of("+*", spec_pos+1);
+        if (end_pos == string::npos) {
+            cmix_str += rate_str.substr(spec_pos);
+            rate_str = rate_str.substr(0, spec_pos);
+        } else {
+            cmix_str += rate_str.substr(spec_pos, end_pos - spec_pos);
             rate_str = rate_str.substr(0, spec_pos) + rate_str.substr(end_pos);
         }
     }
@@ -614,6 +628,9 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
                 model_str = model_str.substr(0, 3);
             }
             model = new ModelMixture(model_name, model_str, model_list, models_block, freq_type, freq_params, tree, optimize_mixmodel_weight);
+        } else if (model_name.find("+CMIX") != string::npos) {
+            // codon mixture model
+            model = new ModelCodonMixture(model_name, model_str, models_block, freq_type, freq_params, tree, optimize_mixmodel_weight);
         } else {
             //            string model_desc;
             //            NxsModel *nxsmodel = models_block->findModel(model_str);
@@ -985,7 +1002,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             }
             site_rate = new RateKategory(num_rate_cats, tree);
         } else
-            outError("Invalid rate heterogeneity type");
+            outError("Invalid rate heterogeneity type " + rate_str);
 //        if (model_str.find('+') != string::npos)
 //            model_str = model_str.substr(0, model_str.find('+'));
 //        else
