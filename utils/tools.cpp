@@ -5912,9 +5912,9 @@ void parseArg(int argc, char *argv[], Params &params) {
                 err += "\" option.";
                 throw err;
             } else {
-//                if (params.user_file == NULL)
-//                    params.user_file = argv[cnt];
-//                else
+                if (params.user_file == NULL && params.dating_method != "mcmctree")
+                    params.user_file = argv[cnt];
+                else
                     params.out_file = argv[cnt];
             }
         }
