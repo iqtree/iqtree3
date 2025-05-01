@@ -308,6 +308,19 @@ public:
     void extractSequences(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
 
 
+    /**
+     read site weights from stream and update ptn\_weights variable, effective only for likelihood calculation
+      @param in site weight input stream
+     */
+    virtual void readSiteWeights(istream &in);
+
+    /**
+     read site weights from file and update ptn\_weights variable, effective only for likelihood calculation
+      @param filename site weight file name
+     */
+    void readSiteWeights(char *filename);
+    
+
     vector<Pattern> ordered_pattern;
     
     /** lower bound of sum parsimony scores for remaining pattern in ordered_pattern */
@@ -1069,6 +1082,11 @@ protected:
             alisim: caching ntfreq if it has already randomly initialized
      */
     double* cache_ntfreq = NULL;
+
+    
+    /** pattern weights used only for likelihood calculation,
+     default is  occurence frequency in the alignment, unless a site-weight file is provided */
+    DoubleVector ptn_weights;
 
 private:
     /**

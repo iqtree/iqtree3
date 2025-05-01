@@ -750,7 +750,7 @@ void Alignment::checkGappySeq(bool force_error) {
 }
 
 Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, string model) : vector<Pattern>() {
-    name = "Noname";
+    name = filename;
     this->model_name = model;
     if (sequence_type)
         this->sequence_type = sequence_type;
@@ -1146,6 +1146,40 @@ void Alignment::extractSequences(char *filename, char *sequence_type, StrVector 
         } else {
             outError("Unknown sequence format, please use PHYLIP, FASTA, CLUSTAL, MSF format");
         }
+    } catch (ios::failure) {
+        outError(ERR_READ_INPUT);
+    } catch (const char *str) {
+        outError(str);
+    } catch (string str) {
+        outError(str);
+    }
+}
+
+void Alignment::readSiteWeights(istream &in) {
+    int site;
+    ptn_weights.resize(getNPattern(), 0.0);
+    for (site = 0; site < site_pattern.size(); site++) {
+        double site_weight;
+        in >> site_weight;
+        auto ptn = site_pattern[site];
+        ASSERT(ptn < ptn_weights.size());
+        ptn_weights[ptn] += site_weight;
+    }
+}
+
+void Alignment::readSiteWeights(char *filename) {
+    try {
+        // set the failbit and badbit
+        igzstream in;
+        in.exceptions(ios::failbit | ios::badbit);
+        in.open(filename);
+        // remove the failbit
+        in.exceptions(ios::badbit);
+        readSiteWeights(in);
+        in.clear();
+        // set the failbit again
+        in.exceptions(ios::failbit | ios::badbit);
+        in.close();
     } catch (ios::failure) {
         outError(ERR_READ_INPUT);
     } catch (const char *str) {
