@@ -16,7 +16,7 @@
 *   http://www.netlib.org/cephes/
 *
 * Calculation methods:
-* Some functions are using Padé approximations f(x) = P(x)/Q(x)
+* Some functions are using Padï¿½ approximations f(x) = P(x)/Q(x)
 * Most single precision functions are using Taylor expansions
 *
 * For detailed instructions, see VectorClass.pdf
@@ -61,6 +61,8 @@ namespace VCL_NAMESPACE {
 template <class VTYPE>
 static inline VTYPE infinite_vec();
 
+#if !defined(NOSSE)
+
 template <>
 inline Vec2d infinite_vec<Vec2d>() {
     return infinite2d();
@@ -98,6 +100,8 @@ inline Vec16f infinite_vec<Vec16f>() {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
+
+
 
 
 // template for producing quiet NAN
@@ -141,6 +145,8 @@ inline Vec16f nan_vec<Vec16f>(int n) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
+
+#endif // !defined(NOSSE)
 
 // Define NAN trace values
 #define NAN_LOG 0x101  // logarithm for x<0

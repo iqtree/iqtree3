@@ -59,3 +59,7 @@ phylohmm.h
 )
 
 target_link_libraries(tree pll model alignment)
+
+if (IQTREE_FLAGS MATCHES "nosse")
+    target_sources(tree PRIVATE phylokernel.cpp)
+endif()

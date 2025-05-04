@@ -144,7 +144,7 @@ double PartitionModelPlen::optimizeParameters(int fixed_len, bool write_info, do
             tree->printTree(cout, WT_BR_LEN+WT_NEWLINE);
         }
         ASSERT(cur_lh > tree_lh - 1.0 && "individual model opt reduces LnL");
-        
+
         tree->clearAllPartialLH();
         // Optimizing gene rate
         if(!tree->fixed_rates){

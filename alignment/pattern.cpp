@@ -61,7 +61,7 @@ int Pattern::computeAmbiguousChar(int num_states) {
 #define VECTORIZE_GAPCHAR_COUNT 1
 int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
     int num = 0;
-#if VECTORIZE_GAPCHAR_COUNT
+#if VECTORIZE_GAPCHAR_COUNT and !defined(NOSSE)
     //This won't compile unless value_type is based on uint32_t
     //(nor should it! You'd need to use different vector types!)
     const uint32_t* dataStart = data();
@@ -81,7 +81,7 @@ int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
         }
     }
 #else
-    for (iterator i = begin(); i != end(); i++)
+    for (const_iterator i = begin(); i != end(); i++)
         if (*i == STATE_UNKNOWN) num++;
 #endif
     return num;

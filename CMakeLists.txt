@@ -126,6 +126,11 @@ endif()
 
 message("IQ-TREE flags : ${IQTREE_FLAGS}")
 
+if (IQTREE_FLAGS MATCHES "nosse")
+    add_definitions(-DINSTRSET=0)
+    add_definitions(-DNOSSE)
+endif ()
+
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
@@ -652,7 +657,6 @@ elseif (ICC)
 endif()
 
 # further flag to improve performance
-
 if (IQTREE_FLAGS MATCHES "fma") # AVX+FMA instruction set
     message("Vectorization : AVX+FMA")
     add_definitions(-D__SSE3 -D__AVX) # define both SSE3 and AVX directive

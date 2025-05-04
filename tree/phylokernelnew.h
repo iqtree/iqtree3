@@ -3417,7 +3417,7 @@ double PhyloTree::computeLikelihoodFromBufferGenericSIMD()
         if (ASC_Lewis)
             all_prob[k] = horizontal_add(vc_prob_const);
     }
-    
+
     // compute the sum according the same order even using openmp
     for (int k = 0; k < nsize; k++)
         all_tree_lh += all_lh[k];

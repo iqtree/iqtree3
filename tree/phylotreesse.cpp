@@ -25,6 +25,7 @@
 #define KERNEL_FIX_STATES
 #include "phylokernelnew.h"
 #include "vectorclass/vectorf64.h"
+#include "vectorclass/vectorf32.h"
 #endif
 
 //#include "phylokernel.h"
@@ -114,9 +115,8 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 
 #if INSTRSET < 2
 #ifdef BOOT_VAL_FLOAT
-        // TODO naive dot-product for float
-        ASSERT(0 && "Not supported, contact developer");
-//		dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
+//        ASSERT(0 && "Not supported, contact developer");
+		dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
 #else
 		dotProduct = &PhyloTree::dotProductSIMD<double, Vec1d>;
 #endif
@@ -179,7 +179,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericSIMD<Vec1d, SAFE_LH, false, true>;
-        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, SAFE_LH, false, true>;
+        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, false, true>;
         return;
     }
 
