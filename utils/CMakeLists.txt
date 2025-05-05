@@ -24,8 +24,10 @@ endif(ZLIB_FOUND)
 target_link_libraries(utils lbfgsb sprng)
 
 
-if (NOT IQTREE_FLAGS MATCHES "nosse")
-  target_sources(utils PRIVATE bionj2.cpp)
+if(DEFINED INSTRSET)
+  if(NOT INSTRSET EQUAL 0)
+    target_sources(utils PRIVATE bionj2.cpp)
+  endif()
 endif()
 
 ##################################################################
