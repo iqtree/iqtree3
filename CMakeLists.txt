@@ -974,16 +974,14 @@ if (USE_LSD2)
 endif()
 
 
-if(DEFINED INSTRSET)
-    if (NOT INSTRSET EQUAL 0)
-        if (NOT IQTREE_FLAGS MATCHES "nosse")
-            target_link_libraries(iqtree3 kernelsse)
-            if (USE_CMAPLE_AA STREQUAL "ON")
-                target_link_libraries(iqtree3-aa kernelsse)
-            endif()
+if (NOT INSTRSET EQUAL 0)
+    if (NOT IQTREE_FLAGS MATCHES "nosse")
+        target_link_libraries(iqtree3 kernelsse)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+            target_link_libraries(iqtree3-aa kernelsse)
         endif()
-    endif ()
-endif()
+    endif()
+endif ()
 
 # MPI libraries
 if (IQTREE_FLAGS MATCHES "mpi")

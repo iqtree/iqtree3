@@ -24,11 +24,11 @@ endif(ZLIB_FOUND)
 target_link_libraries(utils lbfgsb sprng)
 
 
-if(DEFINED INSTRSET)
-  if(NOT INSTRSET EQUAL 0)
+if(NOT INSTRSET EQUAL 0)
+    message("truning on bioinj2")
     target_sources(utils PRIVATE bionj2.cpp)
-  endif()
 endif()
+
 
 ##################################################################
 # Whether to build the decenttree executable file (default: ON)
