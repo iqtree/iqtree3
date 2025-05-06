@@ -1405,6 +1405,24 @@ double PhyloTree::computeLikelihoodFromBufferEigenSIMD() {
     #define MEM_ALIGN_END __attribute__((aligned(32)))
 #endif
 
+#if defined(NOSSE)
+inline uint32_t fast_popcount(Vec1ui &x) {
+    uint32_t val = x.xmm;  // Assuming xmm is a uint32_t or convertible
+//#if defined(__GNUC__) || defined(__clang__)
+//    return __builtin_popcount(val);  // GCC/Clang built-in
+//#elif defined(_MSC_VER)
+//    return __popcnt(val);  // MSVC built-in
+//#else
+    // Portable fallback
+    uint32_t count = 0;
+    while (val) {
+        count += val & 1;
+        val >>= 1;
+    }
+    return count;
+//#endif
+}
+#else
 inline UINT fast_popcount(Vec4ui &x) {
     MEM_ALIGN_BEGIN UINT vec[4] MEM_ALIGN_END;
     x.store_a(vec);
@@ -1461,6 +1479,7 @@ inline void horizontal_popcount(Vec8ui &x) {
     vec[7] = vml_popcnt(vec[7]);
     x.load_a(vec);
 }
+#endif // !defined(NOSSE)
 
 template<class VectorClass>
 void PhyloTree::computePartialParsimonyFastSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad) {

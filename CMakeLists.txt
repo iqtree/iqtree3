@@ -126,6 +126,18 @@ endif()
 
 message("IQ-TREE flags : ${IQTREE_FLAGS}")
 
+if(DEFINED INSTRSET)
+    message("INSTRSET is defined: ${INSTRSET}")
+    if(INSTRSET EQUAL 0)
+        message("SSE instructions are disabled")
+        add_definitions(-DINSTRSET=0)
+        add_definitions(-DNOSSE)
+    endif ()
+else()
+    message("INSTRSET is not defined")
+endif()
+
+
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
@@ -652,7 +664,6 @@ elseif (ICC)
 endif()
 
 # further flag to improve performance
-
 if (IQTREE_FLAGS MATCHES "fma") # AVX+FMA instruction set
     message("Vectorization : AVX+FMA")
     add_definitions(-D__SSE3 -D__AVX) # define both SSE3 and AVX directive
@@ -962,12 +973,15 @@ if (USE_LSD2)
     endif()
 endif()
 
-if (NOT IQTREE_FLAGS MATCHES "nosse")
-    target_link_libraries(iqtree3 kernelsse)
-    if (USE_CMAPLE_AA STREQUAL "ON")
-    	target_link_libraries(iqtree3-aa kernelsse)
+
+if (NOT INSTRSET EQUAL 0)
+    if (NOT IQTREE_FLAGS MATCHES "nosse")
+        target_link_libraries(iqtree3 kernelsse)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+            target_link_libraries(iqtree3-aa kernelsse)
+        endif()
     endif()
-endif()
+endif ()
 
 # MPI libraries
 if (IQTREE_FLAGS MATCHES "mpi")

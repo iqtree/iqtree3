@@ -34,8 +34,15 @@
 
 #include "instrset.h"        // Select supported instruction set
 
-#if INSTRSET < 2             // SSE2 required
-  #error Please compile for the SSE2 instruction set or higher
+
+//#if INSTRSET < 2             // SSE2 required
+//  #error Please compile for the SSE2 instruction set or higher
+//#else
+
+#if INSTRSET < 2
+#include "vectorf64.h"
+#include "vectorf32.h"      // 32-bit floating point vectors
+#include "vectori32.h"      // 32-bit integer vectors
 #else
 
 #include "vectori128.h"      // 128-bit integer vectors

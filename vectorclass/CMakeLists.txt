@@ -6,4 +6,6 @@ vectorf64.h
 vectorf128.h
 vectorf256.h
 vectorf512.h
+vectorf32.h
+vectori32.h
 )

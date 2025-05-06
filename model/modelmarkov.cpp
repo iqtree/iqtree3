@@ -606,15 +606,24 @@ double ModelMarkov::computeTrans(double time, int state1, int state2, double &de
 void ModelMarkov::calculateExponentOfScalarMultiply ( const double* source, int size
                                                     , double scalar, double* dest) {
     if (size == 2) {
+#if !defined(NOSSE)
         Vec2d v;
+#else
+        Vec1d v;
+#endif
         v.load(source);
         exp(v * scalar).store(dest);
         return;
     }
     int offset=0;
     if (2 < size) {
+#if !defined(NOSSE)
         Vec2d v;
         int step         = Vec2d::size();
+#else
+        Vec1d v;
+        int step         = Vec1d::size();
+#endif
         int integralSize = size - (size & (step - 1));
         for (; offset < integralSize; offset+=step) {
             v.load(source+offset);
@@ -631,8 +640,13 @@ void ModelMarkov::calculateHadamardProduct(const double* first
                                            , const double* second, int size
                                            , double *dest) {
     if (size==2) {
+#if !defined(NOSSE)
         Vec2d a;
         Vec2d b;
+#else
+        Vec1d a;
+        Vec1d b;
+#endif
         a.load(first);
         b.load(second);
         (a*b).store(dest);
@@ -640,8 +654,13 @@ void ModelMarkov::calculateHadamardProduct(const double* first
     }
     int offset = 0;
     if (2<size) {
+#if !defined(NOSSE)
         Vec2d a, b;
         int step  = Vec2d::size();
+#else
+        Vec1d a, b;
+        int step  = Vec1d::size();
+#endif
         int remainder = size & (step - 1);
         int integralSize = size - remainder;
         for (; offset<integralSize; offset += step) {
@@ -658,8 +677,13 @@ void ModelMarkov::calculateHadamardProduct(const double* first
 double ModelMarkov::dotProduct(const double* first
                             , const double* second, int size) {
     if (size==2) {
+#if !defined(NOSSE)
         Vec2d a;
         Vec2d b;
+#else
+        Vec1d a;
+        Vec1d b;
+#endif
         a.load(first);
         b.load(second);
         return horizontal_add(a*b);
@@ -668,8 +692,13 @@ double ModelMarkov::dotProduct(const double* first
     double product   = 0;
     if (2<size) {
         //Todo: Investigate. Worth unrolling?
+#if !defined(NOSSE)
         Vec2d a, b, dot = 0;
         int step  = Vec2d::size();
+#else
+        Vec1d a, b, dot = 0;
+        int step  = Vec1d::size();
+#endif
         int remainder = size & (step - 1);
         int integralSize = size - remainder;
         for (; offset<integralSize; offset += step) {
