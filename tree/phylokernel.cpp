@@ -13,10 +13,6 @@
 #include "phylokernelnonrev.h"
 
 
-#if !defined(NOSSE)
-#error "You must compile this file with NOSSE!"
-#endif
-
 void PhyloTree::setParsimonyKernelSSE() {
     if (cost_matrix) {
         // Sankoff kernel

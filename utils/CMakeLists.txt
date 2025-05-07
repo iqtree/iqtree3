@@ -8,7 +8,7 @@ pllnni.cpp pllnni.h
 checkpoint.cpp checkpoint.h
 MPIHelper.cpp MPIHelper.h
 starttree.cpp starttree.h
-bionj.cpp bionj2.h
+bionj.cpp bionj2.cpp bionj2.h
 progress.cpp progress.h
 timeutil.h hammingdistance.h
 operatingsystem.cpp operatingsystem.h
@@ -22,11 +22,6 @@ else(ZLIB_FOUND)
 endif(ZLIB_FOUND)
 
 target_link_libraries(utils lbfgsb sprng)
-
-
-if(NOT INSTRSET EQUAL 0)
-    target_sources(utils PRIVATE bionj2.cpp)
-endif()
 
 
 ##################################################################

@@ -126,18 +126,6 @@ endif()
 
 message("IQ-TREE flags : ${IQTREE_FLAGS}")
 
-if(DEFINED INSTRSET)
-    message("INSTRSET is defined: ${INSTRSET}")
-    if(INSTRSET EQUAL 0)
-        message("SSE instructions are disabled")
-        add_definitions(-DINSTRSET=0)
-        add_definitions(-DNOSSE)
-    endif ()
-else()
-    message("INSTRSET is not defined")
-endif()
-
-
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
@@ -276,6 +264,12 @@ if (USE_CMAPLE_AA STREQUAL "ON")
 else()
     message("Integrate CMAPLE_AA: OFF")
 endif()
+
+if (KERNEL_X86)
+    message("Kernel x86 detected")
+endif ()
+
+
 
 ##################################################################
 # Detect target platforms
@@ -830,6 +824,10 @@ endif()
 
 add_library(kernelsse tree/phylokernelsse.cpp)
 
+if (KERNEL_X86)
+    add_library(kernelx86 tree/phylokernel.cpp)
+endif ()
+
 if (NOT IQTREE_FLAGS MATCHES "novx")
 add_library(kernelavx tree/phylotreeavx.cpp)
 add_library(kernelfma tree/phylokernelfma.cpp)
@@ -974,14 +972,20 @@ if (USE_LSD2)
 endif()
 
 
-if (NOT INSTRSET EQUAL 0)
-    if (NOT IQTREE_FLAGS MATCHES "nosse")
-        target_link_libraries(iqtree3 kernelsse)
-        if (USE_CMAPLE_AA STREQUAL "ON")
-            target_link_libraries(iqtree3-aa kernelsse)
-        endif()
+if (NOT IQTREE_FLAGS MATCHES "nosse")
+    target_link_libraries(iqtree3 kernelsse)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+        target_link_libraries(iqtree3-aa kernelsse)
     endif()
-endif ()
+endif()
+
+
+if (KERNELX86)
+    target_link_libraries(iqtree3 kernelx86)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa kernelx86)
+    endif()
+endif()
 
 # MPI libraries
 if (IQTREE_FLAGS MATCHES "mpi")

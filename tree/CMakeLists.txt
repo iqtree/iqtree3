@@ -59,7 +59,3 @@ phylohmm.h
 )
 
 target_link_libraries(tree pll model alignment)
-
-if(INSTRSET EQUAL 0)
-    target_sources(tree PRIVATE phylokernel.cpp)
-endif()

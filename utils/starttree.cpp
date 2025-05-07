@@ -24,9 +24,7 @@
 namespace StartTree {
 
 extern void addBioNJ2009TreeBuilders(Factory& f);
-#if !defined(NOSSE)
 extern void addBioNJ2020TreeBuilders(Factory& f);
-#endif
 
 Factory::Factory() {
 }
@@ -46,9 +44,7 @@ Factory& Factory::getInstance() {
     static Factory instance;
     if (instance.getBuilderCount()==0) {
         addBioNJ2009TreeBuilders(instance);
-#if !defined(NOSSE)
         addBioNJ2020TreeBuilders(instance);
-#endif
         BuilderInterface *bench = new BenchmarkingTreeBuilder(instance, "BENCHMARK", "Benchmark");
         instance.addBuilder(bench->getName(), bench);
     }
