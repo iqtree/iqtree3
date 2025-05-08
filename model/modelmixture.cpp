@@ -1403,6 +1403,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
                     } else {
                         outError("The user defined frequency model is incorrect");
                     }
+                } else if (fstr == "+FU" || fstr == "+Fu") {
+                    model_freq = FREQ_USER_DEFINED;
                 } else if (fstr == "+FO" || fstr == "+Fo") {
                     model_freq = FREQ_ESTIMATE;
                 } else if (fstr == "+FQ" || fstr == "+Fq") {

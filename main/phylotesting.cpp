@@ -6347,7 +6347,18 @@ CandidateModel runModelSelection(Params &params, IQTree &iqtree, ModelCheckpoint
         }
         skip_all_when_drop = true;
     } else if (action == 3) {
-        char init_state_freq_set[] = "FO";
+        char freq_set_codon[] = ",F1X4,F3X4";
+        char freq_set_multistate[] = "FQ";
+        char freq_set_protein[] = ",FO";
+        char freq_set_default[] = "FO";
+        char* init_state_freq_set =
+            (iqtree.aln->seq_type == SEQ_CODON)
+                ? freq_set_codon
+                : (iqtree.aln->seq_type == SEQ_MORPH)
+                    ? freq_set_multistate
+                    : (iqtree.aln->seq_type == SEQ_PROTEIN)
+                        ? freq_set_protein
+                        : freq_set_default;
         if (!params.state_freq_set) {
             params.state_freq_set = init_state_freq_set;
         }
@@ -6513,7 +6524,18 @@ void optimiseQMixModel_method_update(Params &params, IQTree* &iqtree, ModelCheck
     double LR, df_diff, pvalue;
     string criteria_str;
 
-    char init_state_freq_set[] = "FO";
+    char freq_set_codon[] = ",F1X4,F3X4";
+    char freq_set_multistate[] = "FQ";
+    char freq_set_protein[] = ",FO";
+    char freq_set_default[] = "FO";
+    char* init_state_freq_set =
+        (iqtree->aln->seq_type == SEQ_CODON)
+            ? freq_set_codon
+            : (iqtree->aln->seq_type == SEQ_MORPH)
+                ? freq_set_multistate
+                : (iqtree->aln->seq_type == SEQ_PROTEIN)
+                    ? freq_set_protein
+                    : freq_set_default;
     if (!params.state_freq_set) {
         params.state_freq_set = init_state_freq_set;
     }
@@ -6522,16 +6544,21 @@ void optimiseQMixModel_method_update(Params &params, IQTree* &iqtree, ModelCheck
     ssize = iqtree->getAlnNSite();
     criteria_str = criterionName(params.model_test_criterion);
 
-    // Step 0: (reorder candidate DNA models when -mset is used) build the nest-relationship network
+    // Step 0: (reorder candidate models when -mset is used) build the nest-relationship network
     map<string, vector<string> > nest_network;
-    if (iqtree->aln->seq_type == SEQ_DNA) {
+    //if (iqtree->aln->seq_type == SEQ_DNA) {
         StrVector model_names, freq_names;
         getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
                       params.model_set, params.model_subset, model_names);
         getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
-
+        
+        if (std::all_of(model_names.begin(), model_names.end(), [](const std::string& s) { return s == "MK"; }) &&
+            std::all_of(freq_names.begin(), freq_names.end(), [](const std::string& s) { return s == "+FQ"; })) {
+            outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless. Please provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
+        }
+        
         nest_network = generateNestNetwork(model_names, freq_names);
-    }
+    //}
 
     // Step 1: run ModelFinder
     params.model_name = "";
@@ -6638,9 +6665,6 @@ void optimiseQMixModel(Params &params, IQTree* &iqtree, ModelCheckpoint &model_i
     if (iqtree->isSuperTree())
         outError("Error! The option -m '" + params.model_name + "' cannot work on data set with partitions");
     
-    if (iqtree->aln->seq_type != SEQ_DNA)
-        outError("Error! The option -m '" + params.model_name + "' can only work on DNA data set");
-
     cout << "--------------------------------------------------------------------" << endl;
     cout << "|                Optimizing Q-mixture model                        |" << endl;
     cout << "--------------------------------------------------------------------" << endl;
@@ -6755,15 +6779,15 @@ void reorderModelNames(StrVector& model_names, const char* model_set[], size_t s
 }
 
 bool isRateTypeNested(string rate_type1, string rate_type2) {
-    if (rate_type1.length() != 6) {
+    /*if (rate_type1.length() != 6) {
         outError("Incorrect DNA model rate type code: " + rate_type1);
     }
     if (rate_type2.length() != 6) {
         outError("Incorrect DNA model rate type code: " + rate_type2);
-    }
+    }*/
 
-    for (int i = 0; i < 5; i++) {
-        for (int j = i; j < 6; j++ ){
+    for (int i = 0; i < rate_type1.length()-1; i++) {
+        for (int j = i; j < rate_type1.length(); j++ ){
             if (rate_type1[i] == rate_type1[j] && rate_type2[i] != rate_type2[j]){
                 return false;
             }
