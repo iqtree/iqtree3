@@ -1182,6 +1182,41 @@ double ModelCodon::optimizeParameters(double gradient_epsilon) {
 	return score;
 }
 
+void ModelCodon::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    // NST should be 1 if fix_kappa is true (no ts/tv ratio), else it should be 2
+    // GTR codon is not available in IQTREE
+    int nst = fix_kappa ? 1 : 2;
+    int code = phylo_tree->aln->getGeneticCodeId();
+    string mrBayesCode = getMrBayesGeneticCode(code);
+    bool codeNotSupported = mrBayesCode.empty();
+    RateHeterogeneity* rate = phylo_tree->getRate();
+
+    string modelName = fix_kappa ? "JC" : "HKY";
+
+    // If this model is a Empirical / Semi-Empirical Model
+    if (num_params == 0 || name.find('_') != string::npos) {
+        nst = 6;
+        modelName = "GTR";
+    }
+
+    out << "using MrBayes model " << modelName << "]" << endl;
+
+    if (rate->isFreeRate() || rate->getGammaShape() > 0.0 || rate->getPInvar() > 0.0) {
+        out << "  [Rate modifiers (+I, +G, +R) ignored, not supported by MrBayes codon models]" << endl;
+        outWarning("MrBayes Codon Models do not support any Heterogenity Rate Modifiers! (+I, +G, +R) They have been ignored!");
+    }
+
+    if (codeNotSupported) {
+        outWarning("MrBayes Does Not Support Codon Code " + convertIntToString(code) + "! Defaulting to Universal (Code 1).");
+        mrBayesCode = "universal";
+    }
+
+    out << "  [IQTree genetic code " << code << ", using MrBayes genetic code " << mrBayesCode << "]" << endl;
+    if (codeNotSupported)
+        out << "  [Genetic code " << code << " is not supported by MrBayes, defaulting to universal (code 1)]" << endl;
+
+    out << "  lset applyto=(" << partition << ") nucmodel=codon omegavar=equal nst=" << nst << " code=" << mrBayesCode << ";" << endl;
+}
 
 void ModelCodon::writeInfo(ostream &out) {
     if (name.find('_') == string::npos)

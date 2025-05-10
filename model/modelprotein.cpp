@@ -1164,3 +1164,73 @@ void ModelProtein::computeTipLikelihood(PML::StateType state, double *state_lk) 
     state_lk[ambi_aa[cstate*2+1]] = 1.0;
 }
 
+void ModelProtein::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    RateHeterogeneity* rate = phylo_tree->getRate();
+
+    // Get MrBayes Model
+    auto aaModelMap = getIqTreeToMrBayesAAModels();
+    auto iter = aaModelMap.find(name);
+    string mappedModel = "gtr";
+
+    // If model is in map, set mappedModel to the value
+    if (iter != aaModelMap.end())
+        mappedModel = iter->second;
+
+    out << "using MrBayes model " << mappedModel;
+
+    // RHAS Specification
+    // Free Rate should be substituted by +G+I
+    bool hasGamma = rate->getGammaShape() != 0.0 || rate->isFreeRate();
+    bool hasInvariable = rate->getPInvar() != 0.0 || rate->isFreeRate();
+    string rateStr = "equal";
+    if (hasGamma) {
+        if (hasInvariable) {
+            rateStr = "invgamma";
+            out << "+G+I";
+        }
+        else {
+            rateStr = "gamma";
+            out << "+G";
+        }
+    } else if (hasInvariable) {
+        rateStr = "propinv";
+        out << "+I";
+    }
+
+    out << "]" << endl;
+
+    // Lset Parameters
+    out << "  lset applyto=(" << partition << ") nucmodel=protein rates=" << rateStr << ";" << endl;
+
+    out << "  prset applyto=(" << partition << ")" << " aamodelpr=fixed(" << mappedModel << ")";
+
+    // GTR Customization
+    if (strcmp(mappedModel.c_str(), "gtr") == 0) {
+        // add rate matrix and state frequencies (mandatory for setting gtr values)
+        out << " aarevmatpr=";
+
+        // if matrix is GTR20, use dirichlet, else use fixed
+        if (strcmp(name.c_str(), "GTR20") == 0)
+            out << "dirichlet(";
+        else
+            out << "fixed(";
+
+        for (int i = 0; i < getNumRateEntries(); ++i) {
+            if (i != 0) out << ", ";
+            out << minValueCheckMrBayes(rates[i]);
+        }
+        out << ")";
+
+        // Frequency type is never equal to FREQ_EQUAL, even with Poisson
+        // Frequency is also auto-set if we use a model defined by MrBayes
+        out << " statefreqpr=dirichlet(";
+        for (int i = 0; i < num_states; ++i) {
+            if (i != 0) out << ", ";
+            out << minValueCheckMrBayes(state_freq[i]);
+        }
+        out << ")";
+    }
+
+    out << ";";
+}
+
