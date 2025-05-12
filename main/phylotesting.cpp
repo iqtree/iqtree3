@@ -6207,6 +6207,16 @@ void addModel(string model_str, string& new_model_str, string new_subst) {
     }
 }
 
+// initialise model frequency set in MixtureFinder for different sequence types
+char* initFreqSet(SeqType seq_type) {
+    switch (seq_type) {
+        case SEQ_CODON:   return ",F1X4,F3X4";
+        case SEQ_MORPH:   return "FQ";
+        case SEQ_PROTEIN: return ",FO";
+        default:          return "FO";
+    }
+}
+
 /**
  @brief Find the best component of a Q-mixture model while fixing other components
  @note This function is similar to runModelFinder, but it is adapted for optimisation of Q-Mixture model
@@ -6355,8 +6365,8 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
             }
         }
         skip_all_when_drop = true;
-    } else if (mixture_action == MA_FIND_CLASS) {
-        char init_state_freq_set[] = "FO";
+      } else if (mixture_action == MA_FIND_CLASS) {
+        char* init_state_freq_set = initFreqSet(iqtree.aln->seq_type);
         if (!params.state_freq_set) {
             params.state_freq_set = init_state_freq_set;
         }
@@ -6527,7 +6537,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     double LR, df_diff, pvalue;
     string criteria_str;
 
-    char init_state_freq_set[] = "FO";
+    char* init_state_freq_set = initFreqSet(iqtree->aln->seq_type);
     if (!params.state_freq_set) {
         params.state_freq_set = init_state_freq_set;
     }
@@ -6538,15 +6548,27 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
 
     // Step 0: (reorder candidate DNA models when -mset is used) build the nest-relationship network
     map<string, vector<string> > nest_network;
-    if (iqtree->aln->seq_type == SEQ_DNA) {
-        StrVector model_names, freq_names;
-        getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
-                      params.model_set, params.model_subset, model_names);
-        getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
-
-        nest_network = generateNestNetwork(model_names, freq_names);
+    StrVector model_names, freq_names;
+    getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
+                  params.model_set, params.model_subset, model_names);
+    getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
+    
+    // check if all models names are "MK" and all frequencies are "+FQ"
+    auto isOnlyMKAndFQ = [&]() -> bool {
+        bool onlyMK = std::all_of(model_names.begin(), model_names.end(),
+                                  [](const std::string& s) { return s == "MK"; });
+        bool onlyFQ = std::all_of(freq_names.begin(), freq_names.end(),
+                                  [](const std::string& s) { return s == "+FQ"; });
+        return onlyMK && onlyFQ;
+    };
+    if (isOnlyMKAndFQ()) {
+        outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless. Please provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
     }
 
+    if (iqtree->aln->seq_type == SEQ_DNA) {
+        nest_network = generateNestNetwork(model_names, freq_names);
+    }
+    
     // Step 1: run ModelFinder
     params.model_name = "";
     bool under_mix_finder = true;
@@ -6650,9 +6672,6 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     if (iqtree->isSuperTree())
         outError("Error! The option -m '" + params.model_name + "' cannot work on data set with partitions");
     
-    if (iqtree->aln->seq_type != SEQ_DNA)
-        outError("Error! The option -m '" + params.model_name + "' can only work on DNA data set");
-
     cout << "--------------------------------------------------------------------" << endl;
     cout << "|                Running MixtureFinder                             |" << endl;
     cout << "--------------------------------------------------------------------" << endl;
