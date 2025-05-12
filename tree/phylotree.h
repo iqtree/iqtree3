@@ -841,7 +841,7 @@ public:
     int num_packets;
 
     /** flag to identify partition-trees with missing root for MCMCTree branch traversal order*/
-    bool leftSingleRoot;
+    bool leftSingleRoot = false;
 
     /****************************************************************************
             helper functions for computing tree traversal
@@ -1585,6 +1585,11 @@ public:
      hessian diagonal array for storing diagonal elements of hessian
      * */
     double *hessian_diagonal;
+
+    /**
+    Flag to check root node availability in case of missing data in partitions
+    * */
+    bool root_available = true;
 
 
     /****************************************************************************

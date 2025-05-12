@@ -2272,6 +2272,10 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
     size_t orig_nptn = aln->size();
     size_t max_orig_nptn = roundUpToMultiple(orig_nptn, VectorClass::size());
     size_t nptn = max_orig_nptn + model_factory->unobserved_ptns.size();
+
+    size_t g_matrix_nptn = max_orig_nptn + max(get_safe_upper_limit(model->num_states),
+                                                                          get_safe_upper_limit(
+                                                                                  model_factory->unobserved_ptns.size()));
     ASCType ASC_type = model_factory->getASC();
     bool ASC_Holder = (ASC_type == ASC_VARIANT_MISSING || ASC_type == ASC_INFORMATIVE_MISSING);
     bool ASC_Lewis = (ASC_type == ASC_VARIANT || ASC_type == ASC_INFORMATIVE);
@@ -2464,7 +2468,7 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
             }
         } else {
             // to access g-matrix elements to store derivatives
-            size_t g_index = branch_id * nptn;
+            size_t g_index = branch_id * g_matrix_nptn;
             // normal joint branch length model
             for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=VectorClass::size()) {
                 VectorClass lh_ptn;

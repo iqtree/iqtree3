@@ -724,6 +724,13 @@ void PhyloTreeMixlen::hessian(const TVector &x, THessian &hessian) {
 }
 #endif
 
+/**
+ * clear the array "relative_treelen"
+ */
+void PhyloTreeMixlen::clear_relative_treelen() {
+    relative_treelen.clear();
+}
+
 // defining log-likelihood derivative function for EM algorithm
 void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
 

@@ -367,9 +367,8 @@ void computeHessian(PhyloTree *tree) {
     if (tree->traversal_starting_node && tree->root != tree->traversal_starting_node){
         tree->root = (Node *) tree->traversal_starting_node;
     }
-
     // sort the internal nodes according to their smallest taxon id
-//    tree->sortTaxa();
+    // tree->sortTaxa();
     tree->clearBranchDirection();
     tree->initializeTree();
     tree->computeBranchDirection();
@@ -388,7 +387,6 @@ void computeHessian(PhyloTree *tree) {
             cout << "lh: " << lh << " df: " << df << " ddf: " << ddf << endl;
         }
     }
-
 }
 
 void runMCMCTree(PhyloTree *tree) {
