@@ -13,7 +13,7 @@
 #include "phylokernelnonrev.h"
 
 
-void PhyloTree::setParsimonyKernelSSE() {
+void PhyloTree::setParsimonyKernelX86() {
     if (cost_matrix) {
         // Sankoff kernel
         computeParsimonyBranchPointer = &PhyloTree::computeParsimonyBranchSankoffSIMD<Vec1ui>;
@@ -25,7 +25,7 @@ void PhyloTree::setParsimonyKernelSSE() {
     computePartialParsimonyPointer = &PhyloTree::computePartialParsimonyFastSIMD<Vec1ui>;
 }
 
-void PhyloTree::setDotProductSSE() {
+void PhyloTree::setDotProductX86() {
 #ifdef BOOT_VAL_FLOAT
     dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
 #else
@@ -34,14 +34,14 @@ void PhyloTree::setDotProductSSE() {
     dotProductDouble = &PhyloTree::dotProductSIMD<double, Vec1d>;
 }
 
-void PhyloTree::setLikelihoodKernelSSE() {
+void PhyloTree::setLikelihoodKernelX86() {
     vector_size = 2;
     bool site_model = model_factory && model_factory->model->isSiteSpecificModel();
 
     if (site_model && ((model_factory && !model_factory->model->isReversible()) || params->kernel_nonrev))
         outError("Site-specific model is not yet supported for nonreversible models");
 
-    setParsimonyKernelSSE();
+    setParsimonyKernelX86();
     computeLikelihoodDervMixlenPointer = NULL;
 
     if (site_model && safe_numeric) {

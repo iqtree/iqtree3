@@ -1405,7 +1405,6 @@ double PhyloTree::computeLikelihoodFromBufferEigenSIMD() {
     #define MEM_ALIGN_END __attribute__((aligned(32)))
 #endif
 
-#if defined(NOSSE)
 inline uint32_t fast_popcount(Vec1ui &x) {
     uint32_t val = x.xmm;  // Assuming xmm is a uint32_t or convertible
 //#if defined(__GNUC__) || defined(__clang__)
@@ -1422,7 +1421,6 @@ inline uint32_t fast_popcount(Vec1ui &x) {
     return count;
 //#endif
 }
-#else
 inline UINT fast_popcount(Vec4ui &x) {
     MEM_ALIGN_BEGIN UINT vec[4] MEM_ALIGN_END;
     x.store_a(vec);
@@ -1479,7 +1477,6 @@ inline void horizontal_popcount(Vec8ui &x) {
     vec[7] = vml_popcnt(vec[7]);
     x.load_a(vec);
 }
-#endif // !defined(NOSSE)
 
 template<class VectorClass>
 void PhyloTree::computePartialParsimonyFastSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad) {
@@ -1732,6 +1729,7 @@ void PhyloTree::computePartialParsimonyFastSIMD(PhyloNeighbor *dad_branch, Phylo
                 z[2] |= w & (x[2] | y[2]);
                 z[3] |= w & (x[3] | y[3]);
                 score += fast_popcount(w);
+
             }
             break;
                 
@@ -1801,6 +1799,7 @@ int PhyloTree::computeParsimonyBranchFastSIMD(PhyloNeighbor *dad_branch, PhyloNo
             VectorClass w = (x[0] & y[0]) | (x[1] & y[1]) | (x[2] & y[2]) | (x[3] & y[3]);
             w = ~w;
             score += fast_popcount(w);
+
             #ifndef _OPENMP
             if (score >= lower_bound) 
                 break;
@@ -1821,6 +1820,7 @@ int PhyloTree::computeParsimonyBranchFastSIMD(PhyloNeighbor *dad_branch, PhyloNo
             }
             w = ~w;
             score += fast_popcount(w);
+
             #ifndef _OPENMP
             if (score >= lower_bound) 
                 break;

@@ -624,6 +624,10 @@ public:
 
     void setDotProductSSE();
 
+#if defined(KERNEL_X86)
+    void setDotProductX86();
+#endif
+
     /**
             this function return the parsimony or likelihood score of the tree. Default is
             to compute the parsimony score. Override this function if you define a new
@@ -710,6 +714,10 @@ public:
 #endif
 
     virtual void setParsimonyKernelSSE();
+
+#if defined(KERNEL_X86)
+    virtual void setParsimonyKernelX86();
+#endif
 
     /****************************************************************************
      Sankoff Parsimony function
@@ -2067,6 +2075,10 @@ public:
     void setLikelihoodKernelAVX512();
 #endif
     virtual void setLikelihoodKernelSSE();
+
+#if defined(KERNEL_X86)
+    void setLikelihoodKernelX86();
+#endif
     
     /****************************************************************************
             Public variables

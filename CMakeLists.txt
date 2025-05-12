@@ -267,6 +267,7 @@ endif()
 
 if (KERNEL_X86)
     message("Kernel x86 detected")
+    add_definitions(-DKERNEL_X86)
 endif ()
 
 
@@ -980,7 +981,7 @@ if (NOT IQTREE_FLAGS MATCHES "nosse")
 endif()
 
 
-if (KERNELX86)
+if (KERNEL_X86)
     target_link_libraries(iqtree3 kernelx86)
     if (USE_CMAPLE_AA STREQUAL "ON")
     	target_link_libraries(iqtree3-aa kernelx86)

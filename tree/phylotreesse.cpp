@@ -65,6 +65,10 @@ void PhyloTree::setParsimonyKernel(LikelihoodKernel lk) {
             setParsimonyKernelAVX();
             return;
         }
+        if (lk == LK_386) {
+            setParsimonyKernelX86();
+            return;
+        }
         if (lk >= LK_SSE2) {
             setParsimonyKernelSSE();
             return;
@@ -80,6 +84,10 @@ void PhyloTree::setParsimonyKernel(LikelihoodKernel lk) {
     }
     if (lk >= LK_AVX) {
         setParsimonyKernelAVX();
+        return;
+    }
+    if (lk == LK_386) {
+        setParsimonyKernelX86();
         return;
     }
     if (lk >= LK_SSE2) {
@@ -111,7 +119,9 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 		setDotProductAVX();
     } else if (lk >= LK_SSE2) {
         setDotProductSSE();
-	} else {
+	} else if (lk == LK_386) {
+        setDotProductX86();
+    } else {
 
 #if INSTRSET < 2
 #ifdef BOOT_VAL_FLOAT
@@ -152,6 +162,11 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 //        return;        
 //    }    
 
+    if (lk == LK_386) {
+        // CPU supports x86
+        setLikelihoodKernelX86();
+        return;
+    }
     //--- SIMD kernel ---
     if (lk >= LK_SSE2) {
 #ifdef __AVX512KNL
@@ -166,7 +181,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         } else if (lk >= LK_AVX) {
             // CPU supports AVX
             setLikelihoodKernelAVX();
-        } else {
+        }else {
             // SSE kernel
             setLikelihoodKernelSSE();
         }
