@@ -7,7 +7,7 @@ IQ-TREE
 
 [![BioConda downloads](https://img.shields.io/conda/dn/bioconda/iqtree.svg?style=flag&label=BioConda%20install)](https://anaconda.org/bioconda/iqtree)
 [![BioConda platforms](https://img.shields.io/conda/pn/bioconda/iqtree?style=flag)](https://github.com/bioconda/bioconda-recipes/tree/master/recipes/iqtree)
-[![Build Status](https://github.com/iqtree/iqtree2/workflows/Build/badge.svg)](https://github.com/iqtree/iqtree2/actions)
+[![Build Status](https://github.com/iqtree/iqtree3/workflows/Build/badge.svg)](https://github.com/iqtree/iqtree3/actions)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 
 Efficient and versatile phylogenomic software by maximum likelihood <http://www.iqtree.org>
@@ -70,7 +70,7 @@ General citation for IQ-TREE 3:
   A.J. Roger, E. Susko, C. Bielow, N. De Maio,
   N. Goldman, M.W. Hahn, G. Huttley, R. Lanfear, B.Q. Minh (2025)
   IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models.
-  Submitted.
+  Submitted, <https://doi.org/10.32942/X2P62N>.
 
 Moreover, there are other papers associated with notable features in IQ-TREE,
 which are normally mentioned in the corresponding documentation. We ask that you also

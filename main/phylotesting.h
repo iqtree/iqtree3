@@ -32,6 +32,8 @@ const int MF_RUNNING            = 4;
 const int MF_WAITING            = 8;
 const int MF_DONE               = 16;
 
+enum MixtureAction {MA_NONE, MA_FIND_RATE, MA_NUMBER_CLASS, MA_FIND_CLASS, MA_ADD_CLASS};
+
 /**
     Candidate model under testing
  */
@@ -51,7 +53,7 @@ public:
         this->flag = flag;
         syncChkPoint = nullptr;
         //init_first_mix = false;
-        model_selection_action = 0;
+        mixture_action = MA_NONE;
     }
     
     CandidateModel(string subst_name, string rate_name, Alignment *aln, int flag = 0) : CandidateModel(flag) {
@@ -60,7 +62,7 @@ public:
         this->aln = aln;
         syncChkPoint = nullptr;
         //init_first_mix = false;
-        model_selection_action = 0;
+        mixture_action = MA_NONE;
     }
     
     CandidateModel(Alignment *aln, int flag = 0) : CandidateModel(flag) {
@@ -68,7 +70,7 @@ public:
         getUsualModel(aln);
         syncChkPoint = nullptr;
         //init_first_mix = false;
-        model_selection_action = 0;
+        mixture_action = MA_NONE;
     }
     
     string getName() {
@@ -191,8 +193,8 @@ public:
     /** the nest relationships of all candidate Q matrices */
     map<string, vector<string> > nest_network;
 
-    /** the value of the action in function runModelSelection*/
-    int model_selection_action;
+    /** the value of the action in function findMixtureComponent */
+    MixtureAction mixture_action;
 
     Alignment *aln; // associated alignment
 
@@ -776,12 +778,13 @@ string criterionName(ModelTestCriterion mtc);
 void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info, string &best_subst_name, string &best_rate_name, map<string, vector<string> > nest_network, bool under_mix_finder = false);
 
 /**
- optimisation of Q-Mixture model, including estimation of best number of classes in the mixture
+ perform MixtureFinder algorithm to find best-fit Q-Mixture model,
+ including estimation of best number of classes in the mixture
  @param params program parameters
  @param iqtree phylogenetic tree
  @param model_info (IN/OUT) information for all models considered
  */
-void optimiseQMixModel(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info);
+void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info);
 
 /**
  perform ModelFinderNN to find the best-fit model (uses neural network for model inference)

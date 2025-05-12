@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build-linux-x86-64:
     name: Linux x86-64 gcc-${{ matrix.gcc-version }} cmake-${{ matrix.cmake-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -23,11 +23,11 @@ jobs:
           # Oldest supported gcc and cmake versions
           - gcc-version: 9
             cmake-version: 3.14.7
-            upload: false
+            upload: true
           # Latest supported gcc and cmake versions
           - gcc-version: 12
             cmake-version: latest
-            upload: true
+            upload: false
 
     steps:
     - name: Checkout
@@ -96,6 +96,43 @@ jobs:
            path: build/iqtree*.tar.gz
            if-no-files-found: error
 
+  compile-linux-universal:
+    name: Linux Universal
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-x86-64
+      - build-linux-aarch64
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux x86-64 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Linux x86-64
+          path: x86
+        
+      - name: Download Linux Arm Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Linux AArch64
+          path: arm
+    
+      - name: Combine Artifacts
+        run: |
+          chmod +x test_scripts/make_linux_universal.sh 
+          file1=$(ls x86/iqtree*.tar.gz)
+          file2=$(ls arm/iqtree*.tar.gz)
+          test_scripts/make_linux_universal.sh "$file1" "$file2"
+          
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux Universal
+          path: iqtree*.tar.gz
+          if-no-files-found: error
+          
   build-macos-x86_64:
     name: Mac OS x86-64
     runs-on: macos-13 # Mac OS 14 Does Not Support x86-64

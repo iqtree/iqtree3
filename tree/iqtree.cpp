@@ -4686,6 +4686,11 @@ int PhyloTree::testNumThreads() {
 
     cout << "BEST NUMBER OF THREADS: " << bestProc+1 << endl << endl;
     setNumThreads(bestProc+1);
+    
+    // clear the relative treelength arrays if it is GHOST model
+    if (isMixlen()) {
+        ((PhyloTreeMixlen*)this)->clear_relative_treelen();
+    }
 
     return bestProc+1;
 #endif
