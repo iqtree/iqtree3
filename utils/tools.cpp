@@ -3730,6 +3730,17 @@ void parseArg(int argc, char *argv[], Params &params) {
                 */
                 continue;
             }
+            if (strcmp(argv[cnt], "-morph-mix") == 0 || strcmp(argv[cnt], "--morph-mix") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use -morph-mix <0|1>";
+                int in_option = convert_int(argv[cnt]);
+                if (in_option < 0 || in_option > 1)
+                    throw "Wrong option for -morpho-mix. Only 0 or 1 is allowed.";
+                if (in_option == 1)
+                    params.morph_mix_finder = true;
+                continue;
+            }
 			if (strcmp(argv[cnt], "-a") == 0) {
 				cnt++;
 				if (cnt >= argc)

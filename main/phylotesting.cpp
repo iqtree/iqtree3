@@ -6207,6 +6207,18 @@ void addModel(string model_str, string& new_model_str, string new_subst) {
     }
 }
 
+void addModelBack(string model_str, string& new_model_str, string new_subst) {
+    size_t pos;
+    int n;
+    n = getClassNum(model_str);
+    if (n == 1) {
+        new_model_str = "MIX{" + new_subst + "," + new_subst + "}";
+    } else {
+        pos = model_str.find_last_of(',');
+        new_model_str = model_str.substr(0, pos) + "," + new_subst + "," + new_subst + "}";
+    }
+}
+
 // initialise model frequency set in MixtureFinder for different sequence types
 char* initFreqSet(SeqType seq_type) {
     switch (seq_type) {
@@ -6348,6 +6360,8 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
 
         skip_all_when_drop = false;
     } else if (mixture_action == MA_NUMBER_CLASS) {
+      // 2025/05/14 @HS6986
+      // I don't know when MA_NUMBER_CLASS is used and what should be expected in MA_NUMBER_CLASS for morphology!
         params.ratehet_set = iqtree.getModelFactory()->site_rate->name;
         // generate candidate models for the possible mixture models
         multi_class_str = "";
@@ -6366,6 +6380,8 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         }
         skip_all_when_drop = true;
       } else if (mixture_action == MA_FIND_CLASS) {
+        // 2025/05/14 @HS6986
+        // I don't know when MA_FIND_CLASS is used and what should be expected in MA_FIND_CLASS for morphology!
         char* init_state_freq_set = initFreqSet(iqtree.aln->seq_type);
         if (!params.state_freq_set) {
             params.state_freq_set = init_state_freq_set;
@@ -6442,10 +6458,46 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
                 }
             }
         }
-
+        
         for (i=0; i<model_names.size(); i++) {
             string new_model_str;
-            addModel(model_str, new_model_str, model_names[i]);
+            if (params.morph_mix_finder) {
+                int countGTRX = 0;
+                size_t posGTRX = 0;
+                while (((posGTRX = model_str.find("GTR", posGTRX)) != string::npos)) {
+                    ++countGTRX;
+                    posGTRX += 3;
+                }
+                int countFO = 0;
+                size_t posFO = 0;
+                while (((posFO = model_str.find("+FO", posFO)) != string::npos)) {
+                    ++countFO;
+                    posFO += 3;
+                }
+                if (((model_names[i].length() >= 3 && model_names[i].substr(0, 3) == "GTR") && countGTRX == 0) ||
+                    ((model_names[i].length() >= 3 && model_names[i].substr(model_names[i].length() - 3) == "+FO") && countFO == 0)) {
+                    addModelBack(model_str, new_model_str, model_names[i]);
+                } else {
+                    addModel(model_str, new_model_str, model_names[i]);
+                }
+                int newModelCountGTRX = 0;
+                size_t newModelPosGTRX = 0;
+                while (((newModelCountGTRX = new_model_str.find("GTR", newModelPosGTRX)) != string::npos)) {
+                    ++newModelCountGTRX;
+                    newModelPosGTRX += 3;
+                }
+                int newModelCountFO = 0;
+                size_t newModelPosFO = 0;
+                while (((newModelPosFO = new_model_str.find("+FO", newModelPosFO)) != string::npos)) {
+                    ++newModelCountFO;
+                    newModelPosFO += 3;
+                }
+                if (newModelCountGTRX == 1 || newModelCountFO == 1) {
+                    continue;
+                }
+            } else {
+                addModel(model_str, new_model_str, model_names[i]);
+            }
             candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
         }
 
@@ -6536,7 +6588,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     bool better_model;
     double LR, df_diff, pvalue;
     string criteria_str;
-
+    
     char* init_state_freq_set = initFreqSet(iqtree->aln->seq_type);
     if (!params.state_freq_set) {
         params.state_freq_set = init_state_freq_set;
@@ -6553,7 +6605,40 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
                   params.model_set, params.model_subset, model_names);
     getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
     
-    // check if all models names are "MK" and all frequencies are "+FQ"
+    if (params.morph_mix_finder) {
+        auto areRatesJustified = [&]() -> bool {
+            return std::all_of(model_names.begin(), model_names.end(),
+                               [](const std::string& s) { return s == "MK" || s == "GTRX" || s == "GTR"; });
+        };
+        if (!areRatesJustified()) {
+            outError("Error! Specifying models other than MK and GTRX for MixtureFinder for morphological data is not justified");
+        }
+        
+        auto areFreqsJustified = [&]() -> bool {
+            return std::all_of(freq_names.begin(), freq_names.end(),
+                               [](const std::string& s) { return s == "+FQ" || s == "+FO"; });
+        };
+        if (!areFreqsJustified()) {
+            outError("Error! Specifying frequencies other than +FQ and +FO for MixtureFinder for morphological data is not justified");
+        }
+        
+        auto isMKIncluded = [&]() -> bool {
+            return std::any_of(model_names.begin(), model_names.end(),
+                                [](const std::string& s) { return s == "MK"; });
+        };
+        if (!isMKIncluded()) {
+            outError("Error! Not specifying the MK model for MixtureFinder for morphological data is not justified");
+        }
+        
+        auto isFQIncluded = [&]() -> bool {
+            return std::any_of(freq_names.begin(), freq_names.end(),
+                                [](const std::string& s) { return s == "+FQ"; });
+        };
+        if (!isFQIncluded()) {
+            outError("Error! Not specifying the FQ frequency for MixtureFinder for morphological data is not justified");
+        }
+    }
+    
     auto isOnlyMKAndFQ = [&]() -> bool {
         bool onlyMK = std::all_of(model_names.begin(), model_names.end(),
                                   [](const std::string& s) { return s == "MK"; });
@@ -6562,7 +6647,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
         return onlyMK && onlyFQ;
     };
     if (isOnlyMKAndFQ()) {
-        outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless. Please provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
+        outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless.\nPlease provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
     }
 
     if (iqtree->aln->seq_type == SEQ_DNA) {
@@ -6572,6 +6657,14 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     // Step 1: run ModelFinder
     params.model_name = "";
     bool under_mix_finder = true;
+    
+    string orig_model_set = params.model_set;
+    char *orig_state_freq_set = params.state_freq_set;
+    if (params.morph_mix_finder) {
+        params.model_set = "MK";
+        params.state_freq_set = "+FQ";
+    }
+    
     runModelFinder(params, *iqtree, model_info, best_subst_name, best_rate_name, nest_network, under_mix_finder);
 
     // (cancel) Step 2: do tree search for this single-class model
@@ -6593,6 +6686,11 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     model_info.getString("best_model_list_" + criteria_str, best_model_pre_list);
 
     // Step 3: keep adding a new class until no further improvement
+    if (params.morph_mix_finder) {
+        params.model_set = orig_model_set;
+        params.state_freq_set = orig_state_freq_set;
+    }
+    
     if (params.opt_qmix_criteria == 1) {
         cout << endl << "Keep adding an additional class until the p-value from the likelihood ratio test > " << params.opt_qmix_pthres << endl;
     } else {
@@ -6672,9 +6770,19 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     if (iqtree->isSuperTree())
         outError("Error! The option -m '" + params.model_name + "' cannot work on data set with partitions");
     
-    cout << "--------------------------------------------------------------------" << endl;
-    cout << "|                Running MixtureFinder                             |" << endl;
-    cout << "--------------------------------------------------------------------" << endl;
+    if (params.morph_mix_finder && iqtree->aln->seq_type != SEQ_MORPH) {
+        outError("Error! The option -morph-mix can only work on morphological data set");
+    }
+    
+    if (params.morph_mix_finder) {
+        cout << "--------------------------------------------------------------------" << endl;
+        cout << "|            Running MixtureFinder for morphological data          |" << endl;
+        cout << "--------------------------------------------------------------------" << endl;
+    } else {
+        cout << "--------------------------------------------------------------------" << endl;
+        cout << "|                Running MixtureFinder                             |" << endl;
+        cout << "--------------------------------------------------------------------" << endl;
+    }
 
     // disable the bootstrapping
     int orig_gbo_replicates = params.gbo_replicates;
