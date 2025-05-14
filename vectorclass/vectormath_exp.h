@@ -45,7 +45,6 @@ namespace VCL_NAMESPACE {
 *                 Exponential functions
 ******************************************************************************/
 
-#if !defined(NOSSE)
 // Helper functions, used internally:
 
 // This function calculates pow(2,n) where n must be an integer. Does not check for overflow or underflow
@@ -124,9 +123,6 @@ static inline Vec16f vm_pow2n (Vec16f const & n) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-
-#endif // !defined(NOSSE)
-
 
 // Template for exp function, double precision
 // The limit of abs(x) is defined by max_x below
@@ -305,9 +301,6 @@ static inline VTYPE exp_d(VTYPE const & initial_x) {
     }
 }
 #endif
-
-#if !defined(NOSSE)
-
 // instances of exp_d template
 static inline Vec2d exp(Vec2d const & x) {
     return exp_d<Vec2d, Vec2db, 0, 0>(x);
@@ -364,7 +357,6 @@ static inline Vec8d exp10(Vec8d const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-#endif // !defined(NOSSE)
 
 // Template for exp function, single precision
 // The limit of abs(x) is defined by max_x below
@@ -465,9 +457,6 @@ static Vec16f exp(Vec16f const & x);
 static Vec16f exp2(Vec16f const & x);
 static Vec16f exp10(Vec16f const & x);
 #endif
-
-#if !defined(NOSSE)
-
 // instances of exp_f template
 static inline Vec4f exp(Vec4f const & x) {
 #if defined(__AVX512ER__) && MAX_VECTOR_SIZE >= 512 // use faster 512 bit version
@@ -775,7 +764,6 @@ static inline Vec8d exponent_f(Vec8d const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-#endif // !defined(NOSSE)
 
 
 // log function, double precision
@@ -857,7 +845,6 @@ static inline VTYPE log_d(VTYPE const & initial_x) {
     }
 }
 
-#if !defined(NOSSE)
 
 static inline Vec2d log(Vec2d const & x) {
     return log_d<Vec2d, Vec2db, 0>(x);
@@ -914,7 +901,6 @@ static inline Vec8d log10(Vec8d const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-#endif // !defined(NOSSE)
 
 
 
@@ -996,9 +982,6 @@ static inline VTYPE log_f(VTYPE const & initial_x) {
         return res;
     }
 }
-
-#if !defined(NOSSE)
-
 static inline Vec4f log(Vec4f const & x) {
     return log_f<Vec4f, Vec4i, Vec4fb, Vec4ib, 0>(x);
 }
@@ -1054,8 +1037,6 @@ static inline Vec16f log10(Vec16f const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-#endif // !defined(NOSSE)
-
 
 /******************************************************************************
 *           Cube root and reciprocal cube root
@@ -1120,7 +1101,6 @@ static inline VTYPE cbrt_d(VTYPE const & x) {
     return a;
 }
 
-#if !defined(NOSSE)
 // template instances for cbrt and reciprocal_cbrt
 
 // cube root
@@ -1169,7 +1149,6 @@ static inline Vec8d square_cbrt(Vec8d const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-#endif // !defined(NOSSE)
 
 // cube root template, single precision
 // template parameters:
@@ -1229,7 +1208,6 @@ static inline VTYPE cbrt_f(VTYPE const & x) {
     return a;
 }
 
-#if !defined(NOSSE)
 // template instances for cbrt and reciprocal_cbrt
 
 // cube root
@@ -2172,7 +2150,4 @@ static inline Vec8q nan_code(Vec8d const & x) {
 #ifdef VCL_NAMESPACE
 }
 #endif
-
-#endif
-
 #endif  // VECTORMATH_EXP_H

@@ -61,8 +61,6 @@ namespace VCL_NAMESPACE {
 template <class VTYPE>
 static inline VTYPE infinite_vec();
 
-#if !defined(NOSSE)
-
 template <>
 inline Vec2d infinite_vec<Vec2d>() {
     return infinite2d();
@@ -145,8 +143,6 @@ inline Vec16f nan_vec<Vec16f>(int n) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-
-#endif // !defined(NOSSE)
 
 // Define NAN trace values
 #define NAN_LOG 0x101  // logarithm for x<0
