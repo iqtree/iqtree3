@@ -1405,6 +1405,7 @@ double PhyloTree::computeLikelihoodFromBufferEigenSIMD() {
     #define MEM_ALIGN_END __attribute__((aligned(32)))
 #endif
 
+#ifdef KERNEL_X86
 inline uint32_t fast_popcount(Vec1ui &x) {
     uint32_t val = x.xmm;  // Assuming xmm is a uint32_t or convertible
 //#if defined(__GNUC__) || defined(__clang__)
@@ -1421,6 +1422,8 @@ inline uint32_t fast_popcount(Vec1ui &x) {
     return count;
 //#endif
 }
+#endif
+
 inline UINT fast_popcount(Vec4ui &x) {
     MEM_ALIGN_BEGIN UINT vec[4] MEM_ALIGN_END;
     x.store_a(vec);

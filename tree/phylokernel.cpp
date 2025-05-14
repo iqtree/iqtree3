@@ -35,7 +35,7 @@ void PhyloTree::setDotProductX86() {
 }
 
 void PhyloTree::setLikelihoodKernelX86() {
-    vector_size = 2;
+    vector_size = 1;
     bool site_model = model_factory && model_factory->model->isSiteSpecificModel();
 
     if (site_model && ((model_factory && !model_factory->model->isReversible()) || params->kernel_nonrev))

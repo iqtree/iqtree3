@@ -2082,7 +2082,7 @@ public:
     virtual void setLikelihoodKernelSSE();
 
 #if defined(KERNEL_X86)
-    void setLikelihoodKernelX86();
+     void setLikelihoodKernelX86();
 #endif
     
     /****************************************************************************

@@ -20,7 +20,7 @@
 #include "phylotree.h"
 #include "vectorclass/instrset.h"
 
-#if INSTRSET < 2
+#if INSTRSET < 2 || defined(KERNEL_X86)
 #include "phylokernelnew.h"
 #define KERNEL_FIX_STATES
 #include "phylokernelnew.h"
@@ -65,10 +65,6 @@ void PhyloTree::setParsimonyKernel(LikelihoodKernel lk) {
             setParsimonyKernelAVX();
             return;
         }
-        if (lk == LK_386) {
-            setParsimonyKernelX86();
-            return;
-        }
         if (lk >= LK_SSE2) {
             setParsimonyKernelSSE();
             return;
@@ -84,10 +80,6 @@ void PhyloTree::setParsimonyKernel(LikelihoodKernel lk) {
     }
     if (lk >= LK_AVX) {
         setParsimonyKernelAVX();
-        return;
-    }
-    if (lk == LK_386) {
-        setParsimonyKernelX86();
         return;
     }
     if (lk >= LK_SSE2) {
@@ -119,8 +111,10 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 		setDotProductAVX();
     } else if (lk >= LK_SSE2) {
         setDotProductSSE();
+#ifdef KERNEL_X86
 	} else if (lk == LK_386) {
         setDotProductX86();
+#endif
     } else {
 
 #if INSTRSET < 2
@@ -149,7 +143,15 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         computeLikelihoodDervMixlenPointer = NULL;
         computePartialLikelihoodPointer = NULL;
         computeLikelihoodFromBufferPointer = NULL;
+#ifdef KERNEL_X86
+        if (lk != LK_386){
+            sse = LK_SSE;
+        } else {
+            sse = LK_SSE;
+        }
+#else
         sse = LK_386;
+#endif
 #endif
         return;
     }
@@ -162,11 +164,6 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 //        return;        
 //    }    
 
-    if (lk == LK_386) {
-        // CPU supports x86
-        setLikelihoodKernelX86();
-        return;
-    }
     //--- SIMD kernel ---
     if (lk >= LK_SSE2) {
 #ifdef __AVX512KNL
@@ -187,8 +184,16 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         }
         return;
     }
+#ifdef KERNEL_X86
+        if (lk == LK_386) {
+        // CPU supports x86
+        setLikelihoodKernelX86();
+        return;
+    }
+#endif
 
 #if INSTRSET < 2
+
     //--- naive kernel for site-specific model ---
     if (model_factory && model_factory->model->isSiteSpecificModel()) {
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH, false, true>;

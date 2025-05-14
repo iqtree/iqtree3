@@ -109,7 +109,11 @@ void PhyloTree::init() {
     var_matrix = NULL;
     params = NULL;
 #ifdef KERNEL_X86
-    setLikelihoodKernel(LK_386);
+    if (Params::getInstance().SSE == LK_386){
+        setLikelihoodKernel(LK_386);
+    } else{
+        setLikelihoodKernel(LK_SSE2);
+    }
 #else
     setLikelihoodKernel(LK_SSE2);  // FOR TUNG: you forgot to initialize this variable!
 #endif
