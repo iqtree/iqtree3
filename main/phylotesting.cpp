@@ -6207,18 +6207,6 @@ void addModel(string model_str, string& new_model_str, string new_subst) {
     }
 }
 
-void addModelBack(string model_str, string& new_model_str, string new_subst) {
-    size_t pos;
-    int n;
-    n = getClassNum(model_str);
-    if (n == 1) {
-        new_model_str = "MIX{" + new_subst + "," + new_subst + "}";
-    } else {
-        pos = model_str.find_last_of(',');
-        new_model_str = model_str.substr(0, pos) + "," + new_subst + "," + new_subst + "}";
-    }
-}
-
 // initialise model frequency set in MixtureFinder for different sequence types
 char* initFreqSet(SeqType seq_type) {
     switch (seq_type) {
@@ -6361,7 +6349,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         skip_all_when_drop = false;
     } else if (mixture_action == MA_NUMBER_CLASS) {
       // 2025/05/14 @HS6986
-      // I don't know when MA_NUMBER_CLASS is used and what should be expected in MA_NUMBER_CLASS for morphology!
+      // I don't know when MA_NUMBER_CLASS is used and what should be expected in it for morphology!
         params.ratehet_set = iqtree.getModelFactory()->site_rate->name;
         // generate candidate models for the possible mixture models
         multi_class_str = "";
@@ -6381,7 +6369,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         skip_all_when_drop = true;
       } else if (mixture_action == MA_FIND_CLASS) {
         // 2025/05/14 @HS6986
-        // I don't know when MA_FIND_CLASS is used and what should be expected in MA_FIND_CLASS for morphology!
+        // I don't know when MA_FIND_CLASS is used and what should be expected in it for morphology!
         char* init_state_freq_set = initFreqSet(iqtree.aln->seq_type);
         if (!params.state_freq_set) {
             params.state_freq_set = init_state_freq_set;
@@ -6459,46 +6447,35 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
             }
         }
         
-        for (i=0; i<model_names.size(); i++) {
-            string new_model_str;
-            if (params.morph_mix_finder) {
-                int countGTRX = 0;
-                size_t posGTRX = 0;
-                while (((posGTRX = model_str.find("GTR", posGTRX)) != string::npos)) {
-                    ++countGTRX;
-                    posGTRX += 3;
-                }
-                int countFO = 0;
-                size_t posFO = 0;
-                while (((posFO = model_str.find("+FO", posFO)) != string::npos)) {
-                    ++countFO;
-                    posFO += 3;
-                }
-                if (((model_names[i].length() >= 3 && model_names[i].substr(0, 3) == "GTR") && countGTRX == 0) ||
-                    ((model_names[i].length() >= 3 && model_names[i].substr(model_names[i].length() - 3) == "+FO") && countFO == 0)) {
-                    addModelBack(model_str, new_model_str, model_names[i]);
-                } else {
-                    addModel(model_str, new_model_str, model_names[i]);
-                }
-                int newModelCountGTRX = 0;
-                size_t newModelPosGTRX = 0;
-                while (((newModelCountGTRX = new_model_str.find("GTR", newModelPosGTRX)) != string::npos)) {
-                    ++newModelCountGTRX;
-                    newModelPosGTRX += 3;
-                }
-                int newModelCountFO = 0;
-                size_t newModelPosFO = 0;
-                while (((newModelPosFO = new_model_str.find("+FO", newModelPosFO)) != string::npos)) {
-                    ++newModelCountFO;
-                    newModelPosFO += 3;
-                }
-                if (newModelCountGTRX == 1 || newModelCountFO == 1) {
-                    continue;
-                }
-            } else {
-                addModel(model_str, new_model_str, model_names[i]);
+        if(getClassNum(model_str) == 1 && params.morph_mix_finder) {
+            const char *new_model_strs_two_classes[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
+            for (i=0; i<4; i++) {
+                string new_model_str = new_model_strs_two_classes[i];
+                candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
             }
-            candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
+        } else {
+            for (i=0; i<model_names.size(); i++) {
+                string new_model_str;
+                addModel(model_str, new_model_str, model_names[i]);
+                if (params.morph_mix_finder) {
+                    int newModelCountGTRX = 0;
+                    size_t newModelPosGTRX = 0;
+                    while (((newModelCountGTRX = new_model_str.find("GTR", newModelPosGTRX)) != string::npos)) {
+                        ++newModelCountGTRX;
+                        newModelPosGTRX += 3;
+                    }
+                    int newModelCountFO = 0;
+                    size_t newModelPosFO = 0;
+                    while (((newModelPosFO = new_model_str.find("+FO", newModelPosFO)) != string::npos)) {
+                        ++newModelCountFO;
+                        newModelPosFO += 3;
+                    }
+                    if (newModelCountGTRX == 1 || newModelCountFO == 1) {
+                        continue;
+                    }
+                }
+                candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
+            }
         }
 
         skip_all_when_drop = false;
