@@ -1708,6 +1708,11 @@ public:
     bool opt_rhas_again;
 
     /**
+            whether MixtureFinder optimizes the Q-mixture model for morphological data
+     */
+    bool morph_mix_finder;
+
+    /**
             The method to optimize (and estimating the number of classes in) the Q-mixture model
             Method 1 (Old method)
                 a. Estimate the RHAS model with the GTR+FO model.
