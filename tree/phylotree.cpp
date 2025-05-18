@@ -3384,6 +3384,22 @@ double PhyloTree::correctDist(double *dist_mat) {
     return longest_dist;
 }
 
+double PhyloTree::pairDist(Node *node1, Node *node2, Node *node, Node *dad) {
+    if (!node) return -1;
+
+    if (node == node2) return 0;
+    double branch_len;
+    FOR_NEIGHBOR_IT(node, dad, it) {
+            branch_len = (*it)->length;
+            double current_len = pairDist(node1, node2, (*it)->node, node);
+            if (current_len != -1) {
+                return current_len + branch_len;
+            }
+        }
+    return -1;
+}
+
+
 template <class L, class F> double computeDistanceMatrix
     ( LEAST_SQUARE_VAR vartype
     , L unknown, const L* sequenceMatrix, int nseqs, int seqLen

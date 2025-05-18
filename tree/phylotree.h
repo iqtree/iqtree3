@@ -1777,6 +1777,17 @@ public:
      */
     double correctDist(double *dist_mat);
 
+    /**
+    compute the distance between two nodes on a tree.
+    @param node1 node 1.
+    @param node2 node 2.
+    @param node the starting node, NULL to start from the node1
+    @param dad dad of the node, used to direct the search
+    @return the distance between two nodes on the tree
+    */
+    double pairDist(Node *node1, Node *node2, Node *node = NULL, Node *dad = NULL);
+
+
     /****************************************************************************
             compute BioNJ tree, a more accurate extension of Neighbor-Joining
      ****************************************************************************/

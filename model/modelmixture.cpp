@@ -1361,6 +1361,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
 				else
 					model = (ModelMarkov*)createModel(this_name, models_block, FREQ_USER_DEFINED, freq_vec[f]->description, tree);
 				model->total_num_subst = rate * freq_rates[f];
+				if (Params::getInstance().optimize_mixmodel_freq)
+					model->freq_type = FREQ_ESTIMATE;
 				push_back(model);
 				weights.push_back(weight * freq_weights[f]);
 				if (m+f > 0) {
@@ -1436,6 +1438,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
                 model->name += "+F" + nxsmodel_freq_name + "";
                 model->full_name += "+F" + nxsmodel_freq_name + "";
             }
+            if (Params::getInstance().optimize_mixmodel_freq)
+                model->freq_type = FREQ_ESTIMATE;
 			push_back(model);
 			weights.push_back(weight);
 			if (m > 0) {

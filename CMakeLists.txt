@@ -116,7 +116,7 @@ find_package(Backtrace)
 # The version number.
 set (iqtree_VERSION_MAJOR 3)
 set (iqtree_VERSION_MINOR 0)
-set (iqtree_VERSION_PATCH ".1")
+set (iqtree_VERSION_PATCH ".1.1")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 
