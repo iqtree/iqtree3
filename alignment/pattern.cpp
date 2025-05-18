@@ -64,24 +64,30 @@ int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
 #if VECTORIZE_GAPCHAR_COUNT
     //This won't compile unless value_type is based on uint32_t
     //(nor should it! You'd need to use different vector types!)
-    const uint32_t* dataStart = data();
-    size_type  count   = size();
-    size_type  vecSize = Vec8ui::size();
-    Vec8ui     unknown = STATE_UNKNOWN;
-    const uint32_t* dataStop   = dataStart + count;
-    const uint32_t* blockStop  = dataStop - (count & (vecSize-1));
-    for (const uint32_t* block=dataStart; block<blockStop; block+=vecSize) {
-        Vec8ui a;
-        a.load(block);
-        num -= horizontal_add( Vec8ui(a == unknown) );
-    }
-    for (const uint32_t* single=blockStop; single<dataStop; ++single) {
-        if (*single == STATE_UNKNOWN) {
-            ++num;
+    if (Params::getInstance().SSE != LK_386){
+        const uint32_t* dataStart = data();
+        size_type  count   = size();
+        size_type  vecSize = Vec8ui::size();
+        Vec8ui     unknown = STATE_UNKNOWN;
+        const uint32_t* dataStop   = dataStart + count;
+        const uint32_t* blockStop  = dataStop - (count & (vecSize-1));
+        for (const uint32_t* block=dataStart; block<blockStop; block+=vecSize) {
+            Vec8ui a;
+            a.load(block);
+            num -= horizontal_add( Vec8ui(a == unknown) );
+        }
+        for (const uint32_t* single=blockStop; single<dataStop; ++single) {
+            if (*single == STATE_UNKNOWN) {
+                ++num;
+            }
         }
     }
+    else{
+        for (const_iterator i = begin(); i != end(); i++)
+            if (*i == STATE_UNKNOWN) num++;
+    }
 #else
-    for (iterator i = begin(); i != end(); i++)
+    for (const_iterator i = begin(); i != end(); i++)
         if (*i == STATE_UNKNOWN) num++;
 #endif
     return num;

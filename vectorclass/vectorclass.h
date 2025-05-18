@@ -34,9 +34,16 @@
 
 #include "instrset.h"        // Select supported instruction set
 
+
 #if INSTRSET < 2             // SSE2 required
   #error Please compile for the SSE2 instruction set or higher
 #else
+
+#ifdef KERNEL_X86
+#include "vectorf64.h"
+#include "vectorf32.h"      // 32-bit floating point vectors
+#include "vectori32.h"      // 32-bit integer vectors
+#endif
 
 #include "vectori128.h"      // 128-bit integer vectors
 #include "vectorf128.h"      // 128-bit floating point vectors
@@ -62,7 +69,7 @@
   #include "vectori512e.h"   // 512-bit integer vectors, emulated
   #include "vectorf512e.h"   // 512-bit floating point vectors, emulated
 #endif  //  INSTRSET >= 9
-#endif  //  MAX_VECTOR_SIZE >= 512
+#endif  //  MAX_VECTOR_SIZE >= 512tree
 
 #endif  // INSTRSET >= 2
 

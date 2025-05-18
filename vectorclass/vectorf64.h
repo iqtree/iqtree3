@@ -15,6 +15,8 @@
 
 //typedef int64_t Vec1db;
 //typedef bool Vec1db;
+#include <cmath>
+#include <algorithm>
 
 
 /*****************************************************************************
@@ -312,12 +314,12 @@ static inline double horizontal_add (Vec1d const & a) {
 
 // function max: a > b ? a : b
 static inline Vec1d max(Vec1d const & a, Vec1d const & b) {
-    return max(a.xmm,b.xmm);
+    return std::max(a.xmm,b.xmm);
 }
 
 // function min: a < b ? a : b
 static inline Vec1d min(Vec1d const & a, Vec1d const & b) {
-    return min(a.xmm,b.xmm);
+    return std::min(a.xmm,b.xmm);
 }
 
 
@@ -345,7 +347,7 @@ static inline Vec1d mul_sub(Vec1d const & a, Vec1d const & b, Vec1d const & c) {
     return a * b - c;
 }
 
-// Multiply and inverse subtract
+// Multiply and inverse subtract //todo:
 static inline Vec1d nmul_add(Vec1d const & a, Vec1d const & b, Vec1d const & c) {
     return c - a * b;
 }

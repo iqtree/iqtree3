@@ -20,11 +20,12 @@
 #include "phylotree.h"
 #include "vectorclass/instrset.h"
 
-#if INSTRSET < 2
+#if INSTRSET < 2 || defined(KERNEL_X86)
 #include "phylokernelnew.h"
 #define KERNEL_FIX_STATES
 #include "phylokernelnew.h"
 #include "vectorclass/vectorf64.h"
+#include "vectorclass/vectorf32.h"
 #endif
 
 //#include "phylokernel.h"
@@ -110,13 +111,16 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 		setDotProductAVX();
     } else if (lk >= LK_SSE2) {
         setDotProductSSE();
-	} else {
+#ifdef KERNEL_X86
+	} else if (lk == LK_386) {
+        setDotProductX86();
+#endif
+    } else {
 
 #if INSTRSET < 2
 #ifdef BOOT_VAL_FLOAT
-        // TODO naive dot-product for float
-        ASSERT(0 && "Not supported, contact developer");
-//		dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
+//        ASSERT(0 && "Not supported, contact developer");
+		dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
 #else
 		dotProduct = &PhyloTree::dotProductSIMD<double, Vec1d>;
 #endif
@@ -139,7 +143,15 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         computeLikelihoodDervMixlenPointer = NULL;
         computePartialLikelihoodPointer = NULL;
         computeLikelihoodFromBufferPointer = NULL;
+#ifdef KERNEL_X86
+        if (lk != LK_386){
+            sse = LK_SSE;
+        } else {
+            sse = LK_SSE;
+        }
+#else
         sse = LK_386;
+#endif
 #endif
         return;
     }
@@ -166,20 +178,28 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         } else if (lk >= LK_AVX) {
             // CPU supports AVX
             setLikelihoodKernelAVX();
-        } else {
+        }else {
             // SSE kernel
             setLikelihoodKernelSSE();
         }
         return;
     }
+#ifdef KERNEL_X86
+        if (lk == LK_386) {
+        // CPU supports x86
+        setLikelihoodKernelX86();
+        return;
+    }
+#endif
 
 #if INSTRSET < 2
+
     //--- naive kernel for site-specific model ---
     if (model_factory && model_factory->model->isSiteSpecificModel()) {
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericSIMD<Vec1d, SAFE_LH, false, true>;
-        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, SAFE_LH, false, true>;
+        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, false, true>;
         return;
     }
 

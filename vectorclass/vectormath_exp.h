@@ -124,7 +124,6 @@ static inline Vec16f vm_pow2n (Vec16f const & n) {
 
 #endif // MAX_VECTOR_SIZE >= 512
 
-
 // Template for exp function, double precision
 // The limit of abs(x) is defined by max_x below
 // This function does not produce denormals
@@ -302,7 +301,6 @@ static inline VTYPE exp_d(VTYPE const & initial_x) {
     }
 }
 #endif
-
 // instances of exp_d template
 static inline Vec2d exp(Vec2d const & x) {
     return exp_d<Vec2d, Vec2db, 0, 0>(x);
@@ -459,7 +457,6 @@ static Vec16f exp(Vec16f const & x);
 static Vec16f exp2(Vec16f const & x);
 static Vec16f exp10(Vec16f const & x);
 #endif
-
 // instances of exp_f template
 static inline Vec4f exp(Vec4f const & x) {
 #if defined(__AVX512ER__) && MAX_VECTOR_SIZE >= 512 // use faster 512 bit version
@@ -985,7 +982,6 @@ static inline VTYPE log_f(VTYPE const & initial_x) {
         return res;
     }
 }
-
 static inline Vec4f log(Vec4f const & x) {
     return log_f<Vec4f, Vec4i, Vec4fb, Vec4ib, 0>(x);
 }
@@ -1041,7 +1037,6 @@ static inline Vec16f log10(Vec16f const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-
 
 /******************************************************************************
 *           Cube root and reciprocal cube root
@@ -1154,7 +1149,6 @@ static inline Vec8d square_cbrt(Vec8d const & x) {
 }
 
 #endif // MAX_VECTOR_SIZE >= 512
-
 
 // cube root template, single precision
 // template parameters:
@@ -2156,5 +2150,4 @@ static inline Vec8q nan_code(Vec8d const & x) {
 #ifdef VCL_NAMESPACE
 }
 #endif
-
 #endif  // VECTORMATH_EXP_H

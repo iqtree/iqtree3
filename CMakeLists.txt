@@ -265,6 +265,13 @@ else()
     message("Integrate CMAPLE_AA: OFF")
 endif()
 
+if (KERNEL_X86)
+    message("Kernel x86 detected")
+    add_definitions(-DKERNEL_X86)
+endif ()
+
+
+
 ##################################################################
 # Detect target platforms
 ##################################################################
@@ -652,7 +659,6 @@ elseif (ICC)
 endif()
 
 # further flag to improve performance
-
 if (IQTREE_FLAGS MATCHES "fma") # AVX+FMA instruction set
     message("Vectorization : AVX+FMA")
     add_definitions(-D__SSE3 -D__AVX) # define both SSE3 and AVX directive
@@ -819,6 +825,10 @@ endif()
 
 add_library(kernelsse tree/phylokernelsse.cpp)
 
+if (KERNEL_X86)
+    add_library(kernelx86 tree/phylokernel.cpp)
+endif ()
+
 if (NOT IQTREE_FLAGS MATCHES "novx")
 add_library(kernelavx tree/phylotreeavx.cpp)
 add_library(kernelfma tree/phylokernelfma.cpp)
@@ -962,10 +972,19 @@ if (USE_LSD2)
     endif()
 endif()
 
+
 if (NOT IQTREE_FLAGS MATCHES "nosse")
     target_link_libraries(iqtree3 kernelsse)
     if (USE_CMAPLE_AA STREQUAL "ON")
-    	target_link_libraries(iqtree3-aa kernelsse)
+        target_link_libraries(iqtree3-aa kernelsse)
+    endif()
+endif()
+
+
+if (KERNEL_X86)
+    target_link_libraries(iqtree3 kernelx86)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa kernelx86)
     endif()
 endif()
 
