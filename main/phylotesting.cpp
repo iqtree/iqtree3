@@ -6464,6 +6464,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
                 return std::any_of(freq_names.begin(), freq_names.end(),
                     [](const std::string& s) { return s == "+FO"; });
             };
+            size_t new_model_strs_two_classes_len = (isGTRXIncluded() && isFOIncluded()) ? 4 : 2;
             const char *new_model_strs_two_classes_GTRX_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
             const char *new_model_strs_two_classes_GTRX[] = {"MIX{MK+FQ,MK+FQ}", "MIX{GTRX+FQ,GTRX+FQ}"};
             const char *new_model_strs_two_classes_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}"};
@@ -6474,7 +6475,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
                         ? new_model_strs_two_classes_GTRX
                         : new_model_strs_two_classes_FO;
             
-            for (i=0; i<new_model_strs_two_classes.length(); i++) {
+            for (i=0; i<new_model_strs_two_classes_len; i++) {
                 string new_model_str = new_model_strs_two_classes[i];
                 candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
             }
