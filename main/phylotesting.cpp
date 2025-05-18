@@ -6463,7 +6463,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
                 return std::any_of(freq_names.begin(), freq_names.end(),
                     [](const std::string& s) { return s == "+FO"; });
             };
-            char *new_model_strs_two_classes[] =
+            const char *new_model_strs_two_classes[] =
                 (isGTRXIncluded() && isFOIncluded())
                     ? {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"}
                     : (isGTRXIncluded())
