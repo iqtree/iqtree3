@@ -6455,8 +6455,22 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         }
         
         if(getClassNum(model_str) == 1 && params.morph_mix_finder) {
-            const char *new_model_strs_two_classes[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
-            for (i=0; i<4; i++) {
+            auto isGTRXIncluded = [&]() -> bool {
+                return std::any_of(orig_model_names.begin(), orig_model_names.end(),
+                    [](const std::string& s) { return s == "GTRX" || s == "GTR"; });
+            };
+            auto isFOIncluded = [&]() -> bool {
+                return std::any_of(freq_names.begin(), freq_names.end(),
+                    [](const std::string& s) { return s == "+FO"; });
+            };
+            char *new_model_strs_two_classes[] =
+                (isGTRXIncluded() && isFOIncluded())
+                    ? {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"}
+                    : (isGTRXIncluded())
+                        ? {"MIX{MK+FQ,MK+FQ}", "MIX{GTRX+FQ,GTRX+FQ}"}
+                        : {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}"};
+            
+            for (i=0; i<new_model_strs_two_classes.length(); i++) {
                 string new_model_str = new_model_strs_two_classes[i];
                 candidate_models.push_back(CandidateModel(new_model_str, best_rate_name, iqtree.aln, 0));
             }
@@ -6591,7 +6605,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     if (params.morph_mix_finder) {
         auto areRatesJustified = [&]() -> bool {
             return std::all_of(model_names.begin(), model_names.end(),
-                               [](const std::string& s) { return s == "MK" || s == "GTRX" || s == "GTR"; });
+                [](const std::string& s) { return s == "MK" || s == "GTRX" || s == "GTR"; });
         };
         if (!areRatesJustified()) {
             outError("Error! Specifying models other than MK and GTRX for MixtureFinder for morphological data is not justified");
@@ -6599,7 +6613,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
         
         auto areFreqsJustified = [&]() -> bool {
             return std::all_of(freq_names.begin(), freq_names.end(),
-                               [](const std::string& s) { return s == "+FQ" || s == "+FO"; });
+                [](const std::string& s) { return s == "+FQ" || s == "+FO"; });
         };
         if (!areFreqsJustified()) {
             outError("Error! Specifying frequencies other than +FQ and +FO for MixtureFinder for morphological data is not justified");
@@ -6607,7 +6621,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
         
         auto isMKIncluded = [&]() -> bool {
             return std::any_of(model_names.begin(), model_names.end(),
-                                [](const std::string& s) { return s == "MK"; });
+                [](const std::string& s) { return s == "MK"; });
         };
         if (!isMKIncluded()) {
             outError("Error! Not specifying the MK model for MixtureFinder for morphological data is not justified");
@@ -6615,7 +6629,7 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
         
         auto isFQIncluded = [&]() -> bool {
             return std::any_of(freq_names.begin(), freq_names.end(),
-                                [](const std::string& s) { return s == "+FQ"; });
+                [](const std::string& s) { return s == "+FQ"; });
         };
         if (!isFQIncluded()) {
             outError("Error! Not specifying the FQ frequency for MixtureFinder for morphological data is not justified");
@@ -6624,9 +6638,9 @@ void runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mode
     
     auto isOnlyMKAndFQ = [&]() -> bool {
         bool onlyMK = std::all_of(model_names.begin(), model_names.end(),
-                                  [](const std::string& s) { return s == "MK"; });
+            [](const std::string& s) { return s == "MK"; });
         bool onlyFQ = std::all_of(freq_names.begin(), freq_names.end(),
-                                  [](const std::string& s) { return s == "+FQ"; });
+            [](const std::string& s) { return s == "+FQ"; });
         return onlyMK && onlyFQ;
     };
     if (isOnlyMKAndFQ()) {
