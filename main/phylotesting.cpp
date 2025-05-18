@@ -6425,6 +6425,7 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         
         getModelSubst(iqtree.aln->seq_type, iqtree.aln->isStandardGeneticCode(), params.model_name,
                       params.model_set, params.model_subset, model_names);
+        StrVector model_names_orig = model_names;
 
         if (model_names.empty())
             return best_model; // empty
@@ -6456,19 +6457,22 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
         
         if(getClassNum(model_str) == 1 && params.morph_mix_finder) {
             auto isGTRXIncluded = [&]() -> bool {
-                return std::any_of(orig_model_names.begin(), orig_model_names.end(),
+                return std::any_of(model_names_orig.begin(), model_names_orig.end(),
                     [](const std::string& s) { return s == "GTRX" || s == "GTR"; });
             };
             auto isFOIncluded = [&]() -> bool {
                 return std::any_of(freq_names.begin(), freq_names.end(),
                     [](const std::string& s) { return s == "+FO"; });
             };
-            const char *new_model_strs_two_classes[] =
+            const char *new_model_strs_two_classes_GTRX_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
+            const char *new_model_strs_two_classes_GTRX[] = {"MIX{MK+FQ,MK+FQ}", "MIX{GTRX+FQ,GTRX+FQ}"};
+            const char *new_model_strs_two_classes_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}"};
+            const char **new_model_strs_two_classes =
                 (isGTRXIncluded() && isFOIncluded())
-                    ? {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"}
+                    ? new_model_strs_two_classes_GTRX_FO
                     : (isGTRXIncluded())
-                        ? {"MIX{MK+FQ,MK+FQ}", "MIX{GTRX+FQ,GTRX+FQ}"}
-                        : {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}"};
+                        ? new_model_strs_two_classes_GTRX
+                        : new_model_strs_two_classes_FO;
             
             for (i=0; i<new_model_strs_two_classes.length(); i++) {
                 string new_model_str = new_model_strs_two_classes[i];
