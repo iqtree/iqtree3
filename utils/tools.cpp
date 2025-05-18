@@ -1258,12 +1258,10 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.model_test_and_tree = 0;
     params.model_test_separate_rate = false;
     params.optimize_mixmodel_weight = false;
-    params.optimize_mixmodel_freq = false;
     params.optimize_rate_matrix = false;
     params.store_trans_matrix = false;
     params.parallel_over_sites = false;
     params.order_by_threads = false;
-    params.write_freq_chkpt = false;
     //params.freq_type = FREQ_EMPIRICAL;
     params.freq_type = FREQ_UNKNOWN;
     params.keep_zero_freq = true;
@@ -3478,10 +3476,6 @@ void parseArg(int argc, char *argv[], Params &params) {
 				params.optimize_mixmodel_weight = true;
 				continue;
 			}
-			if (strcmp(argv[cnt], "-mfopt") == 0 || strcmp(argv[cnt], "--mfopt") == 0) {
-				params.optimize_mixmodel_freq = true;
-				continue;
-			}
 			if (strcmp(argv[cnt], "--opt-rate-mat") == 0) {
 				params.optimize_rate_matrix = true;
 				continue;
@@ -3497,10 +3491,6 @@ void parseArg(int argc, char *argv[], Params &params) {
                 continue;
             }
 
-            if (strcmp(argv[cnt], "-writefreqchkpt") == 0 || strcmp(argv[cnt], "--writefreqchkpt") == 0) {
-                params.write_freq_chkpt = true;
-                continue;
-            }
 
 
 //			if (strcmp(argv[cnt], "-mh") == 0) {

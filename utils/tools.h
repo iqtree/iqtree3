@@ -1649,12 +1649,6 @@ public:
     /** TRUE to optimize mixture model weights */
     bool optimize_mixmodel_weight;
 
-    /** TRUE to optimize mixture model nucleotide/amino acid frequency */
-    bool optimize_mixmodel_freq;
-    
-    /** TRUE to force writing out the nucleotide/amino acid frequency to the checkpoint file */
-    bool write_freq_chkpt;
-
     /** number of mixture branch lengths, default 1 */
     int num_mixlen;
     /** TRUE to always optimize rate matrix even if user parameters are specified in e.g. GTR{1,2,3,4,5} */
