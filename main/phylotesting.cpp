@@ -6464,10 +6464,10 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
                 return std::any_of(freq_names.begin(), freq_names.end(),
                     [](const std::string& s) { return s == "+FO"; });
             };
-            size_t new_model_strs_two_classes_len = (isGTRXIncluded() && isFOIncluded()) ? 4 : 2;
-            const char *new_model_strs_two_classes_GTRX_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
-            const char *new_model_strs_two_classes_GTRX[] = {"MIX{MK+FQ,MK+FQ}", "MIX{GTRX+FQ,GTRX+FQ}"};
-            const char *new_model_strs_two_classes_FO[] = {"MIX{MK+FQ,MK+FQ}", "MIX{MK+FO,MK+FO}"};
+            size_t new_model_strs_two_classes_len = (isGTRXIncluded() && isFOIncluded()) ? 3 : 1;
+            const char *new_model_strs_two_classes_GTRX_FO[] = {"MIX{MK+FO,MK+FO}", "MIX{GTRX+FQ,GTRX+FQ}", "MIX{GTRX+FO,GTRX+FO}"};
+            const char *new_model_strs_two_classes_GTRX[] = {"MIX{GTRX+FQ,GTRX+FQ}"};
+            const char *new_model_strs_two_classes_FO[] = {"MIX{MK+FO,MK+FO}"};
             const char **new_model_strs_two_classes =
                 (isGTRXIncluded() && isFOIncluded())
                     ? new_model_strs_two_classes_GTRX_FO
