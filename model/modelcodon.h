@@ -30,6 +30,9 @@ const int CA_TRANSITION_1NT   = 512; // codon substitution involve the 1st NT wh
 const int CA_TRANSITION_2NT   = 1024; // codon substitution involve the 2nd NT which is also a transversion
 const int CA_TRANSITION_3NT   = 2048; // codon substitution involve the 3rd NT which is also a transversion
 
+const double MIN_OMEGA_KAPPA = 0.001;
+const double MAX_OMEGA_KAPPA = 50.0;
+
 /**
  * Codon substitution models
  */
@@ -92,6 +95,12 @@ public:
 		decompose the rate matrix into eigenvalues and eigenvectors
 	*/
 	virtual void decomposeRateMatrix();
+    
+    /**
+     * compute Q matrix
+     * @param q_mat (OUT) Q matrix, assuming of size num_states * num_states
+     */
+    virtual void getQMatrix(double *q_mat, int mixture = 0);
 
 	/**
 	 * read codon model from a stream, modying rates and state_freq accordingly
@@ -145,6 +154,9 @@ public:
 
     /** dn/ds rate ratio */
     double omega;
+    
+    double min_omega = MIN_OMEGA_KAPPA;
+    double max_omega = MAX_OMEGA_KAPPA;
     
     /** TRUE to fix omega, default: FALSE */
     bool fix_omega; 

@@ -91,14 +91,8 @@ inline void _my_assert(const char* expression, const char *func, const char* fil
     #elif defined(__clang__)
         // libc++ detected:     _LIBCPP_VERSION
         // libstdc++ detected:  __GLIBCXX__
-        #if __has_include(<unordered_map>) // defines _LIBCPP_VERSION
-            #include <unordered_map>
-            #include <unordered_set>
-        #else
-            #include <tr1/unordered_map>
-            #include <tr1/unordered_set>
-            using namespace std::tr1;    
-        #endif
+        #include <unordered_map>
+        #include <unordered_set>
 	#elif !defined(__GNUC__)
 		#include <hash_map>
 		#include <hash_set>
@@ -213,6 +207,12 @@ enum SEQ_CHUNK_STATUS {
     OCCUPIED,
     WRITING,
     READING
+};
+
+enum MCMC_CLOCK{
+    EQUAL_RATES = 1,
+    INDEPENDENT = 2,
+    CORRELATED = 3
 };
 
 struct IndelDistribution {
@@ -343,7 +343,9 @@ typedef unsigned int UINT;
 /**
         run mode of program
  */
-enum RunMode {
+// adapted by TD; using scoped enumerations due to redeclaration error with onnxruntime
+// https://en.cppreference.com/w/cpp/language/enum#Scoped_enumerations
+enum class RunMode {
     DETECTED, GREEDY, PRUNING, BOTH_ALG, EXHAUSTIVE, DYNAMIC_PROGRAMMING,
     CALC_DIST, PD_USER_SET, PRINT_TAXA, PRINT_AREA, SCALE_BRANCH_LEN,
     SCALE_NODE_NAME, PD_DISTRIBUTION, LINEAR_PROGRAMMING, STATS //, GBO, MPRO
@@ -382,9 +384,12 @@ const int WT_BR_ID = 512;
 const int WT_BR_LEN_ROUNDING = 1024;
 const int WT_BR_LEN_SHORT = 2048; // store only 6 digits after the comma for branch lengths
 const int WT_BR_ATTR = 4096; // print branch attributes
+const double ONE_THIRD = 1.0 / 3.0;
+
+#if ! (defined WIN32 || defined _WIN32 || defined __WIN32__ || defined WIN64)
 const int TRUE = 1;
 const int FALSE = 0;
-const double ONE_THIRD = 1.0 / 3.0;
+#endif
 
 /**
  *  Specify different ways of doing an NNI.
@@ -604,8 +609,6 @@ const double MIN_GAMMA_RATE = 1e-6;
 const double MIN_GAMMA_SHAPE = 0.02;
 const double MAX_GAMMA_SHAPE = 1000.0;
 const double TOL_GAMMA_SHAPE = 0.001;
-// change to 0.04 for tree mixture model as 0.02 and 0.03 cause numerical problems
-const double MIN_GAMMA_SHAPE_TREEMIX = 0.04;
 
 
 /** maximum number of newton-raphson steps for NNI branch evaluation */
@@ -766,6 +769,11 @@ public:
 	 */
 	double modelEps;
     
+    /**
+     * logl epsilon for fundi model parameter optimization
+     */
+    double fundiEps;
+
     /**
      logl epsilon for ModelFinder
      */
@@ -1590,6 +1598,9 @@ public:
      */
     string model_name;
 
+    /** contain non-reversible model */
+    bool contain_nonrev;
+
     /** model name to initialize GTR20 or NONREV protein model */
     char* model_name_init;
 
@@ -1632,6 +1643,12 @@ public:
 
     /** true to fist test equal rate model, then test rate heterogeneity (default: false) */
     bool model_test_separate_rate;
+
+    /** force to parallelisation over sites */
+    bool parallel_over_sites;
+
+    /** force to parall over partition and order by threads(fill the scheduling by threads) **/
+    bool order_by_threads;
 
     /** TRUE to optimize mixture model weights */
     bool optimize_mixmodel_weight;
@@ -1683,7 +1700,7 @@ public:
             maximum number of classes in mixture model
      */
     int max_mix_cats;
-    
+
     /**
             the starting model (i.e. substitution model + freq) for each class of Q-mixture model
      */
@@ -1712,13 +1729,13 @@ public:
                 e. Do a final tree search.
      */
     int opt_qmix_method;
-    
+
     /**
             The criteria to identify the best number of classes in the Q-mixture model.
             1: likelihood-ratio test (default); 2: information criteria, like AIC, BIC, etc.
      */
     int opt_qmix_criteria;
-    
+
     /**
         The p-value threshold used to optimize the Q-Mixture model when likelihood-ratio test is applied (i.e. opt_qmix_criteria = 1). Default = 0.05
      */
@@ -1777,7 +1794,7 @@ public:
      *  Optimization algorithm for q-mixture model
      */
     string optimize_alg_qmix;
-    
+
     /**
      * non-zero if want to estimate the initial frequency vectors for q-mixture model
      */
@@ -1815,7 +1832,7 @@ public:
 
     /** maximum branch length for optimization, default 100 */
     double max_branch_length;
-    
+
     /** optimize the parameters according to the HMM model (HMMSTER) */
     bool optimize_params_use_hmm;
 
@@ -1836,7 +1853,7 @@ public:
 
     /** minimum value allowed for HMM transition probability between the same tree (category) */
     double HMM_min_stran;
-    
+
     /** optimization methods: hmm / hmm2mast / mast2hmm / mast */
     string treemix_optimize_methods;
 
@@ -1989,7 +2006,7 @@ public:
 
     /** TRUE to print partition log-likelihood, default: FALSE */
     bool print_partition_lh;
-    
+
     /** TRUE to print the marginal probability for HMM model, default: FALSE */
     bool print_marginal_prob;
 
@@ -2385,7 +2402,7 @@ public:
     bool link_model;
 
     /** name of the joint model across partitions */
-    char* model_joint;
+    string model_joint;
     
 	/** true to count all distinct trees visited during tree search */
 	bool count_trees;
@@ -2479,8 +2496,20 @@ public:
 	bool ufboot2corr; // to turn on the correction mode for UFBoot under model violations, enable by "-bb <nrep> -correct
 	bool u2c_nni5; // to use NNI5 during Refinement Step of UFBoot2-Corr
 
-    /** method for phylogenetic dating, currently only LSD is supported */
+    /** method for phylogenetic dating, currently LSD and MCMCTree approximate likelihood method are supported */
     string dating_method;
+
+    /** flag for phylogenetic dating with MCMCtree with modelFinder */
+    bool dating_mf;
+
+    /** the rate model for MCMCtree (Global/Equal, Independent and Correlated clock models are supported) */
+    int mcmc_clock;
+
+    /** Birth, death and sampling parameters for MCMCtree */
+    string mcmc_bds;
+
+    /** parameters for MCMC sampling under MCMCtree which includes burnin, samplefreq and nsample*/
+    string mcmc_iter;
 
     /** extra commands passed to the dating method */
     string dating_options;
@@ -2517,6 +2546,20 @@ public:
 
     /** supress notes about duplicate sequences */
     double suppress_duplicate_sequence_warnings;
+
+    /** flag for using neural network for model selection */
+    bool use_nn_model; // added by TD
+
+    /** neural network file that determines substitution model (onnx format) */
+    string nn_path_model; // added by TD
+
+    /** neural network file that determines alpha rate (onnx format) */
+    string nn_path_rates; // added by TD
+
+    /**
+    *  TRUE if multiple random streams are used
+    */
+    bool multi_rstreams_used;
     
     /**
     *  TRUE to execute alisim
@@ -2605,7 +2648,17 @@ public:
     *  fundi model - proportion
     */
     double alisim_fundi_proportion;
-    
+
+    /**
+    *  fundi model - initial proportion for optimisation
+    */
+    double fundi_init_proportion;
+
+    /**
+    *  fundi model - initial branch length for optimisation
+    */
+    double fundi_init_branch_length;
+
     /**
     *  distribution_definition_file
     */
@@ -2745,57 +2798,75 @@ public:
     *  TRUE to include predefined mutations
     */
     bool include_pre_mutations;
-    
+
     /**
     *  Alignment index, which was used to generate different random seed for each alignment when simulating multiple alignments
     */
     int alignment_id;
-    
+
     /**
     *  The inference algorithm
     */
     INFERENCE_ALG inference_alg;
-    
+
     /**
     *  Format of the input alignment
     */
     std::string in_aln_format_str;;
-    
+
     /**
      @private
     *  type of tree search (for CMaple)
     */
     std::string tree_search_type_str;
-    
+
     /**
      @private
     *  TRUE to run an additional short range search for tree topology improvement (for CMaple)
     */
     bool shallow_tree_search;
-    
+
     /**
      @private
     *  TRUE to allow replace the input tree by its NNI neighbor (with a higher lh) when computing aLRT-SH
     */
     bool allow_replace_input_tree;
-    
+
     /**
      @private
     *  format of the output tree
     */
     std::string tree_format_str;
-    
+
     /**
      * @private
      * TRUE to make the processes of outputting->re-inputting a tree consistent
      */
     bool make_consistent;
+    
+    /**
+     * @private
+     * TRUE to compute the SPRTA branch supports
+     */
+    bool compute_SPRTA;
+
+    /**
+     * @private
+     * TRUE to compute the SPRTA for zero-length branches
+     */
+    bool SPRTA_zero_branches;
+
+    /**
+     * @private
+     * TRUE to output the alternative SPRs with their supports in the tree
+     */
+    bool out_alter_spr;
 
     /**
     *  Mutation file that specifies pre-defined mutations occurs at nodes
     */
     std::string mutation_file;
-    
+
     /**
     *  site starting index (for predefined mutations in AliSim)
     */
@@ -3371,6 +3442,8 @@ double computePValueChiSquare(double x, int df);
 /*--------------------------------------------------------------*/
 
 extern int *randstream;
+extern vector<int*> rstream_vec;
+extern vector<default_random_engine> generator_vec;
 
 /**
  * initialize the random number generator
@@ -3383,6 +3456,17 @@ int init_random(int seed, bool write_info = false, int** rstream = NULL);
  * finalize random number generator (e.g. free memory
  */
 int finish_random(int *rstream = NULL);
+
+/**
+ * initialize multiple random streams
+ * @return the number of streams
+ */
+int init_multi_rstreams();
+
+/**
+ * finish multiple random streams
+ */
+int finish_multi_rstreams();
 
 /**
  * returns a random integer in the range [0; n - 1]

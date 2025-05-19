@@ -27,6 +27,7 @@ PartitionModel::PartitionModel()
 {
 	linked_alpha = -1.0;
     opt_gamma_invar = false;
+    partLike = NULL;
 }
 
 PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock *models_block)
@@ -43,6 +44,9 @@ PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock
 	model = new ModelSubst(tree->aln->num_states);
 	site_rate = new RateHeterogeneity();
 	site_rate->setTree(tree);
+    
+    // create an array to store the log-likelihood for each partition
+    partLike = new double[tree->size()];
 
 //    string model_name = params.model_name;
     PhyloSuperTree::iterator it;
@@ -61,21 +65,25 @@ PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock
         string model_name = (*it)->aln->model_name;
         if (model_name == "") // if empty, take model name from command option
         	model_name = params.model_name;
-        (*it)->setModelFactory(new ModelFactory(params, model_name, (*it), models_block));
-        (*it)->setModel((*it)->getModelFactory()->model);
-        (*it)->setRate((*it)->getModelFactory()->site_rate);
+        if ((*it)->isTreeMix()) {
+            ((IQTreeMixHmm*)(*it))->initializeModel(params, model_name, models_block);
+        } else {
+            (*it)->setModelFactory(new ModelFactory(params, model_name, (*it), models_block));
+            (*it)->setModel((*it)->getModelFactory()->model);
+            (*it)->setRate((*it)->getModelFactory()->site_rate);
 
-        // link models between partitions
-        if (params.link_model) {
-            (*it)->getModel()->fixParameters(true);
-            if (linked_models.find((*it)->getModel()->getName()) == linked_models.end()) {
-                linked_models[(*it)->getModel()->getName()] = (*it)->getModel();
+            // link models between partitions
+            if (params.link_model) {
+                (*it)->getModel()->fixParameters(true);
+                if (linked_models.find((*it)->getModel()->getName()) == linked_models.end()) {
+                    linked_models[(*it)->getModel()->getName()] = (*it)->getModel();
+                }
+            } else if ((*it)->aln->getNSeq() < tree->aln->getNSeq() && params.partition_type != TOPO_UNLINKED &&
+                       (*it)->getModel()->freq_type == FREQ_EMPIRICAL && (*it)->aln->seq_type != SEQ_CODON) {
+                // modify state_freq to account for empty sequences
+                (*it)->aln->computeStateFreq((*it)->getModel()->state_freq, (*it)->aln->getNSite() * (tree->aln->getNSeq() - (*it)->aln->getNSeq()));
+                (*it)->getModel()->decomposeRateMatrix();
             }
-        } else if ((*it)->aln->getNSeq() < tree->aln->getNSeq() && params.partition_type != TOPO_UNLINKED &&
-            (*it)->getModel()->freq_type == FREQ_EMPIRICAL && (*it)->aln->seq_type != SEQ_CODON) {
-        	// modify state_freq to account for empty sequences
-        	(*it)->aln->computeStateFreq((*it)->getModel()->state_freq, (*it)->aln->getNSite() * (tree->aln->getNSeq() - (*it)->aln->getNSeq()));
-        	(*it)->getModel()->decomposeRateMatrix();
         }
         
         //string taxa_set = ((SuperAlignment*)tree->aln)->getPattern(part);
@@ -292,21 +300,262 @@ double PartitionModel::targetFunk(double x[]) {
     double res = 0;
     int ntrees = tree->size();
     if (tree->part_order.empty()) tree->computePartitionOrder();
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+: res) schedule(dynamic) if(tree->num_threads > 1)
-#endif
+    string modelname = model->getName();
+    
+    // reset the array to store the log-likelihoods for each partition
+    memset(partLike, 0, sizeof(double) * ntrees);
+    
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic) if(tree->num_threads > 1)
+    #endif
     for (int j = 0; j < ntrees; j++) {
+        
         int i = tree->part_order[j];
         ModelSubst *part_model = tree->at(i)->getModel();
-        if (part_model->getName() != model->getName())
+
+        if (part_model->getName() != modelname)
             continue;
+
         bool fixed = part_model->fixParameters(false);
-        res += part_model->targetFunk(x);
+        double ans = part_model->targetFunk(x);
         part_model->fixParameters(fixed);
+        partLike[j] = ans;
     }
+    
+    // calculate the sum
+    // different order of the computation due to
+    // openmp will not affect the value
+    res = 0.0;
+    for (int j = 0; j < ntrees; j++) {
+        res += partLike[j];
+    }
+    
     if (res == 0.0)
         outError("No partition has model ", model->getName());
     return res;
+}
+
+double PartitionModel::computeMixLh(string &warning) {
+    PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+    int ntrees = tree->size();
+
+    // go through the number of sites of each partition to compute the class weights
+    vector<double> weight_array, log_weight_array;
+    double sum_sites = 0.0;
+
+    // compute "class weights"
+    //if (tree->part_order.empty()) tree->computePartitionOrder();
+    for (int j = 0; j < ntrees; j++) {
+        //int i = tree->part_order[j];
+        int part_sites = tree->at(j)->getAlnNSite();
+        weight_array.push_back(part_sites);
+        sum_sites += part_sites;
+    }
+    for (int j = 0; j < ntrees; j++) {
+        weight_array[j] /= sum_sites;
+    }
+    for (int j = 0; j < ntrees; j++) {
+        log_weight_array.push_back(log(weight_array[j]));
+    }
+
+    //get sets of taxa for each partition tree in advance
+    vector<StrVector> t_seqs_vec_array;
+    vector<set<string> > t_seqs_set_array;
+    t_seqs_vec_array.resize(ntrees);
+    t_seqs_set_array.resize(ntrees);
+
+    for (int j = 0; j < ntrees; j++) {
+        PhyloTree *t = tree->at(j);
+        t->getTaxaName(t_seqs_vec_array[j]);
+        t_seqs_set_array[j].insert(t_seqs_vec_array[j].begin(), t_seqs_vec_array[j].end());
+    }
+
+    // compute the mixture-based log-likelihood
+    double mix_lh = 0.0;
+    bool too_much_missing = false;
+
+    for (int j = 0; j < ntrees && (!too_much_missing); j++) {
+        //int i = tree->part_order[j];
+        Alignment *tree1_aln = tree->at(j)->aln;
+        int tree1_nsite = tree1_aln->getNSite();
+        StrVector tree1_seqs = t_seqs_vec_array[j];
+
+        // get the site-log-likelihood the the partition under each tree and the corresponding model
+        double *lh_array = new double [ntrees*tree1_nsite];
+
+#ifdef _OPENMP
+#pragma omp parallel for if(tree->num_threads > 1)
+#endif
+        for (int k = 0; k < ntrees ; k++) {
+            PhyloTree *tree2 = tree->at(k);
+
+            // get the intersection of tree1_aln and tree2.
+            set<string> inter_seqs;
+            IntVector inter_seqs_id, missing_seqs_id;
+
+            set<string> tree2_seqs_set = t_seqs_set_array[k];
+            StrVector tree2_seqs = t_seqs_vec_array[k];
+            for (string seq_name : tree1_seqs) {
+                int seq_id = tree1_aln->getSeqID(seq_name);
+                if (tree2_seqs_set.find(seq_name) != tree2_seqs_set.end()) {
+                    inter_seqs.insert(seq_name);
+                    inter_seqs_id.push_back(seq_id);
+                } else {
+                    missing_seqs_id.push_back(seq_id);
+                }
+            }
+
+            // if the subset has less than 3 sequences, don't compute m-log-likelihood
+            if (inter_seqs_id.size() < 3) {
+
+#ifdef _OPENMP
+#pragma omp critical
+#endif
+                {
+                    too_much_missing = true;
+                    string tree1_name = tree1_aln->name;
+                    string tree2_name = tree2->aln->name;
+                    int ntaxa = tree->getNumTaxa();
+                    warning =
+                            "NOTE: Mixture-based log-likelihood conversion is skipped due to too much missing data: at least one of the partitions " +
+                            tree1_name + " and " + tree2_name + " show missing data in " +
+                            to_string(ntaxa - inter_seqs_id.size()) + " sequences.";
+                }
+
+            } else {
+                // subset tree1_aln
+                Alignment *sub_tree1_aln = NULL;
+                if (tree1_seqs.size() != inter_seqs_id.size()) {
+                    sub_tree1_aln = new Alignment();
+                    sub_tree1_aln->extractSubAlignment(tree1_aln, inter_seqs_id, 0);
+                } else {
+                    sub_tree1_aln = tree1_aln;
+                }
+
+                // subset tree2
+                PhyloTree *sub_tree2 = NULL;
+                string inter_seqs_set (tree2_seqs.size(), 0);
+                for (int l = 0; l < tree2_seqs.size(); l++) {
+                    if (inter_seqs.find(tree2_seqs[l]) != inter_seqs.end()) {
+                        inter_seqs_set[l] = 1;
+                    }
+                }
+
+                sub_tree2 = new PhyloTree();
+                if (tree2_seqs.size() != inter_seqs_id.size()) {
+                    sub_tree2->copyTree(tree2, inter_seqs_set);
+                } else {
+                    sub_tree2->copyTree(tree2);
+                }
+
+                // link sub_tree2 and sub_tree1_aln
+                sub_tree2->setAlignment(sub_tree1_aln);
+                sub_tree2->setRootNode(tree2->params->root);
+                sub_tree2->setModelFactory(tree2->getModelFactory());
+                //sub_tree2->setModel(tree2->getModel());
+                //sub_tree2->setRate(tree2->getRate());
+                sub_tree2->setParams(tree2->params);
+                sub_tree2->optimize_by_newton = tree2->params->optimize_by_newton;
+                sub_tree2->setLikelihoodKernel(tree2->params->SSE);
+                sub_tree2->setNumThreads(tree2->num_threads);
+                sub_tree2->ensureNumberOfThreadsIsSet(nullptr);
+
+                sub_tree2->initializeAllPartialLh();
+
+                //compute pattern log-likelihood
+                int nptn = sub_tree1_aln->getNPattern();
+                double *ptn_lh_array = new double [nptn];
+                sub_tree2->computeLikelihood(ptn_lh_array);
+
+                //compute log state frequencies
+                int n_states = sub_tree2->getModel()->num_states;
+                double *state_freq = new double[n_states];
+                sub_tree2->getModel()->getStateFrequency(state_freq);
+
+                vector<double> log_state_freq(n_states);
+                for (int n = 0; n < n_states; n++) {
+                    log_state_freq[n] = log(state_freq[n]);
+                }
+
+                //compute site log-likelihood
+                if (tree1_seqs.size() != inter_seqs_id.size()) { //for sequences only appears in tree1, calculate the state frequencies based on the model in tree2
+                    for (int l = 0; l < tree1_nsite; l++) {
+                        int ptn_id = sub_tree1_aln->getPatternID(l);
+                        double site_lh = ptn_lh_array[ptn_id];
+                        Pattern p = tree1_aln->at(tree1_aln->getPatternID(l));
+
+                        for (int missing_id: missing_seqs_id) {
+                            int char_id = p[missing_id];
+                            if (char_id  < n_states) {
+                                site_lh += log_state_freq[char_id];
+                            } else {
+                                // compute ambiguous frequencies
+                                int cstate = char_id-n_states+1;
+                                double amb_freq = 0;
+                                for (int m = 0; m < n_states; m++) {
+                                    if ((cstate) & (1 << m)) {
+                                        amb_freq += state_freq[m];
+                                    }
+                                }
+                                site_lh += log(amb_freq);
+                            }
+                        }
+                        lh_array[tree1_nsite * k + l] = site_lh;
+                    }
+                } else {
+                    for (int l = 0; l < tree1_nsite; l++) {
+                        int ptn_id = sub_tree1_aln->getPatternID(l);
+                        lh_array[tree1_nsite * k + l] = ptn_lh_array[ptn_id];
+                    }
+                }
+
+                //release memory
+                if (tree1_seqs.size() != inter_seqs_id.size()) {
+                    delete sub_tree1_aln;
+                }
+                sub_tree2->setModelFactory(NULL);
+                sub_tree2->aln = NULL;
+                delete sub_tree2;
+                delete[] ptn_lh_array;
+                delete[] state_freq;
+            }
+
+        }
+
+        // compute partition log-likelihood from sites
+        if (!too_much_missing){
+            double mix_lh_partition = 0.0;
+            for (int l = 0; l < tree1_nsite; l++) {
+                double weighted_lh, max_lh, mix_lh_site;
+
+                //int ptn_freq = tree1_aln->at(l).frequency;
+
+                for (int k = 0; k < ntrees; k++) {
+                    weighted_lh = log_weight_array[k]+lh_array[tree1_nsite*k+l];
+                    if (k == 0) {
+                        max_lh = weighted_lh;
+                    } else if (weighted_lh > max_lh) {
+                        max_lh = weighted_lh;
+                    }
+                }
+
+                double mix_lh_site_original = 0.0;
+                for (int k = 0; k < ntrees; k++) {
+                    mix_lh_site_original += exp(log_weight_array[k]+lh_array[tree1_nsite*k+l]-max_lh);
+                }
+                mix_lh_site = max_lh + log(mix_lh_site_original);
+                mix_lh_partition += mix_lh_site;
+            }
+            mix_lh += mix_lh_partition;
+        }
+        delete[] lh_array; //release array memery
+    }
+
+    if (too_much_missing){
+        return 1.0;
+    } else {
+        return mix_lh;
+    }
 }
 
 void PartitionModel::setVariables(double *variables) {
@@ -409,9 +658,11 @@ double PartitionModel::optimizeLinkedModel(bool write_info, double gradient_epsi
     delete [] variables2;
     delete [] variables;
     
+    /*
     if (write_info) {
         cout << "Linked-model log-likelihood: " << score << endl;
     }
+    */
 
     return score;
 }
@@ -465,20 +716,25 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
     for (int step = 0; step < Params::getInstance().model_opt_steps; step++) {
         tree_lh = 0.0;
         if (tree->part_order.empty()) tree->computePartitionOrder();
-        #ifdef _OPENMP
-        #pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
-        #endif
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+: tree_lh) schedule(dynamic) if(tree->num_threads > 1)
+#endif
         for (int i = 0; i < ntrees; i++) {
             int part = tree->part_order[i];
             double score;
-            if (opt_gamma_invar)
-                score = tree->at(part)->getModelFactory()->optimizeParametersGammaInvar(fixed_len,
-                    write_info && verbose_mode >= VB_MED,
-                    logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
-            else
-                score = tree->at(part)->getModelFactory()->optimizeParameters(fixed_len,
-                    write_info && verbose_mode >= VB_MED,
-                    logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+            if (tree->at(part)->isTreeMix()) {
+                ((IQTreeMixHmm*)tree->at(part))->optimizeModelParameters(write_info && verbose_mode >= VB_MED, logl_epsilon);
+                score = ((IQTreeMixHmm*)tree->at(part))->getCurScore();
+            } else {
+                if (opt_gamma_invar)
+                    score = tree->at(part)->getModelFactory()->optimizeParametersGammaInvar(fixed_len,
+                                                                                            write_info && verbose_mode >= VB_MED,
+                                                                                            logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+                else
+                    score = tree->at(part)->getModelFactory()->optimizeParameters(fixed_len,
+                                                                                  write_info && verbose_mode >= VB_MED,
+                                                                                  logl_epsilon/min(ntrees,10), gradient_epsilon/min(ntrees,10));
+            }
             tree_lh += score;
             if (write_info)
 #ifdef _OPENMP
@@ -486,19 +742,20 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
 #endif
             {
                 cout << "Partition " << tree->at(part)->aln->name
-                     << " / Model: " << tree->at(part)->getModelName()
-                     << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
+                << " / Model: " << tree->at(part)->getModelName()
+                << " / df: " << tree->at(part)->getModelFactory()->getNParameters(fixed_len)
                 << " / LogL: " << score << endl;
             }
         }
         //return ModelFactory::optimizeParameters(fixed_len, write_info);
-
+        
         if (!isLinkedModel())
             break;
 
         if (verbose_mode >= VB_MED || write_info)
             cout << step+1 << ". Log-likelihood: " << tree_lh << endl;
 
+        // optimize linked alpha
         if (tree->params->link_alpha) {
             tree_lh = optimizeLinkedAlpha(write_info, gradient_epsilon);
         }
@@ -510,6 +767,9 @@ double PartitionModel::optimizeParameters(int fixed_len, bool write_info, double
             tree_lh = new_tree_lh;
         }
         
+        if (verbose_mode >= VB_MED || write_info)
+            cout << step+1 << ". Log-likelihood: " << tree_lh << endl;
+
         if (tree_lh-logl_epsilon*10 < prev_tree_lh)
             break;
         prev_tree_lh = tree_lh;
@@ -536,6 +796,8 @@ double PartitionModel::optimizeParametersGammaInvar(int fixed_len, bool write_in
 
 PartitionModel::~PartitionModel()
 {
+    if (partLike != NULL)
+        delete[] partLike;
 }
 
 bool PartitionModel::isUnstableParameters() {

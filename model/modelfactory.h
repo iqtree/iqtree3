@@ -26,6 +26,7 @@
 #include "nclextra/modelsblock.h"
 #include "utils/checkpoint.h"
 #include "alignment/alignment.h"
+#include "main/phylotesting.h"
 
 const double MIN_BRLEN_SCALE = 0.01;
 const double MAX_BRLEN_SCALE = 100.0;
@@ -52,19 +53,6 @@ string::size_type posRateFree(string &model_name);
     @return position of +P or *P in the model string, string::npos if not found
 */
 string::size_type posPOMO(string &model_name);
-
-/**
- * create a substitution model
- * @param model_str model name
- * @param models_block
- * @param freq_type state frequency type
- * @param freq_params frequency parameters
- * @param tree associated phylo tree
- * @return substitution model created
- */
-ModelSubst *createModel(string model_str, ModelsBlock *models_block,
-			StateFreqType freq_type, string freq_params,
-			PhyloTree *tree);
 
 
 /**
@@ -115,6 +103,18 @@ public:
         restore object from the checkpoint
     */
     virtual void restoreCheckpoint();
+
+    /**
+        restore object from the nested k-class model in checkpoint
+        return false if the k-class model can't initialise from k-class model or the weight of last class of the nested model is close to 0
+    */
+    virtual bool initFromNestedModel(map<string, vector<string> > nest_network);
+
+    /**
+        initialize the parameters from the (k-1)-class mixture model
+        return false if the k-class model can't initialise from (k-1)-class model
+    */
+    virtual void initFromClassMinusOne(double init_weight);
 
 	/**
 		get the name of the model
@@ -290,6 +290,16 @@ public:
 
     double optimizeAllParameters(double gradient_epsilon);
 
+    /**
+     Synchronization of check point for MPI
+     */
+    SyncChkPoint* syncChkPoint;
+
+    /**
+     compute the mixture-based log-likelihood for mAIC, mAICc, mBIC calculation.
+     @param warning the warning message when mixture-based log-likelihood calculation is skipped.
+     */
+    virtual double computeMixLh(string &warning) {return 0.0;}
 
 protected:
 	/**
@@ -307,7 +317,7 @@ protected:
 	*/
 	virtual bool getVariables(double *variables);
 
-	vector<double> optimizeGammaInvWithInitValue(int fixed_len, double logl_epsilon, double gradient_epsilon,
+	DoubleVector optimizeGammaInvWithInitValue(int fixed_len, double logl_epsilon, double gradient_epsilon,
 		double initPInv, double initAlpha, DoubleVector &lenvec, Checkpoint *model_ckp);
 
 };

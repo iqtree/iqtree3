@@ -139,6 +139,9 @@ void PhyloTree::init() {
     isSummaryBorrowed = false;
     progress = nullptr;
     progressStackDepth = 0;
+    gradient_vector = nullptr;
+    hessian_diagonal = nullptr;
+    G_matrix = nullptr;
 }
 
 void PhyloTree::initSequences(Node* node, Node* dad)
@@ -149,11 +152,11 @@ void PhyloTree::initSequences(Node* node, Node* dad)
         node = root;
         dad = root;
     }
-    
+
     // init sequence for each node
     if (!node->sequence)
         node->sequence = new Sequence();
-    
+
     // browse 1-step deeper to the neighbor node
     NeighborVec::iterator it;
     FOR_NEIGHBOR(node, dad, it) {
@@ -237,11 +240,14 @@ PhyloTree::~PhyloTree() {
     aligned_free(central_partial_pars);
     aligned_free(cost_matrix);
 
-    delete model_factory;
+    if (model_factory != NULL)
+        delete model_factory;
     model_factory = NULL;
-    delete model;
+    if (model != NULL)
+        delete model;
     model = NULL;
-    delete site_rate;
+    if (site_rate != NULL)
+        delete site_rate;
     site_rate = NULL;
     aligned_free(_pattern_lh_cat);
     aligned_free(_pattern_lh);
@@ -266,6 +272,12 @@ PhyloTree::~PhyloTree() {
         pllAlignmentDataDestroy(pllAlignment);
     if (pllInst)
         pllDestroyInstance(pllInst);
+    if(gradient_vector)
+        aligned_free(gradient_vector);
+    if(hessian_diagonal)
+        aligned_free(hessian_diagonal);
+    if(G_matrix)
+        aligned_free(G_matrix);
 
     pllPartitions = NULL;
     pllAlignment = NULL;
@@ -899,6 +911,15 @@ void PhyloTree::initializeAllPartialLh() {
     size_t mem_size = get_safe_upper_limit(getAlnNPattern()) + max(get_safe_upper_limit(numStates),
         get_safe_upper_limit(model_factory->unobserved_ptns.size()));
 
+    if(!gradient_vector)
+        gradient_vector = aligned_alloc<double>(branchNum);
+    if(!hessian_diagonal)
+        hessian_diagonal = aligned_alloc<double>(branchNum);
+    //todo: please check here for memory allocation
+    if(!G_matrix) {
+        size_t g_matrix_size = branchNum * mem_size;
+        G_matrix = aligned_alloc<double>(g_matrix_size);
+    }
     size_t block_size = mem_size * numStates * site_rate->getNRate() * ((model_factory->fused_mix_rate)? 1 : model->getNMixtures());
     // make sure _pattern_lh size is divisible by 4 (e.g., 9->12, 14->16)
     if (!_pattern_lh)
@@ -956,6 +977,10 @@ void PhyloTree::deleteAllPartialLh() {
     aligned_free(_pattern_lh);
     aligned_free(_site_lh);
     aligned_free(_pattern_scaling);
+    aligned_free(_pattern_scaling);
+    aligned_free(G_matrix);
+    aligned_free(gradient_vector);
+    aligned_free(hessian_diagonal);
 
     ptn_freq_computed = false;
     tip_partial_lh    = nullptr;
@@ -1646,7 +1671,7 @@ void PhyloTree::computePatternProbabilityCategory(double *ptn_prob_cat, SiteLogl
      dad_branch = (PhyloNeighbor*) root->neighbors[0];
      dad = (PhyloNode*) root;
      }*/
-    
+
     size_t ptn, nptn = aln->getNPattern();
     size_t cat, ncat = getNumLhCat(wsl);
     // Right now only Naive version store _pattern_lh_cat!
@@ -2798,7 +2823,8 @@ double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int m
                 cout << "new_tree_lh: " << new_tree_lh << "   tree_lh: " << tree_lh << endl;
                 showProgress();
             }
-            ASSERT(fabs(new_tree_lh-tree_lh) < max_delta_lh);
+            // ASSERT(fabs(new_tree_lh-tree_lh) < max_delta_lh);
+            ASSERT(tree_lh-new_tree_lh < max_delta_lh);
             return new_tree_lh;
         }
 
@@ -2836,9 +2862,9 @@ double PhyloTree::computeFundiLikelihood() {
          it != params->alisim_fundi_taxon_set.end(); it++) {
         taxa_set.insert(*it);
     }
-    
-    cout << "rho = " << params->alisim_fundi_proportion << endl;
-    
+
+    cout << "Fundi proportion rho: " << params->alisim_fundi_proportion << endl;
+
     findNodeNames(taxa_set, central_branch, root, nullptr);
     if (!central_branch.first) {
         outWarning("Tree does not contain FunDi central node");
@@ -2848,12 +2874,12 @@ double PhyloTree::computeFundiLikelihood() {
         outWarning("Tree does not contain FunDi central branch");
         return 0.0;
     }
-    
+
     if (central_branch.first->isLeaf() || central_branch.second->node->isLeaf()) {
         outWarning("FundDi central branch must be an internal branch");
         return 0.0;
     }
-    
+
     cout << "Central branch length: " << central_branch.second->length << endl;
     do_fundi = true;
     /*
@@ -2884,7 +2910,7 @@ double PhyloTree::computeFundiLikelihood() {
     optimize_by_newton = false;
     double cur_length = central_branch.second->length;
     double best_length, best_score;
-    
+
     if (params->alisim_fundi_proportion > 0.0) {
         // optimize fundi branch length while keeping rho fixed
         optimizeOneBranch((PhyloNode*)central_branch.first, (PhyloNode*)(central_branch.second->node), false);
@@ -2912,8 +2938,8 @@ double PhyloTree::computeFundiLikelihood() {
         */
         int ndim = getNDim();
         ASSERT(ndim == 2);
-        
-        cout << "Optimizing FunDi model parameters..." << endl;
+
+        cout << "Optimizing FunDi model parameters (epsilson=" << params->fundiEps << ")..." << endl;
         //if (freq_type == FREQ_ESTIMATE) scaleStateFreq(false);
 
         double *variables = new double[ndim+1]; // used for BFGS numerical recipes
@@ -2925,6 +2951,16 @@ double PhyloTree::computeFundiLikelihood() {
         // by BFGS algorithm
         current_it = (PhyloNeighbor*)central_branch.second;
         current_it_back = (PhyloNeighbor*)central_branch.second->node->findNeighbor(central_branch.first);
+
+        params->alisim_fundi_proportion = params->fundi_init_proportion;
+        if (params->fundi_init_branch_length > 0.0) {
+            current_it->length = params->fundi_init_branch_length;
+            current_it_back->length = params->fundi_init_branch_length;
+        }
+
+        cout << "Init rho = " << params->alisim_fundi_proportion
+            << " and init branch length = " << current_it->length << endl;
+        
         variables[1] = params->alisim_fundi_proportion;
         variables[2] = current_it->length;
         lower_bound[1] = 0.0;
@@ -2933,7 +2969,7 @@ double PhyloTree::computeFundiLikelihood() {
         upper_bound[2] = params->max_branch_length;
         bound_check[1] = true;
         bound_check[2] = true;
-        minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, TOL_RATE);
+        minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, params->fundiEps);
 
         best_length = variables[2];
         best_score = -targetFunk(variables);
@@ -2949,7 +2985,7 @@ double PhyloTree::computeFundiLikelihood() {
     optimize_by_newton = orig_optimize_by_newton;
     cout << "Best FunDi central branch length: " << best_length << endl;
     setCurScore(best_score);
-    
+
     return best_score;
 }
 
@@ -5915,6 +5951,9 @@ void PhyloTree::forceConvertingToUnrooted()
         node1->findNeighbor(node2)->attributes = attributes;
         node2->findNeighbor(node1)->attributes = attributes;
         
+        // Memorize the "expected starting tree" to make sure (after unrooting a rooted tree) we traverse the tree at the same "starting node" as BaseML (for dating task)
+        traversal_starting_node = node1;
+
         delete node;
     } else {
         // only delete root node
@@ -6037,13 +6076,11 @@ bool PhyloTree::computeTraversalInfo(PhyloNeighbor *dad_branch, PhyloNode *dad, 
         mem_slots.update(dad_branch);
     }
 
-    /*
     if (verbose_mode >= VB_MED && params->lh_mem_save == LM_MEM_SAVE) {
         int slot_id = mem_slots.findNei(dad_branch) - mem_slots.begin();
         node->name = convertIntToString(slot_id);
         //cout << "Branch " << dad->id << "-" << node->id << " assigned slot " << slot_id << endl;
     }
-    */
 
     if (params->lh_mem_save == LM_MEM_SAVE) {
         for (it = neivec.begin(); it != neivec.end(); it++) {

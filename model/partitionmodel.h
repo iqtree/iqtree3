@@ -21,6 +21,7 @@
 #define PARTITIONMODEL_H
 
 #include "tree/phylosupertree.h"
+#include "tree/phylosuperhmm.h"
 #include "modelfactory.h"
 
 /**
@@ -125,6 +126,12 @@ public:
     virtual double targetFunk(double x[]);
 
     /**
+     compute the mixture-based log-likelihood for mAIC, mAICc, mBIC calculation.
+     @param warning the warning message when mixture-based log-likelihood calculation is skipped.
+     */
+    virtual double computeMixLh(string &warning);
+
+    /**
      rescale the state frequencies
      @param sum_one TRUE to make frequencies sum to 1, FALSE to make last entry equal to 1
      */
@@ -161,6 +168,11 @@ public:
     unordered_map<string, ModelSubst*> linked_models;
     
     bool opt_gamma_invar;
+    
+    /**
+        log-likelihoods for each partition
+     */
+    double* partLike;
     
 protected:
     

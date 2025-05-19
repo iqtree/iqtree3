@@ -25,7 +25,7 @@
 #include <iqtree_config.h>
 
 #if defined WIN32 || defined _WIN32 || defined __WIN32__ || defined WIN64
-//#include <winsock2.h>
+#include <winsock2.h>
 //#include <windows.h>
 //extern __declspec(dllexport) int gethostname(char *name, int namelen);
 #else
@@ -86,7 +86,6 @@ inline void separator(ostream &out, int type = 0) {
     }
 }
 
-
 void printCopyright(ostream &out) {
     string osname, pre, post;
     osname = getOSName();
@@ -118,8 +117,8 @@ void printCopyright(ostream &out) {
     #ifdef _IQTREE_MPI
     out << " MPI";
     #endif
-    #ifdef _OPENMP
-    out << " multicore";
+    #ifndef _OPENMP
+    out << " single-core";
     #endif
     #ifdef __AVX512KNL
     out << " Xeon Phi KNL";
@@ -131,13 +130,15 @@ void printCopyright(ostream &out) {
     out << iqtree_VERSION_MAJOR << "." << iqtree_VERSION_MINOR << iqtree_VERSION_PATCH; // << " COVID-edition";
     out << " for " << osname;
     out << " built " << __DATE__;
-#if defined DEBUG 
+#if defined DEBUG
     out << " - debug mode";
 #endif
 
 #ifdef IQ_TREE
-    out << endl << "Developed by Bui Quang Minh, Nguyen Lam Tung, Olga Chernomor, Heiko Schmidt,"
-        << endl << "Dominik Schrempf, Michael Woodhams, Ly Trong Nhan, Thomas Wong" << endl << endl;
+    out << endl 
+        << "Developed by Bui Quang Minh, Thomas Wong, Nhan Ly-Trong, Huaiyan Ren" << endl
+        << "Contributed by Lam-Tung Nguyen, Dominik Schrempf, Chris Bielow," << endl
+        << "Olga Chernomor, Michael Woodhams, Diep Thi Hoang, Heiko Schmidt" << endl << endl;
 #else
     out << endl << "Copyright (c) 2006-2014 Olga Chernomor, Arndt von Haeseler and Bui Quang Minh." << endl << endl;
 #endif
@@ -145,13 +146,13 @@ void printCopyright(ostream &out) {
 
 void printRunMode(ostream &out, RunMode run_mode) {
     switch (run_mode) {
-        case DETECTED: out << "Detected"; break;
-        case GREEDY: out << "Greedy"; break;
-        case PRUNING: out << "Pruning"; break;
-        case BOTH_ALG: out << "Greedy and Pruning"; break;
-        case EXHAUSTIVE: out << "Exhaustive"; break;
-        case DYNAMIC_PROGRAMMING: out << "Dynamic Programming"; break;
-        case LINEAR_PROGRAMMING: out << "Integer Linear Programming"; break;
+        case RunMode::DETECTED: out << "Detected"; break;
+        case RunMode::GREEDY: out << "Greedy"; break;
+        case RunMode::PRUNING: out << "Pruning"; break;
+        case RunMode::BOTH_ALG: out << "Greedy and Pruning"; break;
+        case RunMode::EXHAUSTIVE: out << "Exhaustive"; break;
+        case RunMode::DYNAMIC_PROGRAMMING: out << "Dynamic Programming"; break;
+        case RunMode::LINEAR_PROGRAMMING: out << "Integer Linear Programming"; break;
         default: outError(ERR_INTERNAL);
     }
 }
@@ -174,11 +175,11 @@ void summarizeHeader(ostream &out, Params &params, bool budget_constraint, Input
             (analysis_type== IN_NEWICK ? " phylogenetic diversity (PD)" : " split diversity (SD)");
     if (params.root != NULL) out << " at " << params.root;
     out << endl;
-    if (params.run_mode != CALC_DIST && params.run_mode != PD_USER_SET) {
+    if (params.run_mode != RunMode::CALC_DIST && params.run_mode != RunMode::PD_USER_SET) {
         out << "Search objective: " << ((params.find_pd_min) ? "Minimum" : "Maximum") << endl;
         out << "Search algorithm: ";
         printRunMode(out, params.run_mode);
-        if (params.run_mode == DETECTED) {
+        if (params.run_mode == RunMode::DETECTED) {
             out << " -> ";
             printRunMode(out, params.detected_mode);
         }
@@ -188,9 +189,9 @@ void summarizeHeader(ostream &out, Params &params, bool budget_constraint, Input
     out << endl;
     out << "Type of analysis: ";
     switch (params.run_mode) {
-        case PD_USER_SET: out << "PD/SD of user sets";
+        case RunMode::PD_USER_SET: out << "PD/SD of user sets";
             if (params.pdtaxa_file) out << " (" << params.pdtaxa_file << ")"; break;
-        case CALC_DIST: out << "Distance matrix computation"; break;
+        case RunMode::CALC_DIST: out << "Distance matrix computation"; break;
         default:
             out << ((budget_constraint) ? "Budget constraint " : "Subset size k ");
             if (params.intype == IN_NEWICK)
@@ -275,7 +276,7 @@ void summarizeTree(Params &params, PDTree &tree, vector<PDTaxaSet> &taxa_set,
 
         vector<PDTaxaSet>::iterator tid;
 
-        if (params.run_mode == PD_USER_SET) {
+        if (params.run_mode == RunMode::PD_USER_SET) {
             printPDUser(out, params, pd_more);
         }
         else if (taxa_set.size() > 1)
@@ -284,11 +285,11 @@ void summarizeTree(Params &params, PDTree &tree, vector<PDTaxaSet> &taxa_set,
 
 
         int subsize = params.min_size-params.is_rooted;
-        if (params.run_mode == PD_USER_SET) subsize = 1;
+        if (params.run_mode == RunMode::PD_USER_SET) subsize = 1;
         for (tid = taxa_set.begin(); tid != taxa_set.end(); tid++, subsize++) {
             if (tid != taxa_set.begin())
                 separator(out, 1);
-            if (params.run_mode == PD_USER_SET) {
+            if (params.run_mode == RunMode::PD_USER_SET) {
                 out << "Set " << subsize << " has PD score of " << tid->score << endl;
             }
             else {
@@ -341,8 +342,8 @@ void printTaxaSet(Params &params, vector<PDTaxaSet> &taxa_set, RunMode cur_mode)
             filename = params.out_prefix;
             filename += ".";
             filename += subsize;
-            if (params.run_mode == BOTH_ALG) {
-                if (cur_mode == GREEDY)
+            if (params.run_mode == RunMode::BOTH_ALG) {
+                if (cur_mode == RunMode::GREEDY)
                     filename += ".greedy";
                 else
                     filename += ".pruning";
@@ -378,7 +379,7 @@ void printTaxaSet(Params &params, vector<PDTaxaSet> &taxa_set, RunMode cur_mode)
 void runPDTree(Params &params)
 {
 
-    if (params.run_mode == CALC_DIST) {
+    if (params.run_mode == RunMode::CALC_DIST) {
         bool is_rooted = false;
         MExtTree tree(params.user_file, is_rooted);
         cout << "Tree contains " << tree.leafNum << " taxa." << endl;
@@ -394,7 +395,7 @@ void runPDTree(Params &params)
 
     vector<PDTaxaSet> taxa_set;
 
-    if (params.run_mode == PD_USER_SET) {
+    if (params.run_mode == RunMode::PD_USER_SET) {
         // compute score of user-defined sets
         t_begin = getCPUTime();
         cout << "Computing PD score for user-defined set of taxa..." << endl;
@@ -422,7 +423,7 @@ void runPDTree(Params &params)
         outError(ERR_NO_K);
     }
 
-    bool detected_greedy = (params.run_mode != PRUNING);
+    bool detected_greedy = (params.run_mode != RunMode::PRUNING);
 
     Greedy test_greedy;
 
@@ -436,15 +437,15 @@ void runPDTree(Params &params)
     if (verbose_mode >= VB_DEBUG)
         test_greedy.drawTree(cout, WT_INT_NODE + WT_BR_SCALE + WT_BR_LEN);
 
-    if (params.run_mode == GREEDY || params.run_mode == BOTH_ALG ||
-        (params.run_mode == DETECTED)) {
+    if (params.run_mode == RunMode::GREEDY || params.run_mode == RunMode::BOTH_ALG ||
+        (params.run_mode == RunMode::DETECTED)) {
 
-        if (params.run_mode == DETECTED && params.sub_size >= test_greedy.leafNum * 7 / 10
+        if (params.run_mode == RunMode::DETECTED && params.sub_size >= test_greedy.leafNum * 7 / 10
             && params.min_size < 2)
             detected_greedy = false;
 
         if (detected_greedy) {
-            params.detected_mode = GREEDY;
+            params.detected_mode = RunMode::GREEDY;
             t_begin=getCPUTime();
             cout << endl << "Greedy Algorithm..." << endl;
 
@@ -458,7 +459,7 @@ void runPDTree(Params &params)
                 cout << "Resulting tree length = " << taxa_set[0].score << endl;
 
             if (params.nr_output > 0)
-                printTaxaSet(params, taxa_set, GREEDY);
+                printTaxaSet(params, taxa_set, RunMode::GREEDY);
 
             PDRelatedMeasures pd_more;
 
@@ -469,12 +470,12 @@ void runPDTree(Params &params)
     /*********************************************
         run pruning algorithm
     *********************************************/
-    if (params.run_mode == PRUNING || params.run_mode == BOTH_ALG ||
-        (params.run_mode == DETECTED)) {
+    if (params.run_mode == RunMode::PRUNING || params.run_mode == RunMode::BOTH_ALG ||
+        (params.run_mode == RunMode::DETECTED)) {
 
         Pruning test_pruning;
 
-        if (params.run_mode == PRUNING || params.run_mode == BOTH_ALG) {
+        if (params.run_mode == RunMode::PRUNING || params.run_mode == RunMode::BOTH_ALG) {
             //Pruning test_pruning(params);
             test_pruning.init(params);
         } else if (!detected_greedy) {
@@ -482,7 +483,7 @@ void runPDTree(Params &params)
         } else {
             return;
         }
-        params.detected_mode = PRUNING;
+        params.detected_mode = RunMode::PRUNING;
         t_begin=getCPUTime();
         cout << endl << "Pruning Algorithm..." << endl;
         taxa_set.clear();
@@ -495,7 +496,7 @@ void runPDTree(Params &params)
             cout << "Resulting tree length = " << taxa_set[0].score << endl;
 
         if (params.nr_output > 0)
-            printTaxaSet(params, taxa_set, PRUNING);
+            printTaxaSet(params, taxa_set, RunMode::PRUNING);
 
         PDRelatedMeasures pd_more;
 
@@ -681,12 +682,12 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         //subsize -= pd_set.size()-1;
         int subsize = (sg.isBudgetConstraint()) ? params.min_budget : params.min_size-params.is_rooted;
         int stepsize = (sg.isBudgetConstraint()) ? params.step_budget : params.step_size;
-        if (params.detected_mode != LINEAR_PROGRAMMING) stepsize = 1;
+        if (params.detected_mode != RunMode::LINEAR_PROGRAMMING) stepsize = 1;
         vector<SplitSet>::iterator it;
         SplitSet::iterator it2;
 
 
-        if (params.run_mode == PD_USER_SET) {
+        if (params.run_mode == RunMode::PD_USER_SET) {
             printPDUser(out, params, pd_more);
         }
 
@@ -694,7 +695,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         /********** SUMMARY *********/
         /****************************/
 
-        if (params.run_mode != PD_USER_SET && !params.num_bootstrap_samples) {
+        if (params.run_mode != RunMode::PD_USER_SET && !params.num_bootstrap_samples) {
             out << "Summary of the PD-score and the number of optimal PD-sets with the same " << endl << "optimal PD-score found." << endl;
 
             if (sg.isBudgetConstraint())
@@ -741,7 +742,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         /****************************/
         /********* BOOTSTRAP ********/
         /****************************/
-        if (params.run_mode != PD_USER_SET && params.num_bootstrap_samples) {
+        if (params.run_mode != RunMode::PD_USER_SET && params.num_bootstrap_samples) {
             out << "Summary of the bootstrap analysis " << endl;
             for (it = pd_set.begin(); it != pd_set.end(); it++) {
                 DoubleVector freq;
@@ -761,7 +762,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         /********** RANKING *********/
         /****************************/
 
-        if (params.run_mode != PD_USER_SET && !params.num_bootstrap_samples) {
+        if (params.run_mode != RunMode::PD_USER_SET && !params.num_bootstrap_samples) {
 
 
             IntVector ranking;
@@ -812,7 +813,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         /***** DETAILED SETS ********/
         /****************************/
 
-        if (params.run_mode != PD_USER_SET)
+        if (params.run_mode != RunMode::PD_USER_SET)
             out << "Detailed information of all taxa found in the optimal PD-sets" << endl;
 
         if (pd_set.size() > 1) {
@@ -824,7 +825,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
                     " to " << params.sub_size-params.is_rooted << endl << endl;
         }
 
-        if (params.run_mode != PD_USER_SET)
+        if (params.run_mode != RunMode::PD_USER_SET)
             separator(out,1);
 
         for (it = pd_set.begin(); it != pd_set.end(); it++, subsize+=stepsize) {
@@ -853,7 +854,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
             int num_sets = (*it).size();
             double weight = (*it).getWeight();
 
-            if (params.run_mode != PD_USER_SET) {
+            if (params.run_mode != RunMode::PD_USER_SET) {
                 out << "For " << ((sg.isBudgetConstraint()) ? "budget" : "k") << " = " << subsize;
                 out << " the optimal PD score is " << weight << endl;
 
@@ -874,10 +875,10 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
             for (it2 = (*it).begin(), c_num=1; it2 != (*it).end(); it2++, c_num++){
                 Split *this_set = *it2;
 
-                if (params.run_mode == PD_USER_SET && it2 != (*it).begin())
+                if (params.run_mode == RunMode::PD_USER_SET && it2 != (*it).begin())
                     separator(out, 1);
 
-                if (params.run_mode == PD_USER_SET) {
+                if (params.run_mode == RunMode::PD_USER_SET) {
                     if (!sg.isBudgetConstraint())
                         out << "Set " << c_num << " has PD score of " << this_set->getWeight();
                     else
@@ -891,12 +892,12 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
                         " taxa and requires " << sg.calcCost(*this_set) << " budget";
                 }
 
-                if (!sg.isPDArea() && (num_sets > 1 || params.run_mode == PD_USER_SET ))
+                if (!sg.isPDArea() && (num_sets > 1 || params.run_mode == RunMode::PD_USER_SET ))
                     out << " and covers " << sg.countSplits(*(*it)[0]) << " splits (of which "
                     << sg.countInternalSplits(*(*it)[0]) << " are internal splits)";
                 out << endl;
 
-                if (params.run_mode != PD_USER_SET && sg.isPDArea()) {
+                if (params.run_mode != RunMode::PD_USER_SET && sg.isPDArea()) {
                     for (i = 0; i < sg.getSetsBlock()->getNSets(); i++)
                         if (this_set->containTaxon(i)) {
                             if (sg.isBudgetConstraint()) {
@@ -1006,15 +1007,15 @@ void runPDSplit(Params &params) {
     if (sg.isPDArea()) {
         if (sg.isBudgetConstraint()) {
             int budget = (params.budget >= 0) ? params.budget : sg.getPdaBlock()->getBudget();
-            if (budget < 0 && params.pd_proportion == 0.0) params.run_mode = PD_USER_SET;
+            if (budget < 0 && params.pd_proportion == 0.0) params.run_mode = RunMode::PD_USER_SET;
         } else {
             int sub_size = (params.sub_size >= 1) ? params.sub_size : sg.getPdaBlock()->getSubSize();
-            if (sub_size < 1 && params.pd_proportion == 0.0) params.run_mode = PD_USER_SET;
+            if (sub_size < 1 && params.pd_proportion == 0.0) params.run_mode = RunMode::PD_USER_SET;
 
         }
     }
 
-    if (params.run_mode == PD_USER_SET) {
+    if (params.run_mode == RunMode::PD_USER_SET) {
         // compute score of user-defined sets
         cout << "Computing PD score for user-defined set of taxa..." << endl;
         pd_set.resize(1);
@@ -1222,7 +1223,7 @@ void printAreaList(Params &params) {
 void scaleBranchLength(Params &params) {
     params.is_rooted = true;
     PDTree tree(params);
-    if (params.run_mode == SCALE_BRANCH_LEN) {
+    if (params.run_mode == RunMode::SCALE_BRANCH_LEN) {
         cout << "Scaling branch length with a factor of " << params.scaling_factor << " ..." << endl;
         tree.scaleLength(params.scaling_factor, false);
     } else {
@@ -1710,14 +1711,16 @@ protected:
 };
 
 outstreambuf* outstreambuf::open( const char* name, ios::openmode mode) {
-    if (!(Params::getInstance().suppress_output_flags & OUT_LOG) && MPIHelper::getInstance().isMaster()) {
-        fout.open(name, mode);
-        if (!fout.is_open()) {
-            cerr << "ERROR: Could not open " << name << " for logging" << endl;
-            exit(EXIT_FAILURE);
-            return NULL;
+    if (!(Params::getInstance().suppress_output_flags & OUT_LOG)) {
+        if (MPIHelper::getInstance().isMaster()) {
+            fout.open(name, mode);
+            if (!fout.is_open()) {
+                cerr << "ERROR: Could not open " << name << " for logging" << endl;
+                exit(EXIT_FAILURE);
+                return NULL;
+            }
+            fout_buf = fout.rdbuf();
         }
-        fout_buf = fout.rdbuf();
     }
     cout_buf = cout.rdbuf();
     cout.rdbuf(this);
@@ -2015,7 +2018,7 @@ extern "C" void getintargv(int *argc, char **argv[])
 
 void processECOpd(Params &params) {
     double startTime = getCPUTime();
-    params.detected_mode = LINEAR_PROGRAMMING;
+    params.detected_mode = RunMode::LINEAR_PROGRAMMING;
     cout<<"----------------------------------------------------------------------------------------"<<endl;
     int i;
     double score;
@@ -2393,6 +2396,9 @@ int main(int argc, char *argv[]) {
     checkpoint->get("iqtree.seed", Params::getInstance().ran_seed);
     cout << "Seed:    " << Params::getInstance().ran_seed <<  " ";
     init_random(Params::getInstance().ran_seed + MPIHelper::getInstance().getProcessID(), true);
+    // initialize multiple random streams if needed
+    if (Params::getInstance().multi_rstreams_used)
+        init_multi_rstreams();
 
     time(&start_time);
     cout << "Time:    " << ctime(&start_time);
@@ -2550,15 +2556,15 @@ int main(int argc, char *argv[]) {
     } else if (Params::getInstance().test_input != TEST_NONE) {
         Params::getInstance().intype = detectInputFile(Params::getInstance().user_file);
         testInputFile(Params::getInstance());
-    } else if (Params::getInstance().run_mode == PRINT_TAXA) {
+    } else if (Params::getInstance().run_mode == RunMode::PRINT_TAXA) {
         printTaxa(Params::getInstance());
-    } else if (Params::getInstance().run_mode == PRINT_AREA) {
+    } else if (Params::getInstance().run_mode == RunMode::PRINT_AREA) {
         printAreaList(Params::getInstance());
-    } else if (Params::getInstance().run_mode == SCALE_BRANCH_LEN || Params::getInstance().run_mode == SCALE_NODE_NAME) {
+    } else if (Params::getInstance().run_mode == RunMode::SCALE_BRANCH_LEN || Params::getInstance().run_mode == RunMode::SCALE_NODE_NAME) {
         scaleBranchLength(Params::getInstance());
-    } else if (Params::getInstance().run_mode == PD_DISTRIBUTION) {
+    } else if (Params::getInstance().run_mode == RunMode::PD_DISTRIBUTION) {
         calcDistribution(Params::getInstance());
-    } else if (Params::getInstance().run_mode == STATS){ /**MINH ANH: for some statistics on the input tree*/
+    } else if (Params::getInstance().run_mode == RunMode::STATS){ /**MINH ANH: for some statistics on the input tree*/
         branchStats(Params::getInstance()); // MA
     } else if (Params::getInstance().branch_cluster > 0) {
         calcTreeCluster(Params::getInstance());
@@ -2623,21 +2629,21 @@ int main(int argc, char *argv[]) {
                 //if (Params::getInstance().budget < 0) Params::getInstance().run_mode = PD_USER_SET;
             } else {
                 if (Params::getInstance().sub_size < 1 && Params::getInstance().pd_proportion == 0.0)
-                    Params::getInstance().run_mode = PD_USER_SET;
+                    Params::getInstance().run_mode = RunMode::PD_USER_SET;
             }
             // input is a tree, check if it is a reserve selection -> convert to splits
-            if (Params::getInstance().run_mode != PD_USER_SET) Params::getInstance().multi_tree = true;
+            if (Params::getInstance().run_mode != RunMode::PD_USER_SET) Params::getInstance().multi_tree = true;
         }
 
 
         if (Params::getInstance().intype == IN_NEWICK && !Params::getInstance().find_all && Params::getInstance().budget_file == NULL &&
             Params::getInstance().find_pd_min == false && Params::getInstance().calc_pdgain == false &&
-            Params::getInstance().run_mode != LINEAR_PROGRAMMING && Params::getInstance().multi_tree == false)
+            Params::getInstance().run_mode != RunMode::LINEAR_PROGRAMMING && Params::getInstance().multi_tree == false)
             runPDTree(Params::getInstance());
         else if (Params::getInstance().intype == IN_NEXUS || Params::getInstance().intype == IN_NEWICK) {
-            if (Params::getInstance().run_mode == LINEAR_PROGRAMMING && Params::getInstance().find_pd_min)
+            if (Params::getInstance().run_mode == RunMode::LINEAR_PROGRAMMING && Params::getInstance().find_pd_min)
                 outError("Current linear programming does not support finding minimal PD sets!");
-            if (Params::getInstance().find_all && Params::getInstance().run_mode == LINEAR_PROGRAMMING)
+            if (Params::getInstance().find_all && Params::getInstance().run_mode == RunMode::LINEAR_PROGRAMMING)
                 Params::getInstance().binary_programming = true;
             runPDSplit(Params::getInstance());
         } else {
@@ -2652,6 +2658,9 @@ int main(int argc, char *argv[]) {
     }catch(int err_num){}
 
     finish_random();
+    // finish multiple random streams if used
+    if (Params::getInstance().multi_rstreams_used)
+        finish_multi_rstreams();
     
     return EXIT_SUCCESS;
 }

@@ -6,7 +6,15 @@
  */
 
 #include "modelmixture.h"
-#include "modelfactory.h"
+#include "modelbin.h"
+#include "modelmorphology.h"
+#include "modelprotein.h"
+#include "modelcodon.h"
+#include "modelliemarkov.h"
+#include "modeldna.h"
+#include "modeldnaerror.h"
+#include "modelpomo.h"
+#include "modelpomomixture.h"
 //#include "phylokernelmixture.h"
 
 using namespace std;
@@ -1027,6 +1035,153 @@ const double MAX_MIXTURE_PROP = 1000.0;
 //const double MIN_MIXTURE_RATE = 0.01;
 //const double MAX_MIXTURE_RATE = 100.0;
 
+ModelSubst* createModel(string model_str, ModelsBlock *models_block,
+                        StateFreqType freq_type, string freq_params,
+                        PhyloTree* tree)
+{
+	ModelSubst *model = NULL;
+	string model_params;
+    NxsModel *nxsmodel = models_block->findModel(model_str);
+	if (nxsmodel) model_params = nxsmodel->description;
+
+    // PoMo.
+    bool pomo = false;
+    string pomo_rate_str = "";
+    string pomo_heterozygosity = "";
+    string::size_type p_pos = posPOMO(model_str);
+    pomo = (p_pos != string::npos);
+
+    if (pomo) {
+        if (model_str[p_pos+2] == '{') {
+            string::size_type close_bracket = model_str.find("}", p_pos);
+            if (close_bracket == string::npos) {
+                cout << "Model string: " << model_str << endl;
+                outError("No closing bracket in PoMo parameters.");
+            }
+            else {
+                pomo_heterozygosity = model_str.substr(p_pos+3,close_bracket-p_pos-3);
+                model_str = model_str.substr(0, p_pos) + model_str.substr(close_bracket+1);
+            }
+        }
+        else {
+            model_str = model_str.substr(0, p_pos) + model_str.substr(p_pos + 2);
+        }
+
+        size_t pomo_rate_start_pos;
+        if ((pomo_rate_start_pos = model_str.find("+G")) != string::npos) {
+            size_t pomo_rate_end_pos = model_str.find_first_of("+*", pomo_rate_start_pos+1);
+            if (pomo_rate_end_pos == string::npos) {
+                pomo_rate_str = model_str.substr(pomo_rate_start_pos, model_str.length() - pomo_rate_start_pos);
+                model_str = model_str.substr(0, pomo_rate_start_pos);
+            } else {
+                pomo_rate_str = model_str.substr(pomo_rate_start_pos, pomo_rate_end_pos - pomo_rate_start_pos);
+                model_str = model_str.substr(0, pomo_rate_start_pos) + model_str.substr(pomo_rate_end_pos);
+            }
+        }
+    }
+
+    // sequencing error model
+    string seqerr = "";
+    string::size_type spec_pos;
+    while ((spec_pos = model_str.find("+E")) != string::npos) {
+        string::size_type end_pos = model_str.find_first_of("+*", spec_pos+1);
+        if (end_pos == string::npos) {
+            seqerr = model_str.substr(spec_pos);
+            model_str = model_str.substr(0, spec_pos);
+        } else {
+            seqerr = model_str.substr(spec_pos, end_pos - spec_pos);
+            model_str = model_str.substr(0, spec_pos) + model_str.substr(end_pos);
+        }
+    }
+    
+    if (!seqerr.empty() && tree->aln->seq_type != SEQ_DNA) {
+        outError("Sequencing error model " + seqerr + " is only supported for DNA");
+    }
+    // Now that PoMo stuff has been removed, check for model parameters.
+	size_t pos = model_str.find(OPEN_BRACKET);
+    if (pos != string::npos) {
+		if (model_str.rfind(CLOSE_BRACKET) != model_str.length()-1)
+			outError("Close bracket not found at the end of ", model_str);
+        string tmp_str = model_str;
+        // extract model_name
+        model_str = model_str.substr(0, pos);
+        
+        // extract model params
+        size_t end_pos = tmp_str.find(CLOSE_BRACKET);
+        
+        // handle cases that user doesn't specify model parameters but supply state frequencies
+        size_t pos_plus = model_str.find('+');
+        if (pos_plus != string::npos)
+        {
+            model_params = "";
+            model_str = model_str.substr(0, pos_plus);
+        }
+        else
+            model_params = tmp_str.substr(pos+1, end_pos-pos-1);
+        
+        // extract freqs (if specified)
+        pos = tmp_str.find("+FQ");
+        if (pos != string::npos)
+            freq_type = FREQ_EQUAL;
+        pos = tmp_str.find("+F{");
+        if (pos != string::npos)
+        {
+            freq_type = FREQ_USER_DEFINED; 
+            tmp_str = tmp_str.substr(pos+3, tmp_str.length()-pos-3);
+            end_pos = tmp_str.find(CLOSE_BRACKET);
+            freq_params = tmp_str.substr(0, end_pos);
+        }
+    }
+
+	/*
+	if ((model_str == "JC" && tree->aln->seq_type == SEQ_DNA) ||
+		(model_str == "POISSON" && tree->aln->seq_type == SEQ_PROTEIN) ||
+		(model_str == "JC2" && tree->aln->seq_type == SEQ_BINARY) ||
+		(model_str == "JCC" && tree->aln->seq_type == SEQ_CODON) ||
+		(model_str == "MK" && tree->aln->seq_type == SEQ_MORPH))
+	{
+		model = new ModelSubst(tree->aln->num_states);
+	} else */
+
+    if ((pomo) || (tree->aln->seq_type == SEQ_POMO)) {
+        if (pomo_rate_str == "")
+            model = new ModelPoMo(model_str.c_str(), model_params, freq_type, freq_params, tree, pomo_heterozygosity);
+        else
+            model = new ModelPoMoMixture(model_str.c_str(), model_params, freq_type, freq_params, tree, pomo_heterozygosity, pomo_rate_str);
+        if (model->isMixture() && verbose_mode >= VB_MED)
+            cout << "PoMo mixture model for Gamma rate heterogeneity." << endl;
+//	else if ((model_str == "GTR" && tree->aln->seq_type == SEQ_DNA) ||
+//             (model_str == "GTR2" && tree->aln->seq_type == SEQ_BINARY) ||
+//             (model_str == "GTR20" && tree->aln->seq_type == SEQ_PROTEIN)) {
+//		model = new ModelGTR(tree, count_rates);
+//		if (freq_params != "")
+//			((ModelGTR*)model)->readStateFreq(freq_params);
+//		if (model_params != "")
+//			((ModelGTR*)model)->readRates(model_params);
+//		((ModelGTR*)model)->init(freq_type);
+//	} else
+	} else if (ModelMarkov::validModelName(model_str)) {
+	        model = ModelMarkov::getModelByName(model_str, tree, model_params, freq_type, freq_params);
+	} else if (tree->aln->seq_type == SEQ_BINARY) {
+		model = new ModelBIN(model_str.c_str(), model_params, freq_type, freq_params, tree);
+	} else if (tree->aln->seq_type == SEQ_DNA) {
+        if (seqerr.empty())
+            model = new ModelDNA(model_str.c_str(), model_params, freq_type, freq_params, tree);
+        else
+            model = new ModelDNAError(model_str.c_str(), model_params, freq_type, freq_params, seqerr, tree);
+	} else if (tree->aln->seq_type == SEQ_PROTEIN) {
+		model = new ModelProtein(model_str.c_str(), model_params, freq_type, freq_params, tree, models_block);
+	} else if (tree->aln->seq_type == SEQ_CODON) {
+		model = new ModelCodon(model_str.c_str(), model_params, freq_type, freq_params, tree);
+	} else if (tree->aln->seq_type == SEQ_MORPH) {
+		model = new ModelMorphology(model_str.c_str(), model_params, freq_type, freq_params, tree);
+	} else {
+		outError("Unsupported model type");
+	}
+
+	return model;
+}
+
 /**
 	constructor
 	@param tree associated tree for the model
@@ -1035,6 +1190,7 @@ ModelMixture::ModelMixture(PhyloTree *tree) : ModelMarkov(tree) {
 	prop = NULL;
 	fix_prop = true;
     optimizing_gtr = false;
+    optimize_steps = 0;
 }
 
 ModelMixture::ModelMixture(string orig_model_name, string model_name, string model_list, ModelsBlock *models_block,
@@ -1252,6 +1408,12 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
                     model_freq = FREQ_EQUAL;
                 } else if (fstr == "+F"){
                     model_freq = FREQ_EMPIRICAL;
+                } else if (fstr == "+F1X4"){ // for codon model
+                    model_freq = FREQ_CODON_1x4;
+                } else if (fstr == "+F3X4"){ // for codon model
+                    model_freq = FREQ_CODON_3x4;
+                } else if (fstr == "+F3X4C"){ // for codon model
+                    model_freq = FREQ_CODON_3x4C;
                 } else {
                     // others, for example, fstr == +FC10pi1
                     fstr = fstr.substr(2); // get rid of +F
@@ -1310,7 +1472,7 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
         for (i = 0; i < nmixtures; i++)
              prop[i] *= sum;
     }
-    
+
     // initialize vary frequency vectors
     if (Params::getInstance().estimate_init_freq==1)
         estimateInitFreq1();
@@ -1318,12 +1480,15 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
         estimateInitFreq2();
 
 	// rescale total_num_subst such that the global rate is 1
-    for (i = 0, sum = 0.0; i < nmixtures; i++) {
-        sum += prop[i] * at(i)->total_num_subst;
+    if (!rescale_codon_mix()) {
+        for (i = 0, sum = 0.0; i < nmixtures; i++) {
+            sum += prop[i] * at(i)->total_num_subst;
+        }
+        for (i = 0; i < nmixtures; i++) {
+            at(i)->total_num_subst /= sum;
+        }
     }
-    for (i = 0; i < nmixtures; i++) {
-        at(i)->total_num_subst /= sum;
-    }
+    
     if (optimize_steps == 0) {
         optimize_steps = (getNDim() + 1) * 100;
     }
@@ -1367,15 +1532,17 @@ void ModelMixture::initMem() {
     // models may be a mixture model itself (PoMo rate heterogeneity).
     
     int num_states_total = 0;
+    int num_states_align_total = 0;
     for (iterator it = begin(); it != end(); it++) {
         num_states_total += (*it)->get_num_states_total();
+        num_states_align_total += get_safe_upper_limit((*it)->get_num_states_total());
     }
     
     aligned_free(eigenvalues);
     aligned_free(eigenvectors);
     aligned_free(inv_eigenvectors);
     aligned_free(inv_eigenvectors_transposed);
-    unsigned long long int tmp_size = num_states_total*nmixtures;
+    unsigned long long int tmp_size = num_states_align_total*nmixtures;
     ensure_aligned_allocated(eigenvalues, tmp_size);
     tmp_size *= num_states_total;
     ensure_aligned_allocated(eigenvectors, tmp_size);
@@ -1389,6 +1556,8 @@ void ModelMixture::initMem() {
     for (iterator it = begin(); it != end(); it++, m++) {
         int num_states_this_model = (*it)->get_num_states_total();
         int num_states_this_model_2 = num_states_this_model * num_states_this_model;
+        int num_align_states_this_model = get_safe_upper_limit((*it)->get_num_states_total());
+        int num_align_states_this_model_2 = num_align_states_this_model * num_states_this_model;
         // first copy memory for eigen stuffs
         memcpy(&eigenvalues[count_num_states], (*it)->eigenvalues,
                num_states_this_model*sizeof(double));
@@ -1415,8 +1584,8 @@ void ModelMixture::initMem() {
         
         // Update the state counters, so that the pointers are assigned correctly
         // for the next mixture component.
-        count_num_states += num_states_this_model;
-        count_num_states_2 += num_states_this_model_2;
+        count_num_states += num_align_states_this_model;
+        count_num_states_2 += num_align_states_this_model_2;
     }
 }
 
@@ -1439,7 +1608,6 @@ void ModelMixture::setCheckpoint(Checkpoint *checkpoint) {
 
 void ModelMixture::startCheckpoint() {
     checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()));
-    // checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()) + "_" + getName());
 }
 
 void ModelMixture::saveCheckpoint() {
@@ -1460,6 +1628,68 @@ void ModelMixture::saveCheckpoint() {
 //    ModelMarkov::saveCheckpoint();
 }
 
+// If init_weight > 0,initial the parameters from the (K-1)-class mixture model, and modify the weights
+// else, initial the parameters from the K-class mixture model, don't modify the weights
+void ModelMixture::initFromClassMinusOne(double init_weight) {
+    if (getNMixtures() <= 1)
+        return;
+    
+    int nmix = getNMixtures();
+    checkpoint->startStruct("BestOfTheKClass");
+    if (init_weight > 0) {
+        if (nmix > 2) {
+            checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()-1));
+            if (!fix_prop) {
+                CKP_ARRAY_RESTORE(nmix-1, prop);
+            }
+            int part = 1;
+            for (iterator it = begin(); it != end() && part < nmix; it++, part++) {
+                checkpoint->startStruct("Component" + convertIntToString(part));
+                (*it)->restoreCheckpoint();
+                checkpoint->endStruct();
+            }
+            endCheckpoint();
+            // update all the class weights by multiplying ( 1 - init_weight )
+            for (int i = 0 ; i < nmix - 1; i++)
+                prop[i] = prop[i] * (1.0 - init_weight);
+        } else {
+            // for 2-class mixture model
+            at(0)->restoreCheckpoint();
+            prop[0] = 1.0 - init_weight;
+        }
+        prop[nmix - 1] = init_weight;
+
+        // change the freq to even freq
+        if (at(nmix - 1)->freq_type == FREQ_ESTIMATE) {
+            int nstate = at(nmix - 1)->num_states;
+            double state_freq[nstate];
+            double f = 1.0 / (double) nstate;
+            for (int i = 0; i < nstate; i++)
+                state_freq[i] = f;
+            at(nmix - 1)->setStateFrequency(state_freq);
+        }
+
+        //cout << "[init] " << getNameParams(false) << endl;
+    } else {
+        checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()));
+        if (!fix_prop) {
+            CKP_ARRAY_RESTORE(nmix, prop);
+        }
+        int part = 1;
+        for (iterator it = begin(); it != end() && part < nmix+1; it++, part++) {
+            checkpoint->startStruct("Component" + convertIntToString(part));
+            (*it)->restoreCheckpoint();
+            checkpoint->endStruct();
+        }
+        endCheckpoint();
+    }
+    checkpoint->endStruct();
+
+    decomposeRateMatrix();
+    if (phylo_tree)
+        phylo_tree->clearAllPartialLH();
+}
+
 void ModelMixture::restoreCheckpoint() {
 //    ModelMarkov::restoreCheckpoint();
 
@@ -1476,6 +1706,8 @@ void ModelMixture::restoreCheckpoint() {
         checkpoint->endStruct();
     }
     endCheckpoint();
+
+    //cout << "[*init] " << getNameParams(false) << endl;
 
     decomposeRateMatrix();
     if (phylo_tree)
@@ -1643,8 +1875,20 @@ void ModelMixture::computeTransDerv(double time, double *trans_matrix,
     at(mixture)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2);
 }
 
+void ModelMixture::adaptStateFrequency(double* freq)
+{
+    ASSERT(state_freq);
+    for (iterator it = begin(); it != end(); it++) {
+        if ((*it)->freq_type == FREQ_ESTIMATE || (*it)->freq_type == FREQ_EMPIRICAL)
+            (*it)->adaptStateFrequency(freq);
+    }
+}
+
 // added case for gtr optimization -JD
 int ModelMixture::getNDim() {
+    if (fixed_parameters) {
+        return 0;
+    }
     int dim = (fix_prop) ? 0: (size()-1);
     int dim_linked_subst = 0;
     
@@ -1713,6 +1957,7 @@ double ModelMixture::targetFunk(double x[]) {
     }
 	getVariables(x);
     
+    rescale_codon_mix();
  
     //	decomposeRateMatrix();
     	int dim = 0;
@@ -1792,6 +2037,7 @@ double ModelMixture::optimizeWeights() {
 
         }
         */
+        
         if (converged) break;
 
     }
@@ -1803,6 +2049,7 @@ double ModelMixture::optimizeWeights() {
 }
 
 double ModelMixture::optimizeWithEM(double gradient_epsilon) {
+
     size_t ptn, c, k;
     size_t nptn = phylo_tree->aln->getNPattern();
     size_t nmix = size();
@@ -1913,7 +2160,6 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
             }
             */
         }
-
         // now optimize model one by one
         for (c = 0; c < nmix; c++) if (at(c)->getNDim() > 0) {
 
@@ -1956,6 +2202,7 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
             tree->setModel(NULL);
             subst_model->setTree(phylo_tree);
             // phylo_tree->clearAllPartialLH();
+            rescale_codon_mix();
 
         }
 
@@ -2008,8 +2255,10 @@ bool ModelMixture::isMixtureSameQ() {
 }
 
 double ModelMixture::optimizeParameters(double gradient_epsilon) {
-    
+
     int dim = getNDim();
+    if (dim == 0)
+        return 0.0;
     double score = 0.0;
     IntVector params;
     int i, j, ncategory = size();
@@ -2020,9 +2269,17 @@ double ModelMixture::optimizeParameters(double gradient_epsilon) {
     if (!phylo_tree->getModelFactory()->unobserved_ptns.empty()) {
         outError("Mixture model +ASC is not supported yet. Contact author if needed.");
     }
+
+    /*
+    //  optimize a gtr matrix if specified (enters main routine) -JD
+    if (Params::getInstance().optimize_linked_gtr) {
+        score = optimizeLinkedSubst(gradient_epsilon);
+    }
+*/
     // Fused model can use EM algorithm
     // Non-Fused model can only use BFGS algorithm unless optimize_alg_qmix = "EM"
-    if (isFused() || Params::getInstance().optimize_linked_gtr || Params::getInstance().optimize_alg_qmix == "EM") {
+    // if (isFused() || Params::getInstance().optimize_linked_gtr || Params::getInstance().optimize_alg_qmix == "EM") {
+    if (isFused() || Params::getInstance().optimize_alg_qmix == "EM") {
 		if (dim > 0) {
 			// set num_params to 0 when linking exchange rates
 			if (Params::getInstance().optimize_linked_gtr) { // added routine for GTR optimization -JD
@@ -2054,22 +2311,19 @@ double ModelMixture::optimizeParameters(double gradient_epsilon) {
 		else if (!fix_prop) {
 			score = optimizeWeights();
 		}
+        //  optimize a gtr matrix if specified (enters main routine) -JD
+        if (Params::getInstance().optimize_linked_gtr) {
+            score = optimizeLinkedSubst(gradient_epsilon);
+        }
 	} else {
 		score = ModelMarkov::optimizeParameters(gradient_epsilon);
 	}
-
-//  optimize a gtr matrix if specified (enters main routine) -JD
-    if (Params::getInstance().optimize_linked_gtr) {
-        score = optimizeLinkedSubst(gradient_epsilon);
-    }
-
-//	double score = ModelGTR::optimizeParameters(gradient_epsilon);
 
     if (getNDim() == 0) {
         return score;
     }
 
-	if (!Params::getInstance().optimize_linked_gtr) {
+	// if (!Params::getInstance().optimize_linked_gtr) {
 		// normalize state freq
 		for (i = 0; i < ncategory; i++) {
 			if (at(i)->is_reversible && at(i)->freq_type == FREQ_ESTIMATE) {
@@ -2088,20 +2342,21 @@ double ModelMixture::optimizeParameters(double gradient_epsilon) {
 				cout << endl;
 			}
 		}
-    }
-
+    // }
+    
     // now rescale Q matrices to have proper interpretation of branch lengths
-
-	double sum;
-	for (i = 0, sum = 0.0; i < ncategory; i++) {
-		sum += prop[i]*at(i)->total_num_subst;
-    }
-//    sum += phylo_tree->getRate()->getPInvar();
-    if (fabs(sum-1.0) > 1e-6 && !isFused()) {
-        for (i = 0; i < ncategory; i++)
-            at(i)->total_num_subst /= sum;
-        decomposeRateMatrix();
-        phylo_tree->clearAllPartialLH();
+    if (!rescale_codon_mix()) {
+        double sum;
+        for (i = 0, sum = 0.0; i < ncategory; i++) {
+            sum += prop[i]*at(i)->total_num_subst;
+        }
+        //    sum += phylo_tree->getRate()->getPInvar();
+        if (fabs(sum-1.0) > 1e-6 && !isFused()) {
+            for (i = 0; i < ncategory; i++)
+                at(i)->total_num_subst /= sum;
+            decomposeRateMatrix();
+            phylo_tree->clearAllPartialLH();
+        }
     }
 	return score;
 }
@@ -2209,6 +2464,8 @@ void ModelMixture::decomposeRateMatrix() {
 
 // added case for gtr optimization -JD
 void ModelMixture::setVariables(double *variables) {
+    if (getNDim() == 0)
+        return;
 	int dim = 0;
     if (optimizing_gtr) {       
         // only need to get the variable from the first class
@@ -2220,8 +2477,13 @@ void ModelMixture::setVariables(double *variables) {
         (*it)->freq_type = freq;
     } else {
         for (iterator it = begin(); it != end(); it++) {
+            int n = (*it)->num_params;
+            if (Params::getInstance().optimize_linked_gtr && it != begin())
+                (*it)->num_params = 0;
             (*it)->setVariables(&variables[dim]);
             dim += (*it)->getNDim();
+            if (Params::getInstance().optimize_linked_gtr && it != begin())
+                (*it)->num_params = n;
         }
         if (fix_prop) return;
         int i, ncategory = size();
@@ -2233,6 +2495,8 @@ void ModelMixture::setVariables(double *variables) {
 
 //added case for gtr optimization -JD
 bool ModelMixture::getVariables(double *variables) {
+    if (getNDim() == 0)
+        return false;
 	int dim = 0;
     bool changed = false;
     if (optimizing_gtr) {
@@ -2244,9 +2508,20 @@ bool ModelMixture::getVariables(double *variables) {
             (*it)->freq_type = freq;
         }
     } else {
-		for (iterator it = begin(); it != end(); it++) {
+        for (iterator it = begin(); it != end(); it++) {
+            int n = (*it)->num_params;
+            if (Params::getInstance().optimize_linked_gtr && it != begin())
+                (*it)->num_params = 0;
 			changed |= (*it)->getVariables(&variables[dim]);
 			dim += (*it)->getNDim();
+            if (Params::getInstance().optimize_linked_gtr && it != begin()) {
+                (*it)->num_params = n;
+                // assign exchange rates equal to the first class's
+                auto freq = (*it)->freq_type;
+                (*it)->freq_type = FREQ_USER_DEFINED;
+                changed |= (*it)->getVariables(&variables[0]);
+                (*it)->freq_type = freq;
+            }
 		}
 		if (fix_prop) return changed;
 		int i, ncategory = size();
@@ -2267,6 +2542,8 @@ bool ModelMixture::getVariables(double *variables) {
 
 //added case for gtr optimization -JD
 void ModelMixture::setBounds(double *lower_bound, double *upper_bound, bool *bound_check) {
+    if (getNDim() == 0)
+        return;
 	int dim = 0;
     if(optimizing_gtr) {
         // only consider the first class as this is a linked substitution matrix
@@ -2285,8 +2562,24 @@ void ModelMixture::setBounds(double *lower_bound, double *upper_bound, bool *bou
         }
     } else {
         for (iterator it = begin(); it != end(); it++) {
+            int n = (*it)->num_params;
+            if (Params::getInstance().optimize_linked_gtr && it != begin())
+                (*it)->num_params = 0;
             (*it)->setBounds(&lower_bound[dim], &upper_bound[dim], &bound_check[dim]);
             dim += (*it)->getNDim();
+            if (Params::getInstance().optimize_linked_gtr && it != begin())
+                (*it)->num_params = n;
+            if (Params::getInstance().optimize_linked_gtr && it == begin() && phylo_tree->aln->seq_type == SEQ_PROTEIN) {
+                //manually set these params for the restartParameters method for protein dataset
+                auto freq = (*it)->freq_type;
+                (*it)->freq_type=FREQ_USER_DEFINED;
+                int m = (*it)->getNDim();
+                (*it)->freq_type=freq;
+                for(int i=1; i<=m; i++){
+                    bound_check[i] = true;
+                    upper_bound[i] = 100;
+                }
+            }
         }
 		if (fix_prop) return;
 		int i, ncategory = size();
@@ -2310,6 +2603,15 @@ void ModelMixture::writeInfo(ostream &out) {
 	for (i = 0; i < size(); i++)
 		cout << " " << prop[i];
 	cout << endl;
+    
+    /*
+    // for debugging
+    double overall_nsub = 0.0;
+    for (i = 0; i < size(); i++) {
+        overall_nsub += prop[i] * at(i)->total_num_subst;
+    }
+    cout << "Overall estimated number of substitutions per site: " << overall_nsub << endl;
+    */
 }
 
 void ModelMixture::writeParameters(ostream &out) {
@@ -2331,14 +2633,57 @@ string ModelMixture::getName() {
 }
 
 string ModelMixture::getNameParams(bool show_fixed_params) {
-    if (full_name != "")
-        return full_name;
+    // if (full_name != "")
+    //    return full_name;
     string retname = "MIX";
     retname += OPEN_BRACKET;
+    int i = 0;
     for (iterator it = begin(); it != end(); it++) {
         if (it != begin()) retname += ",";
         retname += (*it)->getNameParams(show_fixed_params);
+        retname += ":1:" + convertDoubleToString(prop[i]);
+        i++;
     }
     retname += CLOSE_BRACKET;
     return retname;
+}
+
+// For codon mixture, rescale total_num_subst specifically
+// so that the global rate is 1
+// return true if the values of total_num_subst have been updated
+bool ModelMixture::rescale_codon_mix() {
+    if (phylo_tree->aln->seq_type == SEQ_CODON) {
+        vector<double> nsubs;
+        double overall_nsub = 0.0;
+        int i,j,k;
+        for (k = 0; k < size(); k++) {
+            int nstate = at(k)->num_states;
+            // calculate the estimated number of substitutions per site
+            // directly from the Q matrix and the frequency array
+            double nsub = 0.0;
+            double* curr_freqs = at(k)->state_freq;
+            double sum_freqs = 0.0;
+            for (i = 0; i < nstate; i++)
+                sum_freqs += curr_freqs[i];
+            for (i = 0; i < nstate; i++) {
+                double* curr_rates = at(k)->rates + i * nstate;
+                double row_sum = 0.0;
+                for (j = 0; j < nstate; j++) {
+                    if (i != j)
+                        row_sum += curr_rates[j] * curr_freqs[j] / sum_freqs;
+                }
+                nsub += row_sum * curr_freqs[i] / sum_freqs;
+            }
+            nsubs.push_back(nsub);
+            overall_nsub += prop[k] * nsub;
+        }
+        double ratio = 1.0 / overall_nsub;
+        for (k = 0; k < size(); k++) {
+            at(k)->total_num_subst = ratio * nsubs[k];
+        }
+        decomposeRateMatrix();
+        phylo_tree->clearAllPartialLH();
+        return true;
+    }
+    return false;
 }

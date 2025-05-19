@@ -73,7 +73,7 @@
 #
 #
 
-cmake_minimum_required(VERSION 3.10.2 FATAL_ERROR) # Lowest version tested in CI (on linux x86_64)
+cmake_minimum_required(VERSION 3.5) # Lowest version tested in CI (on linux x86_64)
 set(CMAKE_LEGACY_CYGWIN_WIN32 0)
 
 set(GCC_MIN_VERSION "9") # minimum GCC version that is tested in CI
@@ -97,10 +97,26 @@ if(Boost_FOUND)
     add_definitions(-DUSE_BOOST)
 endif()
 
+# NOTE: After updating cmake_minimum_required to 3.5, 
+# if we call check_function_exists() after set(CMAKE_EXE_LINKER_FLAGS), it returns function not found
+# So, I moved this step upward to avoid the compilation errors due to not-found functions
+##################################################################
+# check existence of a few basic functions
+##################################################################
+include (${CMAKE_ROOT}/Modules/CheckFunctionExists.cmake)
+check_function_exists (gettimeofday HAVE_GETTIMEOFDAY)
+check_function_exists (getrusage HAVE_GETRUSAGE)
+check_function_exists (GlobalMemoryStatusEx HAVE_GLOBALMEMORYSTATUSEX)
+check_function_exists (strndup HAVE_STRNDUP)
+check_function_exists (strtok_r HAVE_STRTOK_R)
+include (CheckIncludeFile)
+CHECK_INCLUDE_FILE("unistd.h" HAVE_UNISTDH)
+find_package(Backtrace)
+
 # The version number.
-set (iqtree_VERSION_MAJOR 2)
-set (iqtree_VERSION_MINOR 3)
-set (iqtree_VERSION_PATCH ".6")
+set (iqtree_VERSION_MAJOR 3)
+set (iqtree_VERSION_MINOR 0)
+set (iqtree_VERSION_PATCH ".1")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 
@@ -134,6 +150,38 @@ endif()
 include_directories("${PROJECT_SOURCE_DIR}")
 include_directories("${PROJECT_SOURCE_DIR}/yaml-cpp/include")
 include_directories(after system "/usr/local/include")
+
+##################################################################
+# onnxruntime
+##################################################################
+option(USE_NN "Use neutual network (nn) with version 1.13 or later onnxruntime" OFF)
+option(USE_OLD_NN "Use neutual network (nn) with version 1.12 or before onnxruntime" OFF)
+
+if(USE_NN)
+    add_definitions(-D_NN)
+elseif(USE_OLD_NN)
+    add_definitions(-D_OLD_NN)
+endif()
+
+# Find onnxruntime library for machine learning
+if (USE_NN OR USE_OLD_NN)
+    if (onnxruntime_INCLUDE_DIRS)
+        add_definitions(-I${onnxruntime_INCLUDE_DIRS})
+    else()
+        find_package(onnxruntime)
+        if(onnxruntime_FOUND)
+            add_definitions(-I${onnxruntime_INCLUDE_DIRS})
+        endif()
+    endif()
+endif()
+
+if(USE_NN OR USE_OLD_NN)
+    if(NOT ONNXRUNTIME_ROOTDIR)
+        if(WIN32)
+            set(ONNXRUNTIME_ROOTDIR "C:/Program Files (x86)/onnxruntime")
+        endif()
+    endif()
+endif()
 
 ##################################################################
 # Include the Terraphast library
@@ -191,17 +239,31 @@ endif()
 ##################################################################
 # Include the CMAPLE library
 ##################################################################
-option(USE_CMAPLE "Integrate CMAPLE" OFF)
+if (NOT WIN32)
+    # temporarily disable cmaple for Windows, next to fix for next release
+    option(USE_CMAPLE "Integrate CMAPLE" ON)
+endif()
 
 if (USE_CMAPLE STREQUAL "ON")
 	message("Integrate CMAPLE: ON")
     add_definitions(-DUSE_CMAPLE)
     set(TARGET_CMAPLE "maple")
+    if (IQTREE_FLAGS MATCHES static)
+        set(CMAPLE_FLAGS "${CMAPLE_FLAGS} static")
+    endif()
 else()
 	message("Integrate CMAPLE: OFF")
 	set(TARGET_CMAPLE "")
 endif()
 
+option(USE_CMAPLE_AA "Integrate CMAPLE-AA" OFF)
+
+if (USE_CMAPLE_AA STREQUAL "ON")
+    message("Integrate CMAPLE_AA: ON")
+    #add_definitions(-DUSE_CMAPLE)
+else()
+    message("Integrate CMAPLE_AA: OFF")
+endif()
 
 ##################################################################
 # Detect target platforms
@@ -216,16 +278,19 @@ if (WIN32)
 elseif (APPLE)
     message("Target OS     : Mac OS X")
 	if(OSX_NATIVE_ARCHITECTURE STREQUAL "arm64")
-		add_definitions("--target=arm64-apple-macos10.5")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=arm64-apple-macos12.0.1")
+		add_definitions("--target=arm64-apple-macos11.0.1")
+        # set the first version of mac 11 that supports ARM
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=arm64-apple-macos11.0.1")
 	else()
 		# to be compatible back to Mac OS X 10.7
     	if (IQTREE_FLAGS MATCHES "oldmac")
         	add_definitions("-mmacosx-version-min=10.5")
         	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mmacosx-version-min=10.5")
     	else()
-        	add_definitions("--target=x86_64-apple-macos10.7")
-        	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=x86_64-apple-macos10.7")
+            # supports the first version changed from OS X to macOS
+        	add_definitions("--target=x86_64-apple-macos10.12")
+            set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12)
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=x86_64-apple-macos10.12")
     	endif()
 	endif()
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
@@ -360,6 +425,10 @@ if (__ARM_NEON AND APPLE)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Dthread_local=")
 endif()
 
+##################################################################
+# detect 32 or 64 bit binary
+##################################################################
+set (BINARY32 "FALSE")
 if(CMAKE_SIZEOF_VOID_P EQUAL 4 OR IQTREE_FLAGS MATCHES "m32")
     error("32-bit compilation is not supported")
 else()
@@ -434,14 +503,14 @@ if (NOT IQTREE_FLAGS MATCHES "single")
     	if(OSX_NATIVE_ARCHITECTURE STREQUAL "arm64")
     		link_directories(${PROJECT_SOURCE_DIR}/libmac_m1)
     	else()
-        link_directories(${PROJECT_SOURCE_DIR}/libmac)
-      endif()	
+    		link_directories(${PROJECT_SOURCE_DIR}/libmac)
+    	endif()
     elseif (UNIX AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
-      if (__ARM_NEON)
-        link_directories(${PROJECT_SOURCE_DIR}/liblinux_arm)
-      else()
-        link_directories(${PROJECT_SOURCE_DIR}/lib)
-      endif()
+    	if (__ARM_NEON)
+    		link_directories(${PROJECT_SOURCE_DIR}/liblinux_arm)
+    	else()
+    		link_directories(${PROJECT_SOURCE_DIR}/lib)
+    	endif()
     elseif (WIN32)
         link_directories(${PROJECT_SOURCE_DIR}/lib)
     endif()
@@ -655,19 +724,6 @@ elseif (CLANG AND NOT CLANG_UNDER_VS)
     set(CMAKE_C_FLAGS_MEM "-g -O1")
 endif()
 
-##################################################################
-# check existence of a few basic functions
-##################################################################
-include (${CMAKE_ROOT}/Modules/CheckFunctionExists.cmake)
-check_function_exists (gettimeofday HAVE_GETTIMEOFDAY)
-check_function_exists (getrusage HAVE_GETRUSAGE)
-check_function_exists (GlobalMemoryStatusEx HAVE_GLOBALMEMORYSTATUSEX)
-check_function_exists (strndup HAVE_STRNDUP)
-check_function_exists (strtok_r HAVE_STRTOK_R)
-include (CheckIncludeFile)
-CHECK_INCLUDE_FILE("unistd.h" HAVE_UNISTDH)
-find_package(Backtrace)
-
 # configure a header file to pass some of the CMake settings
 # to the source code
 configure_file (
@@ -689,7 +745,7 @@ endif()
 #include_directories("${PROJECT_BINARY_DIR}/zlib-1.2.7")
 
 
-if (NOT IQTREE_FLAGS MATCHES "nozlib")
+if (NOT IQTREE_FLAGS MATCHES "nozlib" AND NOT IQTREE_FLAGS MATCHES "static")
     find_package(ZLIB)
 endif()
 
@@ -729,6 +785,10 @@ add_subdirectory(tree)
 add_subdirectory(terrace)
 add_subdirectory(simulator)
 
+if (USE_NN OR USE_OLD_NN)
+add_subdirectory(nn)
+endif()
+
 if (USE_CMAPLE STREQUAL "ON")
 	SET(INSTALL_CMAPLE OFF CACHE BOOL "Disable installation of googletest" FORCE)
 	add_subdirectory(cmaple)
@@ -753,6 +813,10 @@ if (USE_LSD2)
     add_subdirectory(lsd2)
 endif()
 
+##################################################################
+# the main executable
+##################################################################
+
 add_library(kernelsse tree/phylokernelsse.cpp)
 
 if (NOT IQTREE_FLAGS MATCHES "novx")
@@ -769,19 +833,19 @@ endif()
 option(BUILD_LIB "Build IQ-TREE2 library" OFF)
 
 if (BUILD_LIB STREQUAL "ON")
-    add_library(iqtree2
+    add_library(iqtree3
         obsolete/parsmultistate.cpp
         obsolete/parsmultistate.h
     )
 else()
-    add_executable(iqtree2
+    add_executable(iqtree3
         obsolete/parsmultistate.cpp
         obsolete/parsmultistate.h
     )
 endif()
 
-if (USE_CMAPLE STREQUAL "ON")
-	add_executable(iqtree2-aa
+if (USE_CMAPLE_AA STREQUAL "ON")
+	add_executable(iqtree3-aa
 	obsolete/parsmultistate.cpp
 	obsolete/parsmultistate.h
 	)
@@ -789,24 +853,24 @@ endif()
 
 if(Backtrace_FOUND)
   include_directories(${Backtrace_INCLUDE_DIR})
-  target_link_libraries(iqtree2 ${Backtrace_LIBRARY})
-  if (USE_CMAPLE STREQUAL "ON")
-  	target_link_libraries(iqtree2-aa ${Backtrace_LIBRARY})
+  target_link_libraries(iqtree3 ${Backtrace_LIBRARY})
+  if (USE_CMAPLE_AA STREQUAL "ON")
+  	target_link_libraries(iqtree3-aa ${Backtrace_LIBRARY})
   endif()
 endif(Backtrace_FOUND)
 
 if (USE_BOOSTER)
-    target_link_libraries(iqtree2 booster)
-    if (USE_CMAPLE STREQUAL "ON")
-    	target_link_libraries(iqtree2-aa booster)
+    target_link_libraries(iqtree3 booster)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa booster)
     endif()
 endif()
 
 if (NOT IQTREE_FLAGS MATCHES "avx" AND NOT IQTREE_FLAGS MATCHES "fma")
     if (NOT IQTREE_FLAGS MATCHES "nosse")
-        set_target_properties(iqtree2 ncl nclextra utils pda lbfgsb whtest sprng vectorclass model gsl alignment tree simulator yaml-cpp phyloYAML main ${TARGET_CMAPLE} PROPERTIES COMPILE_FLAGS "${SSE_FLAGS}")
-        if (USE_CMAPLE STREQUAL "ON")
-        	set_target_properties(iqtree2-aa ncl nclextra utils pda lbfgsb whtest sprng vectorclass model gsl alignment tree simulator yaml-cpp phyloYAML main-aa maple-aa PROPERTIES COMPILE_FLAGS "${SSE_FLAGS}")
+        set_target_properties(iqtree3 ncl nclextra utils pda lbfgsb whtest sprng vectorclass model gsl alignment tree simulator yaml-cpp phyloYAML main ${TARGET_CMAPLE} PROPERTIES COMPILE_FLAGS "${SSE_FLAGS}")
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	set_target_properties(iqtree3-aa ncl nclextra utils pda lbfgsb whtest sprng vectorclass model gsl alignment tree simulator yaml-cpp phyloYAML main-aa maple-aa PROPERTIES COMPILE_FLAGS "${SSE_FLAGS}")
         endif()
         if (USE_TERRAPHAST)
             set_target_properties(terracetphast terraphast PROPERTIES COMPILE_FLAGS "${SSE_FLAGS}")
@@ -826,6 +890,10 @@ if (NOT IQTREE_FLAGS MATCHES "avx" AND NOT IQTREE_FLAGS MATCHES "fma")
             set_target_properties(kernelavx512 PROPERTIES COMPILE_FLAGS "${AVX512_FLAGS}")
         endif()
     endif()
+endif()
+
+if(USE_NN OR USE_OLD_NN)
+target_link_libraries(iqtree3 nn)
 endif()
 
 ##################################################################
@@ -849,85 +917,100 @@ if (NOT IQTREE_FLAGS MATCHES "single")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LIBPATH:${PROJECT_SOURCE_DIR}/lib")
         set(THREAD_LIB "pthreadVC2")
     elseif(CLANG AND WIN32)
-        target_link_libraries(iqtree2 ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
-        if (USE_CMAPLE STREQUAL "ON")
-            target_link_libraries(iqtree2-aa ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
+        target_link_libraries(iqtree3 ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+            target_link_libraries(iqtree3-aa ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
         endif()
     endif()
 endif()
 
 # basic linking librararies
-target_link_libraries(iqtree2 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
+target_link_libraries(iqtree3 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
     gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
 
-if (USE_CMAPLE STREQUAL "ON")
-	target_link_libraries(iqtree2-aa pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
+if (USE_CMAPLE_AA STREQUAL "ON")
+	target_link_libraries(iqtree3-aa pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
     	gsl alignment tree simulator terrace yaml-cpp phyloYAML main-aa maple-aa ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
 endif()
-	
+
+# onnxruntime library
+if (USE_NN OR USE_OLD_NN)
+    if (onnxruntime_LIBRARIES)
+        target_link_libraries(iqtree3 ${onnxruntime_LIBRARIES})
+    else()
+        if (APPLE)
+            target_link_libraries(iqtree3 /usr/local/lib/libonnxruntime.dylib)
+        elseif(UNIX)
+            target_link_libraries(iqtree3 /usr/local/lib/libonnxruntime.so)
+        else()
+            target_link_libraries(iqtree3 onnxruntime)
+        endif()
+    endif()
+endif()
+
 if (USE_TERRAPHAST)
-   target_link_libraries(iqtree2 terracetphast)
-   if (USE_CMAPLE STREQUAL "ON")
-		target_link_libraries(iqtree2-aa terracetphast)
+   target_link_libraries(iqtree3 terracetphast)
+   if (USE_CMAPLE_AA STREQUAL "ON")
+		target_link_libraries(iqtree3-aa terracetphast)
    endif()
 endif()
 
 if (USE_LSD2)
-    target_link_libraries(iqtree2 lsd2)
-    if (USE_CMAPLE STREQUAL "ON")
-    	target_link_libraries(iqtree2-aa lsd2)
+    target_link_libraries(iqtree3 lsd2)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa lsd2)
     endif()
 endif()
 
 if (NOT IQTREE_FLAGS MATCHES "nosse")
-    target_link_libraries(iqtree2 kernelsse)
-    if (USE_CMAPLE STREQUAL "ON")
-    	target_link_libraries(iqtree2-aa kernelsse)
+    target_link_libraries(iqtree3 kernelsse)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa kernelsse)
     endif()
 endif()
 
 # MPI libraries
 if (IQTREE_FLAGS MATCHES "mpi")
     if (NOT CMAKE_CXX_COMPILER MATCHES "mpi")
-        target_link_libraries(iqtree2 ${MPI_CXX_LIBRARIES})
-        if (USE_CMAPLE STREQUAL "ON")
-        	target_link_libraries(iqtree2-aa ${MPI_CXX_LIBRARIES})
+        target_link_libraries(iqtree3 ${MPI_CXX_LIBRARIES})
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	target_link_libraries(iqtree3-aa ${MPI_CXX_LIBRARIES})
         endif()
     endif()
 endif()
 
 # SSE, AVX etc. libraries
 if (NOT BINARY32 AND NOT IQTREE_FLAGS MATCHES "novx")
-    target_link_libraries(iqtree2 pllavx kernelavx kernelfma)
-    if (USE_CMAPLE STREQUAL "ON")
-    	target_link_libraries(iqtree2-aa pllavx kernelavx kernelfma)
+    target_link_libraries(iqtree3 pllavx kernelavx kernelfma)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	target_link_libraries(iqtree3-aa pllavx kernelavx kernelfma)
     endif()
     if (IQTREE_FLAGS MATCHES "KNL")
-        target_link_libraries(iqtree2 kernelavx512)
-        if (USE_CMAPLE STREQUAL "ON")
-        	target_link_libraries(iqtree2-aa kernelavx512)
+        target_link_libraries(iqtree3 kernelavx512)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	target_link_libraries(iqtree3-aa kernelavx512)
         endif()
     endif()
 endif()
 
 # setup the executable name
 ##################################################################
-set_target_properties(iqtree2 PROPERTIES OUTPUT_NAME "iqtree2${EXE_SUFFIX}")
-if (USE_CMAPLE STREQUAL "ON")
-	set_target_properties(iqtree2-aa PROPERTIES OUTPUT_NAME "iqtree2-aa${EXE_SUFFIX}")
+set_target_properties(iqtree3 PROPERTIES OUTPUT_NAME "iqtree3${EXE_SUFFIX}")
+if (USE_CMAPLE_AA STREQUAL "ON")
+	set_target_properties(iqtree3-aa PROPERTIES OUTPUT_NAME "iqtree3-aa${EXE_SUFFIX}")
 endif()
 
 # strip the release build
 if (NOT IQTREE_FLAGS MATCHES "nostrip" AND CMAKE_BUILD_TYPE STREQUAL "Release" AND (GCC OR CLANG) AND NOT APPLE) # strip is not necessary for MSVC
     if (WIN32)
-        ADD_CUSTOM_COMMAND(TARGET iqtree2 POST_BUILD COMMAND strip $<TARGET_FILE:iqtree2>)
-        if (USE_CMAPLE STREQUAL "ON")
-        	ADD_CUSTOM_COMMAND(TARGET iqtree2-aa POST_BUILD COMMAND strip $<TARGET_FILE:iqtree2-aa>)
+        ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND strip $<TARGET_FILE:iqtree3>)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND strip $<TARGET_FILE:iqtree3-aa>)
         endif()
     elseif (NOT APPLE)
-        ADD_CUSTOM_COMMAND(TARGET iqtree2 POST_BUILD COMMAND strip $<TARGET_FILE:iqtree2>)
-        if (USE_CMAPLE STREQUAL "ON")
-        	ADD_CUSTOM_COMMAND(TARGET iqtree2-aa POST_BUILD COMMAND strip $<TARGET_FILE:iqtree2-aa>)
+        ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND strip $<TARGET_FILE:iqtree3>)
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND strip $<TARGET_FILE:iqtree3-aa>)
         endif()
     endif()
 endif()
@@ -941,20 +1024,20 @@ endif()
 if (WIN32)
     if (MSVC)
         if (CLANG_UNDER_VS)
-            ADD_CUSTOM_COMMAND(TARGET iqtree2 POST_BUILD COMMAND copy "iqtree2${EXE_SUFFIX}.exe" "iqtree2${EXE_SUFFIX}-click.exe")
-            if (USE_CMAPLE STREQUAL "ON")
-            	ADD_CUSTOM_COMMAND(TARGET iqtree2-aa POST_BUILD COMMAND copy "iqtree2-aa${EXE_SUFFIX}.exe" "iqtree2-aa${EXE_SUFFIX}-click.exe")
+            ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND copy "iqtree3${EXE_SUFFIX}.exe" "iqtree3${EXE_SUFFIX}-click.exe")
+            if (USE_CMAPLE_AA STREQUAL "ON")
+            	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND copy "iqtree3-aa${EXE_SUFFIX}.exe" "iqtree3-aa${EXE_SUFFIX}-click.exe")
             endif()
         else()
-            ADD_CUSTOM_COMMAND(TARGET iqtree2 POST_BUILD COMMAND copy "Release\\iqtree2${EXE_SUFFIX}.exe" "Release\\iqtree2${EXE_SUFFIX}-click.exe")
-            if (USE_CMAPLE STREQUAL "ON")
-            	ADD_CUSTOM_COMMAND(TARGET iqtree2-aa POST_BUILD COMMAND copy "Release\\iqtree2-aa${EXE_SUFFIX}.exe" "Release\\iqtree2-aa${EXE_SUFFIX}-click.exe")
+            ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND copy "Release\\iqtree3${EXE_SUFFIX}.exe" "Release\\iqtree3${EXE_SUFFIX}-click.exe")
+            if (USE_CMAPLE_AA STREQUAL "ON")
+            	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND copy "Release\\iqtree3-aa${EXE_SUFFIX}.exe" "Release\\iqtree3-aa${EXE_SUFFIX}-click.exe")
             endif()
         endif()
     else()
-        ADD_CUSTOM_COMMAND(TARGET iqtree2 POST_BUILD COMMAND copy "iqtree2${EXE_SUFFIX}.exe" "iqtree2${EXE_SUFFIX}-click.exe")
-        if (USE_CMAPLE STREQUAL "ON")
-        	ADD_CUSTOM_COMMAND(TARGET iqtree2-aa POST_BUILD COMMAND copy "iqtree2-aa${EXE_SUFFIX}.exe" "iqtree2-aa${EXE_SUFFIX}-click.exe")
+        ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND copy "iqtree3${EXE_SUFFIX}.exe" "iqtree3${EXE_SUFFIX}-click.exe")
+        if (USE_CMAPLE_AA STREQUAL "ON")
+        	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND copy "iqtree3-aa${EXE_SUFFIX}.exe" "iqtree3-aa${EXE_SUFFIX}-click.exe")
         endif()
     endif()
 endif()
@@ -962,9 +1045,9 @@ endif()
 ##############################################################
 # add the install targets
 ##############################################################
-install (TARGETS iqtree2 DESTINATION bin)
-if (USE_CMAPLE STREQUAL "ON")
-	install (TARGETS iqtree2-aa DESTINATION bin)
+install (TARGETS iqtree3 DESTINATION bin)
+if (USE_CMAPLE_AA STREQUAL "ON")
+	install (TARGETS iqtree3-aa DESTINATION bin)
 endif()
 install (FILES "${PROJECT_SOURCE_DIR}/example/models.nex" DESTINATION .)
 install (FILES "${PROJECT_SOURCE_DIR}/example/example.phy" DESTINATION .)
@@ -972,9 +1055,9 @@ install (FILES "${PROJECT_SOURCE_DIR}/example/example.nex" DESTINATION .)
 install (FILES "${PROJECT_SOURCE_DIR}/example/example.cf" DESTINATION .)
 
 if (WIN32)
-    install (FILES "${BINARY_DIR}/iqtree2${EXE_SUFFIX}-click.exe" DESTINATION bin)
-    if (USE_CMAPLE STREQUAL "ON")
-    	install (FILES "${BINARY_DIR}/iqtree2-aa${EXE_SUFFIX}-click.exe" DESTINATION bin)
+    install (FILES "${BINARY_DIR}/iqtree3${EXE_SUFFIX}-click.exe" DESTINATION bin)
+    if (USE_CMAPLE_AA STREQUAL "ON")
+    	install (FILES "${BINARY_DIR}/iqtree3-aa${EXE_SUFFIX}-click.exe" DESTINATION bin)
     endif()
     if (NOT IQTREE_FLAGS MATCHES "single" AND MSVC)
         install(FILES  "${PROJECT_SOURCE_DIR}/lib/pthreadVC2.dll" DESTINATION bin)

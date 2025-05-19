@@ -18,7 +18,7 @@
 
 
 #include "modelset.h"
-#include "modelfactory.h"
+#include "modelmixture.h"
 
 ModelSet::ModelSet(const string model_name, ModelsBlock *models_block,
 		StateFreqType freq, string freq_params, PhyloTree *tree)

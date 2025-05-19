@@ -264,6 +264,11 @@ public:
 
 #endif
 
+    /**
+     * clear the array "relative_treelen"
+     */
+    void clear_relative_treelen();
+
 protected:
     
     /** relative rate, used to initialize branch lengths */

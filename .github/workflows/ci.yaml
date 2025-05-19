@@ -15,17 +15,19 @@ concurrency:
 jobs:
   build-linux-x86-64:
     name: Linux x86-64 gcc-${{ matrix.gcc-version }} cmake-${{ matrix.cmake-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
           # Oldest supported gcc and cmake versions
           - gcc-version: 9
-            cmake-version: 3.10.2
+            cmake-version: 3.14.7
+            upload: true
           # Latest supported gcc and cmake versions
           - gcc-version: 12
             cmake-version: latest
+            upload: false
 
     steps:
     - name: Checkout
@@ -47,39 +49,90 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_C_COMPILER=$(which gcc-${{ matrix.gcc-version }}) -DCMAKE_CXX_COMPILER=$(which g++-${{ matrix.gcc-version }})
+        cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which gcc-${{ matrix.gcc-version }}) -DCMAKE_CXX_COMPILER=$(which g++-${{ matrix.gcc-version }})
         make -j
-        file iqtree2 | grep x86-64
+        make package
+        file iqtree3 | grep x86-64
+        file iqtree*.tar.gz | grep gzip
+
+    - name: Upload Built Binary
+      # Only upload for one of the gcc & cmake tests
+      if: ${{ matrix.upload }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: Linux x86-64
+        path: build/iqtree*.tar.gz
+        if-no-files-found: error
 
   build-linux-aarch64:
-    name: Linux aarch64
-    runs-on: ubuntu-latest
+     name: Linux aarch64
+     runs-on: ubuntu-22.04-arm
+ 
+     steps:
+       - name: Checkout
+         uses: actions/checkout@v4
+         with:
+           submodules: "recursive"
+ 
+       - name: Install dependencies
+         run: |
+           sudo apt-get update -q -y
+           sudo apt-get install -q -y gcc g++ libeigen3-dev libboost-dev
+    
+       - name: Build
+         run: |
+           mkdir build
+           cd build
+           cmake .. -DIQTREE_FLAGS=static
+           make -j
+           make package
+           file iqtree3 | grep aarch64
+           file iqtree*.tar.gz | grep gzip
 
+       - name: Upload Built Binary
+         uses: actions/upload-artifact@v4
+         with:
+           name: Linux AArch64
+           path: build/iqtree*.tar.gz
+           if-no-files-found: error
+
+  compile-linux-universal:
+    name: Linux Universal
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-x86-64
+      - build-linux-aarch64
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
 
-      - name: Build on Linux ARM64
-        uses: uraimo/run-on-arch-action@v2
+      - name: Download Linux x86-64 Artifact
+        uses: actions/download-artifact@v4
         with:
-          arch: aarch64
-          distro: ubuntu_latest
-          githubToken: ${{ github.token }}
-          dockerRunArgs: |
-            --volume "${PWD}:/iqtree2"
-          install: |
-            apt-get update -q -y
-            apt-get install -q -y cmake gcc g++ file libeigen3-dev libboost-dev
-          run: |
-            cd /iqtree2
-            mkdir build
-            cd build
-            cmake ..
-            make -j
-            file iqtree2 | grep aarch64
-
+          name: Linux x86-64
+          path: x86
+        
+      - name: Download Linux Arm Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Linux AArch64
+          path: arm
+    
+      - name: Combine Artifacts
+        run: |
+          chmod +x test_scripts/make_linux_universal.sh 
+          file1=$(ls x86/iqtree*.tar.gz)
+          file2=$(ls arm/iqtree*.tar.gz)
+          test_scripts/make_linux_universal.sh "$file1" "$file2"
+          
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux Universal
+          path: iqtree*.tar.gz
+          if-no-files-found: error
+          
   build-macos-x86_64:
     name: Mac OS x86-64
     runs-on: macos-13 # Mac OS 14 Does Not Support x86-64
@@ -98,12 +151,20 @@ jobs:
           set -x
           mkdir build
           cd build
-          export LDFLAGS="-L/usr/local/opt/libomp/lib"
           export CPPFLAGS="-I/usr/local/opt/libomp/include"
           export CXXFLAGS="-I/usr/local/opt/libomp/include"
           cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          gmake -j
-          file iqtree2 | grep x86_64
+          make -j
+          make package
+          file iqtree3 | grep x86_64
+          file iqtree*.zip | grep Zip
+          
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mac x86-64
+          path: build/iqtree*.zip
+          if-no-files-found: error
 
   build-macos-arm:
     name: Mac OS ARM64
@@ -123,12 +184,57 @@ jobs:
           set -x
           mkdir build
           cd build
-          export LDFLAGS="-L/opt/homebrew/opt/libomp/lib"
           export CPPFLAGS="-I/opt/homebrew/opt/libomp/include"
           export CXXFLAGS="-I/opt/homebrew/opt/libomp/include"
           cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          gmake -j
-          file iqtree2 | grep arm64
+          make -j
+          make package
+          file iqtree3 | grep arm64
+          file iqtree*.zip | grep Zip
+
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mac Arm
+          path: build/iqtree*.zip
+          if-no-files-found: error
+
+  compile-mac-universal:
+    name: Mac OS Universal
+    runs-on: macos-14
+    needs:
+      - build-macos-x86_64
+      - build-macos-arm
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Mac x86-64 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Mac x86-64
+          path: x86
+        
+      - name: Download Mac Arm Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Mac Arm
+          path: arm
+    
+      - name: Combine Artifacts
+        run: |
+          chmod +x test_scripts/make_universal.sh 
+          file1=$(ls x86/iqtree*.zip)
+          file2=$(ls arm/iqtree*.zip)
+          test_scripts/make_universal.sh "$file1" "$file2"
+          
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mac Universal
+          path: iqtree*.zip
+          if-no-files-found: error
 
   build-windows-x86-64:
     name: Windows x86-64
@@ -169,8 +275,10 @@ jobs:
             -DCMAKE_MAKE_PROGRAM=mingw32-make ^
             -DBoost_INCLUDE_DIR=${{steps.install-boost.outputs.BOOST_ROOT}}/include ^
             -DBoost_LIBRARY_DIRS=${{steps.install-boost.outputs.BOOST_ROOT}}/lib ^
-            -DIQTREE_FLAGS="cpp14" ..
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
+            -DIQTREE_FLAGS="static cpp14" ..
           make -j
+          make package
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
 
@@ -178,4 +286,12 @@ jobs:
         shell: bash
         run: |
           cd build
-          file iqtree2.exe | grep x86-64
+          file iqtree3.exe | grep x86-64
+          file iqtree*.zip
+
+      - name: Upload Built Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows x86-64
+          path: build/iqtree*.zip
+          if-no-files-found: error

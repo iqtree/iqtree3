@@ -545,7 +545,6 @@ void IQTree::createPLLPartition(Params &params, ostream &pllPartitionFileHandle)
 }
 
 void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
-    cout << endl;
     double start = getRealTime();
     string initTree;
     string out_file = params->out_prefix;
@@ -560,20 +559,60 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
         aln->orderPatternByNumChars(PAT_VARIANT);
 
     setParsimonyKernel(kernel);
+    
+    // if users want to perform tree dating (with mcmc)
+    if (params->dating_method == "mcmctree")
+    {
+        // if they didn't supply a rooted tree, show a warning and ignore '--dating mcmctree' flag
+        if(!in && !params->user_file)
+        {
+            // show a warning
+            outWarning("Ignore '--dating mcmctree' flag since no rooted tree is provided. To perform tree dating with MCMC, please specify a rooted tree with '-te <tree_file>'");
+            
+            // turn off the dating flag
+            params->dating_method = "";
+        }
+        // otherwise, if they supply a tree but didn't fix the topology with '-te', show a warning and fix it
+        else if (params->min_iterations || params->stop_condition != SC_FIXED_ITERATION)
+        {
+            // show a warning
+            outWarning("Fix the tree topology to perform tree dating with MCMC");
+            
+            // fix the topology
+            params->min_iterations = 0;
+            params->stop_condition = SC_FIXED_ITERATION;
+        }
+    }
 
     if (in != NULL || params->user_file) {
         // start the search with user-defined tree
         bool myrooted = params->is_rooted;
+        bool mesgExist = false;
         if (in != NULL) {
             readTree(*in, myrooted);
         } else {
             cout << "Reading input tree file " << params->user_file << " ...";
             readTree(params->user_file, myrooted);
+            mesgExist = true;
         }
         if (myrooted && !isSuperTreeUnlinked()) {
             cout << " rooted tree";
+            mesgExist = true;
         }
-        cout << endl;
+        if (mesgExist)
+            cout << endl;
+        
+        // show a warning if users want to perform tree dating (with mcmc) but supply an unrooted tree
+        if (params->dating_method == "mcmctree"
+            && !(myrooted && !isSuperTreeUnlinked()))
+        {
+            // show a warning
+            outWarning("Ignore '--dating mcmctree' flag since the input tree is unrooted. To perform tree dating with MCMC, please specify a rooted tree with '-te <tree_file>'");
+            
+            // turn off the dating flag
+            params->dating_method = "";
+        }
+        
         setAlignment(aln);
         if (isSuperTree())
             wrapperFixNegativeBranch(params->fixed_branch_length == BRLEN_OPTIMIZE &&
@@ -649,12 +688,27 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
         checkpoint->dump();
     }
 
+    if (params->dating_method == "mcmctree") {
+        string outFileName = ((string) Params::getInstance().out_prefix + ".rooted.nwk");
+        ofstream outfile(outFileName);
+
+        stringstream treeStr;
+        this->sortTaxa();
+        //this->printTree(treeStr, NULL);
+        this->printTree(treeStr, 0);
+        outfile << this->aln->getNSeq() << ' ' << 1 << endl;
+        outfile << treeStr.str() << endl;
+        outfile.close();
+    }
+
     if (!constraintTree.isCompatible(this))
         outError("Initial tree is not compatible with constraint tree");
 
+    /*
     if (fixed_number) {
         cout << "WARNING: " << fixed_number << " undefined/negative branch lengths are initialized with parsimony" << endl;
     }
+    */
 
     if (params->root) {
         StrVector outgroup_names;
@@ -2687,6 +2741,9 @@ void IQTree::refineBootTrees() {
     // do bootstrap analysis
     for (int sample = refined_samples; sample < boot_trees.size(); sample++) {
 
+        // used to restore verbose_mode after suppressing logs
+        VerboseMode saved_mode;
+
         // create bootstrap alignment
         Alignment* bootstrap_alignment;
         if (aln->isSuperAlignment()) {
@@ -2745,8 +2802,8 @@ void IQTree::refineBootTrees() {
 
         // copy model
         // BQM 2019-05-31: bug fix with -bsam option
-        VerboseMode saved_mode = verbose_mode;
-        if (verbose_mode < VB_MAX) verbose_mode = VB_QUIET;
+        saved_mode = verbose_mode;
+        if (verbose_mode < VB_MED) verbose_mode = VB_QUIET;
         boot_tree->initializeModel(*params, aln->model_name, models_block);
         verbose_mode = saved_mode;
         boot_tree->getModelFactory()->setCheckpoint(getCheckpoint());
@@ -2775,8 +2832,11 @@ void IQTree::refineBootTrees() {
         // for bootstrap_alignment, they still thus need to be reoptimized a bit
         boot_tree->optimizeBranches(2);
 
-
+        // do NNI search
+        saved_mode = verbose_mode;
+        if (verbose_mode < VB_MED) verbose_mode = VB_QUIET;
         auto num_nnis = boot_tree->doNNISearch();
+        verbose_mode = saved_mode;
         if (num_nnis.second != 0)
             refined_trees++;
 
@@ -4273,7 +4333,6 @@ void IQTree::printPhylolibTree(const char* suffix) {
     FILE *phylolib_tree = fopen(phylolibTree, "w");
     fprintf(phylolib_tree, "%s", pllInst->tree_string);
     cout << "Tree optimized by Phylolib was written to " << phylolibTree << endl;
-    fclose(phylolib_tree);
 }
 
 void IQTree::printIntermediateTree(int brtype) {
@@ -4640,6 +4699,11 @@ int PhyloTree::testNumThreads() {
 
     cout << "BEST NUMBER OF THREADS: " << bestProc+1 << endl << endl;
     setNumThreads(bestProc+1);
+    
+    // clear the relative treelength arrays if it is GHOST model
+    if (isMixlen()) {
+        ((PhyloTreeMixlen*)this)->clear_relative_treelen();
+    }
 
     return bestProc+1;
 #endif
