@@ -6280,11 +6280,11 @@ void PhyloTree::showProgress() {
     }
 }
 
-void PhyloTree::doneProgress() {
+void PhyloTree::doneProgress(bool display) {
     {
         --progressStackDepth;
         if (progressStackDepth==0) {
-            progress->done();
+            progress->done(display);
             delete progress;
             progress = nullptr;
         }

@@ -2545,11 +2545,10 @@ protected:
         (if summary isn't borrowed, and isn't null, it needs to be deleted in the
         destructor*/
     bool isSummaryBorrowed;
-    
-    string distanceFileWritten;
-        /** Is set if/when a distance file has been written*/
 
-    
+    /** Is set if/when a distance file has been written*/
+    string distanceFileWritten;
+
     /** stack of tasks in progress (top of stack is innermost task) */
     progress_display* progress;
     int  progressStackDepth;
@@ -2557,7 +2556,7 @@ protected:
     void trackProgress(double amount);
     void hideProgress();
     void showProgress();
-    void doneProgress();
+    void doneProgress(bool display = true);
 };
 
 #endif
