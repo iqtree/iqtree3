@@ -111,13 +111,8 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 		setDotProductAVX();
     } else if (lk >= LK_SSE2) {
         setDotProductSSE();
-#ifdef KERNEL_X86
-	} else if (lk == LK_386) {
-        setDotProductX86();
-#endif
     } else {
-
-#if INSTRSET < 2
+#if INSTRSET < 2 || defined(KERNEL_X86)
 #ifdef BOOT_VAL_FLOAT
 //        ASSERT(0 && "Not supported, contact developer");
 		dotProduct = &PhyloTree::dotProductSIMD<float, Vec1f>;
@@ -129,7 +124,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 	}
 
     //--- naive likelihood kernel, no alignment specified yet ---
-    if (!aln) {
+    if (aln == nullptr) {
 #if INSTRSET < 2
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH>;
         computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH>;
@@ -143,15 +138,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         computeLikelihoodDervMixlenPointer = NULL;
         computePartialLikelihoodPointer = NULL;
         computeLikelihoodFromBufferPointer = NULL;
-#ifdef KERNEL_X86
-        if (lk != LK_386){
-            sse = LK_SSE;
-        } else {
-            sse = LK_SSE;
-        }
-#else
         sse = LK_386;
-#endif
 #endif
         return;
     }

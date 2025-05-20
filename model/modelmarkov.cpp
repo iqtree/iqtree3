@@ -605,100 +605,61 @@ double ModelMarkov::computeTrans(double time, int state1, int state2, double &de
 
 void ModelMarkov::calculateExponentOfScalarMultiply ( const double* source, int size
                                                     , double scalar, double* dest) {
-    if (size == 2) {
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE == LK_386) {
-            Vec1d v;
-            v.load(source);
-            exp(v * scalar).store(dest);
-            return;
+
+    if (Params::getInstance().SSE == LK_386) {
+        // naive version without SIMD
+        for (int i = 0; i < size; i++) {
+            dest[i] = exp(source[i]*scalar);
         }
-        else {
-#endif
+    } else {
+        // more optimised version using SIMD
+        if (size == 2) {
             Vec2d v;
-
+            
             v.load(source);
             exp(v * scalar).store(dest);
             return;
-
-#ifdef KERNEL_X86
+            
         }
-#endif
-    }
-    int offset=0;
-    if (2 < size) {
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE == LK_386) {
-            Vec1d v;
-            int step         = Vec1d::size();
-
-            int integralSize = size - (size & (step - 1));
-            for (; offset < integralSize; offset+=step) {
-                v.load(source+offset);
-                exp(v * scalar).store(dest+offset);
-            }
-        } else {
-#endif
+        int offset=0;
+        if (2 < size) {
             Vec2d v;
             int step         = Vec2d::size();
-
+            
             int integralSize = size - (size & (step - 1));
             for (; offset < integralSize; offset+=step) {
                 v.load(source+offset);
                 exp(v * scalar).store(dest+offset);
             }
-#ifdef KERNEL_X86
         }
-#endif
-    }
-    //Do the last few operations one at a time
-    for (; offset<size; ++offset) {
-        dest[offset] = exp(source[offset] * scalar);
+        //Do the last few operations one at a time
+        for (; offset<size; ++offset) {
+            dest[offset] = exp(source[offset] * scalar);
+        }
     }
 }
 
 void ModelMarkov::calculateHadamardProduct(const double* first
                                            , const double* second, int size
                                            , double *dest) {
-    if (size==2) {
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE = LK_386) {
-            Vec1d a;
-            Vec1d b;
-            a.load(first);
-            b.load(second);
-            (a*b).store(dest);
-            return;
+
+    if (Params::getInstance().SSE == LK_386) {
+        // naive version without SIMD
+        for (int i = 0; i < size; i++) {
+            dest[i] = first[i] * second[i];
         }
-        else {
-#endif
+    } else {
+        // more optimised version with SIMD
+        if (size==2) {
             Vec2d a;
             Vec2d b;
             a.load(first);
             b.load(second);
             (a*b).store(dest);
             return;
-#ifdef KERNEL_X86
         }
-#endif
-    }
-    int offset = 0;
-    if (2<size) {
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE = LK_386) {
-            Vec1d a, b;
-            int step  = Vec1d::size();
-
-            int remainder = size & (step - 1);
-            int integralSize = size - remainder;
-            for (; offset<integralSize; offset += step) {
-                a.load(first + offset);
-                b.load(second + offset);
-                (a*b).store(dest + offset);
-            }
-        }
-        else {
-#endif
+        int offset = 0;
+        if (2<size) {
             Vec2d a, b;
             int step  = Vec2d::size();
             int remainder = size & (step - 1);
@@ -708,62 +669,40 @@ void ModelMarkov::calculateHadamardProduct(const double* first
                 b.load(second + offset);
                 (a*b).store(dest + offset);
             }
-#ifdef KERNEL_X86
         }
-#endif
-    }
-    for (; offset<size; ++offset) {
-        dest[offset] = first[offset] * second[offset];
+        for (; offset<size; ++offset) {
+            dest[offset] = first[offset] * second[offset];
+        }
     }
 }
 
 double ModelMarkov::dotProduct(const double* first
                             , const double* second, int size) {
-    if (size==2) {
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE = LK_386) {
-            Vec1d a;
-            Vec1d b;
-
-            a.load(first);
-            b.load(second);
-            return horizontal_add(a*b);
+    if (Params::getInstance().SSE == LK_386) {
+        // naive version without SIMD
+        double product = 0.0;
+        for (int i = 0; i < size; i++) {
+            product += first[i]*second[i];
         }
-        else {
-#endif
+        return product;
+    }
+    else {
+        // more optimised version with SIMD
+        if (size==2) {
             Vec2d a;
             Vec2d b;
-
+            
             a.load(first);
             b.load(second);
             return horizontal_add(a*b);
-#ifdef KERNEL_X86
         }
-#endif
-    }
-    int    offset    = 0;
-    double product   = 0;
-    if (2<size) {
-        //Todo: Investigate. Worth unrolling?
-#ifdef KERNEL_X86
-        if (Params::getInstance().SSE = LK_386) {
-            Vec1d a, b, dot = 0;
-            int step  = Vec1d::size();
-
-            int remainder = size & (step - 1);
-            int integralSize = size - remainder;
-            for (; offset<integralSize; offset += step) {
-                a.load(first + offset);
-                b.load(second + offset);
-                dot = mul_add(a, b, dot);
-            }
-            product = horizontal_add(dot);
-        }
-        else {
-#endif
+        int    offset    = 0;
+        double product   = 0;
+        if (2<size) {
+            //Todo: Investigate. Worth unrolling?
             Vec2d a, b, dot = 0;
             int step  = Vec2d::size();
-
+            
             int remainder = size & (step - 1);
             int integralSize = size - remainder;
             for (; offset<integralSize; offset += step) {
@@ -772,14 +711,12 @@ double ModelMarkov::dotProduct(const double* first
                 dot = mul_add(a, b, dot);
             }
             product = horizontal_add(dot);
-#ifdef KERNEL_X86
         }
-#endif
+        for (; offset<size; ++offset) {
+            product += first[offset] * second[offset];
+        }
+        return product;
     }
-    for (; offset<size; ++offset) {
-        product += first[offset] * second[offset];
-    }
-    return product;
 }
 
 
