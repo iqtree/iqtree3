@@ -550,7 +550,7 @@ struct NNIInfo {
     9  or above = AVX512F
 */
 enum LikelihoodKernel {
-	LK_386, LK_SSE, LK_SSE2, LK_SSE3, LK_SSSE3, LK_SSE41, LK_SSE42, LK_AVX, LK_AVX_FMA, LK_AVX512
+	LK_NONE, LK_386, LK_SSE, LK_SSE2, LK_SSE3, LK_SSSE3, LK_SSE41, LK_SSE42, LK_AVX, LK_AVX_FMA, LK_AVX512
 };
 
 enum LhMemSave {
