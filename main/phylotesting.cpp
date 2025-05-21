@@ -6765,6 +6765,15 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     
     if (iqtree->isSuperTree())
         outError("Error! The option -m '" + params.model_name + "' cannot work on data set with partitions");
+        
+    if (iqtree->aln->seq_type != SEQ_DNA)
+        outWarning("MixtureFinder has not been tested for non-DNA data types. Be cautious about interpreting the results");
+        
+    if (iqtree->aln->getMaxNumStates() > 6)
+        outWarning("Running MixtureFinder for the given data type can take much time. Please consider restricting the set of the models to test as much as possible");
+        
+    if (iqtree->aln->seq_type == SEQ_PROTEIN && !params.force_aa_mix_finder)
+        outError("Error! We already have probably effective mixture frequency vectors C10–C60 for amino acid data, and they should explain data well.\nPlease make sure running MixtureFinder for your amino acid data makes sense.\nIf you are determined to do that, please add an option --force-aa-mix-finder to the command line.");
     
     if (params.morph_mix_finder && iqtree->aln->seq_type != SEQ_MORPH) {
         outError("Error! The option -morph-mix can only work on morphological data set");
