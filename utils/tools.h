@@ -2453,6 +2453,9 @@ public:
     /** true if ignoring the "finished" flag in checkpoint file */
     bool force_unfinished;
     
+    /** true if forcing IQ-TREE to run MixtureFinder for amino acid data */
+    bool force_aa_mix_finder;
+    
     /** TRUE to print checkpoints to 1.ckp.gz, 2.ckp.gz,... */
     bool print_all_checkpoints;
 
