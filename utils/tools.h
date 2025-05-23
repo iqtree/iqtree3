@@ -1708,6 +1708,11 @@ public:
     bool opt_rhas_again;
 
     /**
+            whether MixtureFinder optimizes the Q-mixture model for morphological data
+     */
+    bool morph_mix_finder;
+
+    /**
             The method to optimize (and estimating the number of classes in) the Q-mixture model
             Method 1 (Old method)
                 a. Estimate the RHAS model with the GTR+FO model.
@@ -2452,6 +2457,9 @@ public:
 
     /** true if ignoring the "finished" flag in checkpoint file */
     bool force_unfinished;
+    
+    /** true if forcing IQ-TREE to run MixtureFinder for amino acid data */
+    bool force_aa_mix_finder;
     
     /** TRUE to print checkpoints to 1.ckp.gz, 2.ckp.gz,... */
     bool print_all_checkpoints;
