@@ -54,8 +54,9 @@ string::size_type posRateFree(string &model_name);
 */
 string::size_type posPOMO(string &model_name);
 
+
 /**
-Store the transition matrix corresponding to evolutionary time so that one must not compute again. 
+Store the transition matrix corresponding to evolutionary time so that one must not compute again.
 For efficiency purpose esp. for protein (20x20) or codon (61x61).
 The values of the map contain 3 matricies consecutively: transition matrix, 1st, and 2nd derivative
 
@@ -223,7 +224,6 @@ public:
 	*/
 	ModelSubst *model;
 
-
 	/**
 		pointer to the site-rate heterogeneity, will not be deleted when deleting ModelFactory object
 	*/
@@ -302,7 +302,6 @@ public:
     virtual double computeMixLh(string &warning) {return 0.0;}
 
 protected:
-
 	/**
 		this function is served for the multi-dimension optimization. It should pack the model parameters
 		into a vector that is index from 1 (NOTE: not from 0)
@@ -318,9 +317,9 @@ protected:
 	*/
 	virtual bool getVariables(double *variables);
 
-    vector<double> optimizeGammaInvWithInitValue(int fixed_len, double logl_epsilon, double gradient_epsilon,
-                                       double initPInv, double initAlpha, DoubleVector &lenvec, Checkpoint *model_ckp);
-    
+	DoubleVector optimizeGammaInvWithInitValue(int fixed_len, double logl_epsilon, double gradient_epsilon,
+		double initPInv, double initAlpha, DoubleVector &lenvec, Checkpoint *model_ckp);
+
 };
 
 #endif

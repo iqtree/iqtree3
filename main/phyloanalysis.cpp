@@ -100,13 +100,13 @@ void reportReferences(Params &params, ofstream &out) {
     }
 
     if (params.robust_phy_keep < 1.0) {
-        out << "Since you used trimed log-likelihood method please also cite: " << endl << endl
+        out << "Since you used trimmed log-likelihood method please also cite: " << endl << endl
             << "Qin Liu, Bui Quang Minh, Robert Lanfear, Michael A. Charleston," << endl
             << "Shane A. Richards, Barbara R. Holland (2025)" << endl
             << "Robust Phylogenetics." << endl
             << "https://doi.org/10.1101/2025.04.01.646540" << endl << endl;
     }
-    
+
     bool modelfinder_only = false;
     if (params.model_name.find("MIX") != string::npos && params.model_name.find("MIX{") == string::npos) {
         out << "Since you used MixtureFinder please also cite: " << endl << endl
@@ -460,10 +460,7 @@ void reportNexusFile(ostream &out, ModelSubst *m, string part_name) {
 void reportLinkSubstMatrix(ostream &out, Alignment *aln, ModelSubst *m) {
     int i, j, k;
     double *rate_mat = new double[m->num_states * m->num_states];
-    if (!m->isSiteSpecificModel())
-        m->getRateMatrix(rate_mat);
-    else
-        ((ModelSet*)m)->front()->getRateMatrix(rate_mat);
+    m->getRateMatrix(rate_mat);
 
     if (m->num_states <= 4) {
         out << "Linked rate parameter R:" << endl << endl;
@@ -585,10 +582,7 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
 
     ASSERT(aln->num_states == m->num_states);
     double *rate_mat = new double[m->num_states * m->num_states];
-    if (!m->isSiteSpecificModel())
-        m->getRateMatrix(rate_mat);
-    else
-        ((ModelSet*)m)->front()->getRateMatrix(rate_mat);
+    m->getRateMatrix(rate_mat);
 
     if (m->num_states <= 4) {
         out << "Rate parameter R:" << endl << endl;
@@ -667,9 +661,9 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
     }
 
     out << "State frequencies: ";
-    if (m->isSiteSpecificModel())
-        out << "(site specific frequencies)" << endl << endl;
-    else {
+    if (m->isSSF()) {
+        out << "(site-specific frequencies)" << endl << endl;
+    } else {
         // 2016-11-03: commented out as this is not correct anymore
 //        if (!m->isReversible())
 //            out << "(inferred from Q matrix)" << endl;
@@ -771,7 +765,6 @@ void reportModel(ostream &out, PhyloTree &tree) {
                 tree.getRate()->full_name = "Continuous Gamma";
             }
         }
-
         out << "Model of substitution: " << tree.getModelName() << endl << endl;
         reportModel(out, tree.aln, tree.getModel());
     }
@@ -1252,8 +1245,30 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         if (raxml_format_printed)
              cout << "           in RAxML format:      " << params.out_prefix << ".best_scheme" << endl;
     }
-    if ((tree.getRate()->getGammaShape() > 0 || params.partition_file) && params.print_site_rate)
+
+    if (params.print_ancestral_sequence) {
+        cout << "  Ancestral state:               " << params.out_prefix << ".state" << endl;
+//        cout << "  Ancestral sequences:           " << params.out_prefix << ".aseq" << endl;
+    }
+
+    if (params.tree_freq_file)
+        cout << "  Site-specific state freqs:     " << params.out_prefix << ".sitefreq"
+                << endl;
+
+    if (params.tree_rate_file)
+        cout << "  Site-specific rates:           " << params.out_prefix << ".siterate"
+                << endl;
+
+    if (params.print_site_state_freq && !params.site_freq_file && !params.tree_freq_file)
+        cout << "  Site-specific state freqs:     " << params.out_prefix << ".freq"
+                << endl;
+
+    if ((params.print_site_rate & 1) && !params.site_rate_file && !params.tree_rate_file)
         cout << "  Site-specific rates:           " << params.out_prefix << ".rate"
+                << endl;
+
+    if ((params.print_site_rate & 2) && !params.site_rate_file && !params.tree_rate_file)
+        cout << "  Site-specific ML rates:        " << params.out_prefix << ".mlrate"
                 << endl;
 
     if ((tree.getRate()->isSiteSpecificRate() || tree.getRate()->getPtnCat(0) >= 0) && params.print_site_rate)
@@ -1274,11 +1289,6 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
 
     if (params.print_marginal_prob && params.optimize_params_use_hmm)
         cout << "  Marginal probability:          " << params.out_prefix << ".mprob" << endl;
-
-    if (params.print_ancestral_sequence) {
-        cout << "  Ancestral state:               " << params.out_prefix << ".state" << endl;
-//        cout << "  Ancestral sequences:           " << params.out_prefix << ".aseq" << endl;
-    }
 
     if (params.write_intermediate_trees)
         cout << "  All intermediate trees:        " << params.out_prefix << ".treels"
@@ -2086,25 +2096,30 @@ void exportAliSimCMD(Params &params, IQTree &tree, ostream &out)
         || !(tree.aln->seq_type == SEQ_DNA || tree.aln->seq_type == SEQ_CODON || tree.aln->seq_type == SEQ_PROTEIN || tree.aln->seq_type == SEQ_BINARY || tree.aln->seq_type == SEQ_MORPH)
         || tree.isTreeMix())
         return;
-    
+
     out << "ALISIM COMMAND" << endl;
-    out << "--------------" << endl;
-    
-    string more_info = "For more information on using AliSim, please visit: www.iqtree.org/doc/AliSim";
-    
-    // skip unsupported models
-    if (tree.getModel()->isMixture() || tree.getRate()->isHeterotachy() || tree.getModel()->isLieMarkov() || tree.aln->seq_type == SEQ_CODON)
+    out << "--------------" << endl << endl;
+
+    string more_info = "For more information on using AliSim, please visit: http://www.iqtree.org/doc/AliSim";
+
+    /** unsupported model message */
+    if (tree.getModel()->isSiteSpecificModel() || tree.getModel()->isMixture() || tree.getModel()->isLieMarkov() || tree.getRate()->isHeterotachy() || tree.aln->seq_type == SEQ_CODON)
     {
-        out << "Currently, we only support exporting AliSim commands automatically from the analysis for common models of DNA, Protein, Binary, and Morphological data. To simulate data from other models (mixture, lie-markov, etc), please refer to the User Manual of AliSim. Thanks!" << endl << endl;
+        out << "Currently, we support exporting AliSim commands automatically from the analysis only for" << endl
+            << "common models of DNA, Protein, Binary and Morphological data." << endl
+            << "To simulate data with other models (mixture, Lie-Markov, etc.), please refer to the User Manual of AliSim. Thanks!" << endl << endl;
         out << more_info << endl << endl;
         return;
     }
-    
-    out << "To simulate an alignment of the same length as the original alignment, using the tree and model parameters estimated from this analysis, you can use the following command:" << endl << endl;
-    
+
+    /** message 1 */
+    out << "To simulate an alignment of the same length as the original alignment," << endl
+        << "using the tree and model parameters estimated from this analysis," << endl
+        << "you can use the following command:" << endl << endl;
+
     // init alisim command
-    string alisim_cmd = "--alisim simulated_MSA";
-    
+    string alisim_cmd = "iqtree3 --alisim simulated_MSA";
+
     // specify tree
     string tree_file(params.out_prefix);
     if (params.partition_file && params.partition_type == BRLEN_OPTIMIZE)
@@ -2112,7 +2127,7 @@ void exportAliSimCMD(Params &params, IQTree &tree, ostream &out)
     else
         tree_file += ".treefile";
     alisim_cmd += " -t " + tree_file;
-    
+
     // specify model or a partition file
     // if using partitions -> specify a partition file
     if (params.partition_file)
@@ -2137,40 +2152,47 @@ void exportAliSimCMD(Params &params, IQTree &tree, ostream &out)
     {
         string model_tr = tree.getModelNameParams(true);
         alisim_cmd += " -m \"" + model_tr + "\"";
-        
+
         // specify num_states for morph data
         if (tree.aln->seq_type == SEQ_MORPH)
             alisim_cmd += " -st \"MORPH{" + convertIntToString(tree.aln->num_states) + "}\"";
     }
-    
+
     // specify the length of root sequence
     // skip specifying sequence length for partitions
     if (!params.partition_file)
     {
-        string root_length = "";
         int num_sites = tree.aln->getNSite() * (tree.aln->seq_type == SEQ_CODON ? 3 : 1);
-        root_length += " --length " + convertIntToString(num_sites);
+        string root_length = " --length " + convertIntToString(num_sites);
         alisim_cmd += root_length;
     }
-    
+
     // output alisim cmd
     out << alisim_cmd << endl << endl;
 
-    out << "To mimic the alignment used to produce this analysis, i.e. simulate an alignment of the same length as the original alignment, using the tree and model parameters estimated from this analysis *and* copying the same gap positions as the original alignment, you can use the following command:" << endl << endl;
+    /** message 2 */
+    out << "To mimic the alignment used to produce this analysis," << endl
+        << "i.e. to simulate an alignment of the same length as the original alignment," << endl
+        << "using the tree and model parameters estimated from this analysis *and*" << endl
+        << "copying the same gap positions as the original alignment," << endl
+        << "you can use the following command:" << endl << endl;
 
     if (params.aln_file)
-        out << "iqtree -s " << params.aln_file << " --alisim mimicked_MSA" << endl << endl;
+        out << "iqtree3 -s " << params.aln_file << " --alisim mimicked_MSA" << endl << endl;
     else
-        out << "iqtree -s <alignment.phy> --alisim mimicked_MSA" << endl << endl;
+        out << "iqtree3 -s <alignment.phy> --alisim mimicked_MSA" << endl << endl;
 
-
-    out << "To simulate any number of alignments in either of the two commandlines above, use the --num-alignments options, for example mimic 100 alignments you would use the command line:" << endl << endl;
+    /** message 3 */
+    out << "To simulate any number of alignments in either of the two commandlines above," << endl
+        << "use the --num-alignments options." << endl
+        << "For example, to mimic 100 alignments you would use the command line:" << endl << endl;
 
     if (params.aln_file)
-        out << "iqtree -s " << params.aln_file << " --alisim mimicked_MSA --num-alignments 100" << endl << endl;
+        out << "iqtree3 -s " << params.aln_file << " --alisim mimicked_MSA --num-alignments 100" << endl << endl;
     else
-        out << "iqtree -s <alignment.phy> --alisim mimicked_MSA --num-alignments 100" << endl << endl;
+        out << "iqtree3 -s <alignment.phy> --alisim mimicked_MSA --num-alignments 100" << endl << endl;
 
+    /** more info message */
     out << more_info << endl << endl;
 }
 
@@ -2401,10 +2423,10 @@ void initializeParams(Params &params, IQTree &iqtree)
     bool ok_tree = iqtree.root;
     if (iqtree.isSuperTreeUnlinked())
         ok_tree = ((PhyloSuperTree*)&iqtree)->front()->root;
-    if (!ok_tree)
-    {
+    if (!ok_tree) {
         // compute initial tree
         if (!params.compute_ml_tree_only) {
+            cout << endl;
             iqtree.computeInitialTree(params.SSE);
         }
     }
@@ -2479,10 +2501,17 @@ void restoreTaxa(IQTree &iqtree, double *saved_dist_mat, NodeVector &pruned_taxa
         nniInfo = iqtree.optimizeNNI();
         cout << "Log-likelihood    after reoptimizing full tree: " << iqtree.getCurScore() << endl;
         //iqtree.setBestScore(iqtree.getModelFactory()->optimizeParameters(params.fixed_branch_length, true, params.model_eps));
-
     }
 }
+
 void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
+    if ((params.leastSquareBranch || params.pars_branch_length || params.bayes_branch_length) &&
+        iqtree.isTreeMix())
+    {
+        outWarning("-lsbran or -parsbran or -bayesbran do not work with multitree mixture model");
+        return;
+    }
+    // -lsbran option
     if (!params.fixed_branch_length && params.leastSquareBranch) {
         cout << endl << "Computing Least Square branch lengths..." << endl;
         iqtree.optimizeAllBranchesLS();
@@ -2491,11 +2520,11 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
         string filename = params.out_prefix;
         filename += ".lstree";
         iqtree.printTree(filename.c_str(), WT_BR_LEN | WT_BR_LEN_FIXED_WIDTH | WT_SORT_TAXA | WT_NEWLINE);
-        cout << "Logl of tree with LS branch lengths: " << iqtree.getCurScore() << endl;
+        cout << "LogL of tree with LS branch lengths: " << iqtree.getCurScore() << endl;
         cout << "Tree with LS branch lengths written to " << filename << endl;
         if (params.print_branch_lengths) {
             if (params.manuel_analytic_approx) {
-                cout << "Applying Manuel's analytic approximation.." << endl;
+                cout << "Applying Manuel's analytic approximation..." << endl;
                 iqtree.approxAllBranches();
             }
             ofstream out;
@@ -2508,7 +2537,7 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
         }
         cout << "Total LS tree length: " << iqtree.treeLength() << endl;
     }
-
+    // -parsbran option
     if (params.pars_branch_length) {
         cout << endl << "Computing parsimony branch lengths..." << endl;
         iqtree.fixNegativeBranch(true);
@@ -2517,7 +2546,7 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
         string filename = params.out_prefix;
         filename += ".mptree";
         iqtree.printTree(filename.c_str(), WT_BR_LEN | WT_BR_LEN_FIXED_WIDTH | WT_SORT_TAXA | WT_NEWLINE);
-        cout << "Logl of tree with MP branch lengths: " << iqtree.getCurScore() << endl;
+        cout << "LogL of tree with MP branch lengths: " << iqtree.getCurScore() << endl;
         cout << "Tree with MP branch lengths written to " << filename << endl;
         if (params.print_branch_lengths) {
             ofstream out;
@@ -2529,9 +2558,8 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
             cout << "MP Branch lengths written to " << filename << endl;
         }
         cout << "Total MP tree length: " << iqtree.treeLength() << endl;
-
     }
-
+    // -bayesbran option
     if (params.bayes_branch_length) {
         cout << endl << "Computing Bayesian branch lengths..." << endl;
         iqtree.computeAllBayesianBranchLengths();
@@ -2540,7 +2568,7 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
         string filename = params.out_prefix;
         filename += ".batree";
         iqtree.printTree(filename.c_str(), WT_BR_LEN | WT_BR_LEN_FIXED_WIDTH | WT_SORT_TAXA | WT_NEWLINE);
-        cout << "Logl of tree with Bayesian branch lengths: " << iqtree.getCurScore() << endl;
+        cout << "LogL of tree with Bayesian branch lengths: " << iqtree.getCurScore() << endl;
         cout << "Tree with Bayesian branch lengths written to " << filename << endl;
         if (params.print_branch_lengths) {
             ofstream out;
@@ -2552,84 +2580,27 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
             cout << "Bayesian Branch lengths written to " << filename << endl;
         }
         cout << "Total Bayesian tree length: " << iqtree.treeLength() << endl;
-
     }
-
-}
-
-void printSiteRates(IQTree &iqtree, const char *rate_file, bool bayes) {
-    try {
-        ofstream out;
-        out.exceptions(ios::failbit | ios::badbit);
-        out.open(rate_file);
-        out << "# Site-specific subtitution rates determined by ";
-        if (bayes)
-            out<< "empirical Bayesian method" << endl;
-        else
-            out<< "maximum likelihood" << endl;
-        out << "# This file can be read in MS Excel or in R with command:" << endl
-        << "#   tab=read.table('" <<  rate_file << "',header=TRUE)" << endl
-        << "# Columns are tab-separated with following meaning:" << endl;
-        if (iqtree.isSuperTree()) {
-            out << "#   Part:   Partition ID (1=" << ((PhyloSuperTree*)&iqtree)->front()->aln->name << ", etc)" << endl
-            << "#   Site:   Site ID within partition (starting from 1 for each partition)" << endl;
-        } else
-            out << "#   Site:   Alignment site ID" << endl;
-        
-        if (bayes)
-            out << "#   Rate:   Posterior mean site rate weighted by posterior probability" << endl
-                << "#   Cat:    Category with highest posterior (0=invariable, 1=slow, etc)" << endl
-                << "#   C_Rate: Corresponding rate of highest category" << endl;
-        else
-            out << "#   Rate:   Site rate estimated by maximum likelihood" << endl;
-        if (iqtree.isSuperTree())
-            out << "Part\t";
-        out << "Site\tRate";
-        if (bayes)
-            out << "\tCat\tC_Rate" << endl;
-        else
-            out << endl;
-        iqtree.writeSiteRates(out, bayes);
-        out.close();
-    } catch (ios::failure) {
-        outError(ERR_WRITE_OUTPUT, rate_file);
-    }
-    cout << "Site rates printed to " << rate_file << endl;
 }
 
 void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
-    if (params.print_site_lh && !params.pll) {
-        string site_lh_file = params.out_prefix;
-        site_lh_file += ".sitelh";
-        if (params.print_site_lh == WSL_SITE)
-            printSiteLh(site_lh_file.c_str(), &iqtree, pattern_lh);
-        else
-            printSiteLhCategory(site_lh_file.c_str(), &iqtree, params.print_site_lh);
+/** partition info */
+    // -wca option
+    if (params.print_conaln && iqtree.isSuperTree()) {
+        string aln_file = (string)params.out_prefix + ".conaln";
+        iqtree.aln->printAlignment(params.aln_output_format, aln_file.c_str());
     }
-    
-    if (params.optimize_params_use_hmm){
-        string file_prefix = string(params.out_prefix);
-        string file_ext = ".hmm";
-        int cat_assign_method = 0;
-        // the categories along sites is assigned according to the path with maximum probability (default)
-        // extension: "op" stands for Optimal Path
-        printHMMResult(file_prefix, file_ext, &iqtree, cat_assign_method);
-
-        /*
-        file_ext = ".pp.hmm";
-        cat_assign_method = 1;
-        // the categories along sites is assigned according to the max posterior probability
-        // extension: "pp" stands for max Posterior Prob.
-        printHMMResult(file_prefix, file_ext, &iqtree, cat_assign_method);
-        */
-
-        if (params.print_marginal_prob) {
-            string mp_file = params.out_prefix;
-            mp_file += ".mprob";
-            printMarginalProb(mp_file.c_str(), &iqtree);
-        }
+    // -wpi option
+    if (params.print_partition_info && iqtree.isSuperTree()) {
+        ASSERT(params.print_conaln);
+        string aln_file = (string)params.out_prefix + ".conaln";
+        string partition_info;
+        partition_info = (string)params.out_prefix + ".partinfo.nex";
+        ((SuperAlignment*)(iqtree.aln))->printPartition(partition_info.c_str(), aln_file.c_str());
+        partition_info = (string)params.out_prefix + ".partitions";
+        ((SuperAlignment*)(iqtree.aln))->printPartitionRaxml(partition_info.c_str());
     }
-    
+    // -wpl option
     if (params.print_partition_lh && !iqtree.isSuperTree()) {
         outWarning("-wpl does not work with non-partition model");
         params.print_partition_lh = false;
@@ -2638,21 +2609,60 @@ void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
         string part_lh_file = (string)params.out_prefix + ".partlh";
         printPartitionLh(part_lh_file.c_str(), &iqtree, pattern_lh);
     }
+    // -wpbl option
+    if (params.write_branches && !iqtree.isSuperTree()) {
+        outWarning("-wpbl does not work with non-partition model");
+        params.write_branches = false;
+    }
+    if (params.write_branches && params.partition_type == TOPO_UNLINKED) {
+        outWarning("-wpbl does not work with topology-unlinked partition model");
+        params.write_branches = false;
+    }
+    if (params.write_branches) {
+        string filename = string(params.out_prefix) + ".branches.csv";
+        ofstream out;
+        out.open(filename.c_str());
+        iqtree.writeBranches(out);
+        out.close();
+        cout << "Partition branch lengths written to " << filename << endl;
+    }
 
+/** site lh info */
+    // -wsl and -wslm and -wslr and -wslmr options
+    if (params.print_site_lh && !params.pll) {
+        string site_lh_file = params.out_prefix;
+        site_lh_file += ".sitelh";
+        if (params.print_site_lh == WSL_SITE)
+            printSiteLh(site_lh_file.c_str(), &iqtree, pattern_lh);
+        else
+            printSiteLhCategory(site_lh_file.c_str(), &iqtree, params.print_site_lh);
+    }
+    // -wsp and -wspm and -wspr and -wspmr options
     if (params.print_site_prob && !params.pll) {
         printSiteProbCategory(((string)params.out_prefix + ".siteprob").c_str(), &iqtree, params.print_site_prob);
     }
-    
-    if (params.print_ancestral_sequence) {
-        printAncestralSequences(params.out_prefix, &iqtree, params.print_ancestral_sequence);
+    // -hmmster option
+    if (params.optimize_params_use_hmm){
+        string file_prefix = string(params.out_prefix);
+        string file_ext = ".hmm";
+        int cat_assign_method = 0;
+        // the categories along sites is assigned according to the path with maximum probability (default)
+        // extension: "op" stands for Optimal Path
+        printHMMResult(file_prefix, file_ext, &iqtree, cat_assign_method);
+        /*
+        file_ext = ".pp.hmm";
+        cat_assign_method = 1;
+        // the categories along sites is assigned according to the max posterior probability
+        // extension: "pp" stands for max Posterior Prob.
+        printHMMResult(file_prefix, file_ext, &iqtree, cat_assign_method);
+        */
+        if (params.print_marginal_prob) {
+            string mp_file = params.out_prefix;
+            mp_file += ".mprob";
+            printMarginalProb(mp_file.c_str(), &iqtree);
+        }
     }
-    
-    if (params.print_site_state_freq != WSF_NONE && !params.site_freq_file && !params.tree_freq_file) {
-        string site_freq_file = params.out_prefix;
-        site_freq_file += ".sitesf";
-        printSiteStateFreq(site_freq_file.c_str(), &iqtree);
-    }
-
+    // -wsptrees option
     if (params.print_trees_site_posterior) {
         cout << "Computing mixture posterior probabilities" << endl;
         IntVector pattern_cat;
@@ -2668,14 +2678,12 @@ void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
             out << ptn << "\t" << (int)iqtree.ptn_freq[ptn] << "\t" << pattern_cat[ptn] << endl;
         out.close();
         cout << "Pattern mixtures printed to " << site_mix_file << endl;
-
         site_mix_file = (string)params.out_prefix + ".sitemixall";
         out.open(site_mix_file.c_str());
         int ncat = iqtree.getRate()->getNRate();
         if (iqtree.getModel()->isMixture() && !iqtree.getModelFactory()->fused_mix_rate)
             ncat = iqtree.getModel()->getNMixtures();
         out << "Ptn\tFreq\tNumMix\tCat" << endl;
-
         int c;
         for (ptn = 0; ptn < iqtree.ptn_cat_mask.size(); ptn++) {
             int num_cat = popcount_lauradoux((unsigned*)&iqtree.ptn_cat_mask[ptn], 2);
@@ -2690,9 +2698,19 @@ void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
         out.close();
     }
 
+/** branch length info */
+    // -wbl option
+    if (params.print_branch_lengths && iqtree.isTreeMix()) {
+        outWarning("-wbl does not work with multitree mixture model");
+        params.print_branch_lengths = false;
+    }
+    if (params.print_branch_lengths && params.partition_type == TOPO_UNLINKED) {
+        outWarning("-wbl does not work with topology-unlinked partition model");
+        params.print_branch_lengths = false;
+    }
     if (params.print_branch_lengths) {
         if (params.manuel_analytic_approx) {
-            cout << "Applying Manuel's analytic approximation.." << endl;
+            cout << "Applying Manuel's analytic approximation..." << endl;
             iqtree.approxAllBranches();
         }
         string brlen_file = params.out_prefix;
@@ -2703,33 +2721,42 @@ void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
         out.close();
         cout << "Branch lengths written to " << brlen_file << endl;
     }
-
-    if (params.write_branches) {
-        string filename = string(params.out_prefix) + ".branches.csv";
-        ofstream out;
-        out.open(filename.c_str());
-        iqtree.writeBranches(out);
-        out.close();
-        cout << "Branch lengths written to " << filename << endl;
-    }
-    
-    if (params.print_conaln && iqtree.isSuperTree()) {
-        string str = params.out_prefix;
-        str = params.out_prefix;
-        str += ".conaln";
-        iqtree.aln->printAlignment(params.aln_output_format, str.c_str());
-    }
-    
-    if (params.print_partition_info && iqtree.isSuperTree()) {
-        ASSERT(params.print_conaln);
-        string aln_file = (string)params.out_prefix + ".conaln";
-        string partition_info = params.out_prefix;
-        partition_info += ".partinfo.nex";
-        ((SuperAlignment*)(iqtree.aln))->printPartition(partition_info.c_str(), aln_file.c_str());
-        partition_info = (string)params.out_prefix + ".partitions";
-        ((SuperAlignment*)(iqtree.aln))->printPartitionRaxml(partition_info.c_str());
+    // -blscale option
+    if (params.fixed_branch_length == BRLEN_SCALE) {
+        string filename = (string)params.out_prefix + ".blscale";
+        iqtree.printTreeLengthScaling(filename.c_str());
+        cout << "Scaled tree length and model parameters printed to " << filename << endl;
     }
 
+/** ancestral sequence info */
+    // -asr and -asr-joint options
+    if (params.print_ancestral_sequence && iqtree.isTreeMix()) {
+        outWarning("-asr does not work with multitree mixture model");
+        params.print_ancestral_sequence = AST_NONE;
+    }
+    if (params.print_ancestral_sequence && params.partition_type == TOPO_UNLINKED) {
+        outWarning("-asr does not work with topology-unlinked partition model");
+        params.print_ancestral_sequence = AST_NONE;
+    }
+    if (params.print_ancestral_sequence) {
+        printAncestralSequences(params.out_prefix, &iqtree, params.print_ancestral_sequence);
+    }
+
+/** site state frequency and rate info */
+    // -wsf option
+    if (params.print_site_state_freq && !params.site_freq_file && !params.tree_freq_file) {
+        printSiteStateFreq(((string)params.out_prefix + ".freq").c_str(), &iqtree);
+    }
+    // -wsr and --mlrate options
+    if (params.print_site_rate && !params.site_rate_file && !params.tree_rate_file) {
+        if (iqtree.isTreeMix())
+            outError("Inferring site rates is not supported for multitree mixture model, pls contact the developers");
+        if (params.print_site_rate & 1)
+            printSiteRate(((string)params.out_prefix + ".rate").c_str(), &iqtree, true);
+        if (params.print_site_rate & 2)
+            printSiteRate(((string)params.out_prefix + ".mlrate").c_str(), &iqtree, false);
+    }
+    // -mh and -mhs options
     if (params.mvh_site_rate) {
         RateMeyerHaeseler *rate_mvh = new RateMeyerHaeseler(params.rate_file,
                 &iqtree, params.rate_mh_type);
@@ -2743,41 +2770,21 @@ void printMiscInfo(Params &params, IQTree &iqtree, double *pattern_lh) {
             ofstream out;
             out.exceptions(ios::failbit | ios::badbit);
             out.open(mhrate_file.c_str());
-            iqtree.writeSiteRates(out, true);
+            iqtree.writeSiteRates(out, false);
             out.close();
         } catch (ios::failure) {
             outError(ERR_WRITE_OUTPUT, mhrate_file);
         }
-
         if (params.print_site_lh) {
             string site_lh_file = params.out_prefix;
             site_lh_file += ".mhsitelh";
             printSiteLh(site_lh_file.c_str(), &iqtree);
         }
     }
-
-    if (params.print_site_rate & 1) {
-        string rate_file = params.out_prefix;
-        rate_file += ".rate";
-        printSiteRates(iqtree, rate_file.c_str(), true);
-    }
-
-    if (params.print_site_rate & 2) {
-        string rate_file = params.out_prefix;
-        rate_file += ".mlrate";
-        printSiteRates(iqtree, rate_file.c_str(), false);
-    }
-
-    if (params.fixed_branch_length == BRLEN_SCALE) {
-        string filename = (string)params.out_prefix + ".blscale";
-        iqtree.printTreeLengthScaling(filename.c_str());
-        cout << "Scaled tree length and model parameters printed to " << filename << endl;
-    }
-
 }
 
 void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time, double search_real_time) {
-    
+    cout << endl;
     if (iqtree.isTreeMix()) {
         if (!iqtree.isSuperTree()) {
             cout << "Total tree lengths:";
@@ -2790,7 +2797,6 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
     } else {
         cout << "Total tree length: " << iqtree.treeLength() << endl;
     }
-
     if (iqtree.isSuperTree() && verbose_mode >= VB_MAX) {
         PhyloSuperTree *stree = (PhyloSuperTree*) &iqtree;
         cout << stree->evalNNIs << " NNIs evaluated from " << stree->totalNNIs << " all possible NNIs ( " <<
@@ -2803,9 +2809,7 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
                 << " %)" << endl;
         }
     }
-
     params.run_time = (getCPUTime() - params.startCPUTime);
-    cout << endl;
     cout << "Total number of iterations: " << iqtree.stop_rule.getCurIt() << endl;
 //    cout << "Total number of partial likelihood vector computations: " << iqtree.num_partial_lh_computations << endl;
     cout << "CPU time used for tree search: " << search_cpu_time
@@ -2817,7 +2821,6 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
     cout << "Total wall-clock time used: "
             << getRealTime() - params.start_real_time << " sec ("
             << convert_time(getRealTime() - params.start_real_time) << ")" << endl;
-
 }
 
 void printTrees(vector<string> trees, Params &params, string suffix) {
@@ -3340,25 +3343,23 @@ void startTreeReconstruction(Params &params, IQTree* &iqtree, ModelCheckpoint &m
 
     params.startCPUTime = getCPUTime();
     params.start_real_time = getRealTime();
-    string best_subst_name, best_rate_name;
-    map <string, vector<string> > nest_network;
-    runModelFinder(params, *iqtree, model_info, best_subst_name, best_rate_name, nest_network);
-    
-    runMixtureFinder(params, iqtree, model_info);
-    
-    // if users want to perform tree dating (with mcmc)
-    // and if ModelFinder was run, the traversal starting node was incidently deleted (after copyTree and restoreCheckpoint)
-    // we have to delete tree nodes to force IQ-TREE to re-read the tree from the treefile
 
+    string best_subst_name, best_rate_name;
+    map<string, vector<string> > nest_network;
+    runModelFinder(params, *iqtree, model_info, best_subst_name, best_rate_name, nest_network);
+
+    runMixtureFinder(params, iqtree, model_info);
+
+    // if users want to perform tree dating (with mcmc) and if ModelFinder was run,
+    // the traversal starting node was incidently deleted (after copyTree and restoreCheckpoint),
+    // we have to delete tree nodes to force IQ-TREE to re-read the tree from the treefile
     if (params.dating_method == "mcmctree" && params.dating_mf){
         // if it's a supertree, delete all tree members
         if (iqtree->isSuperTree()){
             PhyloSuperTree* stree = (PhyloSuperTree*) iqtree;
-
             // delete member trees one by one
             for (PhyloSuperTree::iterator it = stree->begin(); it != stree->end(); it++){
                 if ((*it)->root){
-
                     (*it)->freeNode();
                     (*it)->root = NULL;
                 }
@@ -3371,7 +3372,7 @@ void startTreeReconstruction(Params &params, IQTree* &iqtree, ModelCheckpoint &m
         }
     }
 }
-        
+
 /**
  optimize branch lengths of consensus tree
  */
@@ -4526,9 +4527,12 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
             bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
         }
 
-        if (params.print_boot_site_freq && MPIHelper::getInstance().isMaster()) {
-            printSiteStateFreq((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsitefreq").c_str(), bootstrap_alignment);
-                bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
+        if ((params.print_boot_site_freq || params.print_boot_site_rate) && MPIHelper::getInstance().isMaster()) {
+            if (params.print_boot_site_freq)
+                printSiteParam((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsitefreq").c_str(), bootstrap_alignment, "freq");
+            if (params.print_boot_site_rate)
+                printSiteParam((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsiterate").c_str(), bootstrap_alignment, "rate");
+            bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
         }
 
         if (!tree->constraintTree.empty()) {
@@ -4731,62 +4735,88 @@ void convertAlignment(Params &params, IQTree *iqtree) {
 /**
     2016-08-04: compute a site frequency model for profile mixture model
 */
-void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
-
-    cout << endl << "===> COMPUTING SITE FREQUENCY MODEL BASED ON TREE FILE " << params.tree_freq_file << endl;
-    ASSERT(params.tree_freq_file);
-    PhyloTree *tree = new PhyloTree(alignment);
-    tree->setParams(&params);
-    bool myrooted = params.is_rooted;
-    tree->readTree(params.tree_freq_file, myrooted);
-    tree->setAlignment(alignment);
-    tree->setRootNode(params.root);
-    
-    ModelsBlock *models_block = readModelsDefinition(params);
-    tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
-    delete models_block;
-    tree->setModel(tree->getModelFactory()->model);
-    tree->setRate(tree->getModelFactory()->site_rate);
-    tree->setLikelihoodKernel(params.SSE);
-    tree->setNumThreads(params.num_threads);
-    
-    if (!tree->getModel()->isMixture())
-        outError("No mixture model was specified!");
-    uint64_t mem_size = tree->getMemoryRequired();
-    uint64_t total_mem = getMemorySize();
-    cout << "NOTE: " << (mem_size / 1024) / 1024 << " MB RAM is required!" << endl;
-    if (mem_size >= total_mem) {
-        outError("Memory required exceeds your computer RAM size!");
-    }
+void computeSiteSpecificModel(Params &params, Alignment *alignment, const string &param_type)
+{
+	ASSERT((param_type == "freq" && params.tree_freq_file) ||
+		(param_type == "rate" && params.tree_rate_file));
+	string msg = (param_type == "freq") ? "FREQUENCY" : "RATE";
+	char *filename = (param_type == "freq") ? params.tree_freq_file : params.tree_rate_file;
+	cout << endl << "===> COMPUTING SITE " << msg << " MODEL BASED ON TREE FILE " << filename << endl;
+	// init auxiliary tree, model, etc.
+	PhyloTree *tree = new PhyloTree(alignment);
+	tree->setParams(&params);
+	tree->setLikelihoodKernel(params.SSE);
+	tree->setNumThreads(params.num_threads);
+	bool myrooted = params.is_rooted;
+	tree->readTree(filename, myrooted);
+	tree->setRootNode(params.root);
+	tree->setAlignment(alignment);
+	ModelsBlock *models_block = readModelsDefinition(params);
+	tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
+	delete models_block;
+	// check model compatibility
+	if (!tree->getModel()->isReversible())
+		outError("Non-reversible models are incompatible with site-specific models");
+	if (tree->getModel()->isMixture() && !tree->getModel()->isMixtureSameQ())
+		outError("Matrix mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
+	if (tree->getModel()->isFused())
+		outError("Unlinked rate mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
+	if (param_type == "rate" && tree->getModel()->isMixture())
+		outError("Frequency mixture models are incompatible with site-specific models. Use -wsr option to estimate site-specific rates");
+	// check for the starting mixture model
+	if (param_type == "freq" && !tree->getModel()->isMixture())
+		outError("No frequency mixture model was specified!");
+	if (param_type == "rate" && !tree->getRate()->isMixture())
+		outError("No rate mixture model was specified!");
+	uint64_t mem_size = tree->getMemoryRequired();
+	uint64_t total_mem = getMemorySize();
+	cout << "NOTE: " << (mem_size / 1024) / 1024 << " MB RAM is required!" << endl;
+	if (mem_size >= total_mem)
+		outError("Memory required exceeds your computer RAM size!");
 #ifdef BINARY32
-    if (mem_size >= 2000000000) {
-        outError("Memory required exceeds 2GB limit of 32-bit executable");
-    }
+	if (mem_size >= 2000000000)
+		outError("Memory required exceeds 2GB limit of 32-bit executable");
 #endif
-
-    tree->ensureNumberOfThreadsIsSet(nullptr);
-
-    tree->initializeAllPartialLh();
-    // 2017-12-07: Increase espilon ten times (0.01 -> 0.1) to speedup PMSF computation
-    tree->getModelFactory()->optimizeParameters(params.fixed_branch_length, true, params.modelEps*10);
-
-    size_t nptn = alignment->getNPattern(), nstates = alignment->num_states;
-    double *ptn_state_freq = new double[nptn*nstates];
-    tree->computePatternStateFreq(ptn_state_freq);
-    alignment->site_state_freq.resize(nptn);
-    for (size_t ptn = 0; ptn < nptn; ptn++) {
-        double *f = new double[nstates];
-        memcpy(f, ptn_state_freq+ptn*nstates, sizeof(double)*nstates);
-        alignment->site_state_freq[ptn] = f;
-    }
-    alignment->getSitePatternIndex(alignment->site_model);
-    printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
-    params.print_site_state_freq = WSF_NONE;
-    
-    delete [] ptn_state_freq;
-    delete tree;
-    
-    cout << endl << "===> CONTINUE ANALYSIS USING THE INFERRED SITE FREQUENCY MODEL" << endl;
+	tree->ensureNumberOfThreadsIsSet(nullptr);
+	tree->initializeAllPartialLh();
+	// 2017-12-07: Increase espilon ten times (0.01 -> 0.1) to speedup PMSF computation
+	double modelEpsilon = (param_type == "freq") ? params.modelEps * 10.0 : params.modelEps;
+	cout << "Estimate initial model parameters (epsilon = " << modelEpsilon << ")" << endl;
+	tree->getModelFactory()->optimizeParameters(params.fixed_branch_length, true, modelEpsilon);
+	// compute state freqs or rate scalers for all the alignment patterns
+	size_t nptn = alignment->getNPattern();
+	if (param_type == "freq") {
+		double *all_ptn_state_freq = nullptr;
+		tree->computePatternStateFreq(all_ptn_state_freq);
+		ASSERT(all_ptn_state_freq);
+		size_t nstates = alignment->num_states;
+		for (size_t ptn = 0; ptn < nptn; ptn++) {
+			double *state_freqs = new double[nstates];
+			memcpy(state_freqs, all_ptn_state_freq + ptn*nstates, sizeof(double)*nstates);
+			alignment->convfreq(state_freqs); // regularize freqs
+			alignment->ptn_state_freq.push_back(state_freqs);
+		}
+		delete [] all_ptn_state_freq;
+		ASSERT(alignment->ptn_state_freq.size() == nptn);
+		params.site_state_freq_type = WSF_NONE;
+	} else {
+		DoubleVector ptn_rate;
+		tree->computePatternRate(ptn_rate);
+		ASSERT(ptn_rate.size());
+		for (size_t ptn = 0; ptn < nptn; ptn++) {
+			double rate = ptn_rate[ptn];
+			rate = min(max(rate, MIN_SITE_RATE), MAX_SITE_RATE); // regularize rate
+			alignment->ptn_rate_scaler.push_back(rate);
+		}
+		ASSERT(alignment->ptn_rate_scaler.size() == nptn);
+		params.site_rate_type = WSR_NONE;
+	}
+	delete tree;
+	// print the computed site-specific params into a file
+	string out_suffix = (param_type == "freq") ? ".sitefreq" : ".siterate";
+	printSiteParam(((string)params.out_prefix + out_suffix).c_str(), alignment, param_type);
+	// continue analysis using the alignment with the computed site-specific params
+	cout << endl << "===> CONTINUE ANALYSIS USING THE INFERRED SITE " << msg << " MODEL" << endl;
 }
 
 
@@ -4839,7 +4869,6 @@ IQTree *newIQTree(Params &params, Alignment *alignment) {
 
     return tree;
 }
-
 
 /** get ID of bad or good symtest results */
 void getSymTestID(vector<SymTestResult> &res, set<int> &id, bool bad_res) {
@@ -5083,36 +5112,53 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             alignment = new SuperAlignmentUnlinked(params);
         else
             alignment = new SuperAlignment(params);
+        if (params.tree_freq_file || params.site_freq_file || params.tree_rate_file || params.site_rate_file)
+            outError("Partition models do not work with site-specific models");
     } else {
         alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
-
         if (params.freq_const_patterns) {
             int orig_nsite = alignment->getNSite();
             alignment->addConstPatterns(params.freq_const_patterns);
             cout << "INFO: " << alignment->getNSite() - orig_nsite << " const sites added into alignment" << endl;
         }
-
+        if (params.tree_freq_file || params.site_freq_file || params.tree_rate_file || params.site_rate_file) {
+            if (alignment->seq_type == SEQ_CODON)
+                outError("Site-specific models are not supported for codon data");
+            if (alignment->seq_type == SEQ_POMO)
+                outError("Site-specific models are not supported for PoMo data");
+        }
         // Initialize site-frequency model
         if (params.tree_freq_file) {
             if (checkpoint->getBool("finishedSiteFreqFile")) {
-                alignment->readSiteStateFreq(((string)params.out_prefix + ".sitefreq").c_str());
-                params.print_site_state_freq = WSF_NONE;
+                alignment->readSiteParamFile(((string)params.out_prefix + ".sitefreq").c_str(), "freq");
+                params.site_state_freq_type = WSF_NONE;
                 cout << "CHECKPOINT: Site frequency model restored" << endl;
             } else {
-                computeSiteFrequencyModel(params, alignment);
+                computeSiteSpecificModel(params, alignment, "freq");
                 checkpoint->putBool("finishedSiteFreqFile", true);
                 checkpoint->dump();
             }
+        } else if (params.site_freq_file) {
+            alignment->readSiteParamFile(params.site_freq_file, "freq");
         }
-        if (params.site_freq_file) {
-            alignment->readSiteStateFreq(params.site_freq_file);
+        // Initialize site-rate model
+        if (params.tree_rate_file) {
+            if (checkpoint->getBool("finishedSiteRateFile")) {
+                alignment->readSiteParamFile(((string)params.out_prefix + ".siterate").c_str(), "rate");
+                params.site_rate_type = WSR_NONE;
+                cout << "CHECKPOINT: Site rate model restored" << endl;
+            } else {
+                computeSiteSpecificModel(params, alignment, "rate");
+                checkpoint->putBool("finishedSiteRateFile", true);
+                checkpoint->dump();
+            }
+        } else if (params.site_rate_file) {
+            alignment->readSiteParamFile(params.site_rate_file, "rate");
         }
     }
-
     if (params.symtest) {
         doSymTest(alignment, params);
     }
-
     if (params.print_aln_info) {
         string site_info_file = string(params.out_prefix) + ".alninfo";
         alignment->printSiteInfo(site_info_file.c_str());

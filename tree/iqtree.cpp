@@ -585,7 +585,6 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
     }
 
     if (in != NULL || params->user_file) {
-        
         // start the search with user-defined tree
         bool myrooted = params->is_rooted;
         bool mesgExist = false;
@@ -629,7 +628,7 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
         saveCheckpoint();
     } else if (CKP_RESTORE(initTree)) {
         readTreeString(initTree);
-        cout << endl << "CHECKPOINT: Initial tree restored" << endl;
+        cout << "CHECKPOINT: Initial tree restored" << endl;
     } else {
         START_TREE_TYPE start_tree = params->start_tree;
         // only own parsimony kernel supports constraint tree
@@ -651,7 +650,6 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
             break;
         case STT_RANDOM_TREE:
         case STT_PLL_PARSIMONY:
-            cout << endl;
             cout << "Create initial parsimony tree by phylogenetic likelihood library (PLL)... ";
             pllInst->randomNumberSeed = params->ran_seed + MPIHelper::getInstance().getProcessID();
             pllComputeRandomizedStepwiseAdditionParsimonyTree(pllInst, pllPartitions, params->sprDist);
@@ -858,7 +856,7 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
     candidateTrees.clear();
 
     if (init_size < initTreeStrings.size())
-        cout << "Computing log-likelihood of " << initTreeStrings.size() - init_size << " initial trees ... ";
+        cout << "Computing log-likelihood of " << initTreeStrings.size() - init_size << " initial trees... ";
     startTime = getRealTime();
 
     for (vector<string>::iterator it = initTreeStrings.begin(); it != initTreeStrings.end(); ++it) {
@@ -2734,20 +2732,25 @@ void IQTree::refineBootTrees() {
     if (CKP_RESTORE(refined_samples))
         cout << "CHECKPOINT: " << refined_samples << " refined samples restored" << endl;
     checkpoint->endStruct();
-    
+
     // 2018-08-17: delete duplicated memory
     deleteAllPartialLh();
 
     ModelsBlock *models_block = readModelsDefinition(*params);
-    
-	// do bootstrap analysis
-	for (int sample = refined_samples; sample < boot_trees.size(); sample++) {
+
+    // do bootstrap analysis
+    for (int sample = refined_samples; sample < boot_trees.size(); sample++) {
+
+        // used to restore verbose_mode after suppressing logs
+        VerboseMode saved_mode;
+
         // create bootstrap alignment
         Alignment* bootstrap_alignment;
-        if (aln->isSuperAlignment())
+        if (aln->isSuperAlignment()) {
             bootstrap_alignment = new SuperAlignment;
-        else
+        } else {
             bootstrap_alignment = new Alignment;
+        }
         bootstrap_alignment->createBootstrapAlignment(aln, NULL, params->bootstrap_spec);
 
         // create bootstrap tree
@@ -2761,22 +2764,17 @@ void IQTree::refineBootTrees() {
         } else {
             // allocate heterotachy tree if neccessary
             int pos = posRateHeterotachy(aln->model_name);
-            
             if (params->num_mixlen > 1) {
                 boot_tree = new PhyloTreeMixlen(bootstrap_alignment, params->num_mixlen);
             } else if (pos != string::npos) {
                 boot_tree = new PhyloTreeMixlen(bootstrap_alignment, 0);
-            } else
+            } else {
                 boot_tree = new IQTree(bootstrap_alignment);
+            }
         }
 
         boot_tree->on_refine_btree = true;
         boot_tree->save_all_trees = 0;
-
-        // initialize constraint tree
-        if (!constraintTree.empty()) {
-            boot_tree->constraintTree.readConstraint(constraintTree);
-        }
 
         // set likelihood kernel
         boot_tree->setParams(params);
@@ -2784,32 +2782,44 @@ void IQTree::refineBootTrees() {
         boot_tree->setNumThreads(num_threads);
 
         // 2019-06-03: bug fix setting part_info properly
-        if (boot_tree->isSuperTree())
+        if (boot_tree->isSuperTree()) {
             ((PhyloSuperTree*)boot_tree)->setPartInfo((PhyloSuperTree*)this);
+        }
 
-        // copy model
-        // BQM 2019-05-31: bug fix with -bsam option
-        boot_tree->initializeModel(*params, aln->model_name, models_block);
-        boot_tree->getModelFactory()->setCheckpoint(getCheckpoint());
-        if (isSuperTree())
-            ((PartitionModel*)boot_tree->getModelFactory())->PartitionModel::restoreCheckpoint();
-        else
-            boot_tree->getModelFactory()->restoreCheckpoint();
+        // initialize constraint tree
+        if (!constraintTree.empty()) {
+            boot_tree->constraintTree.readConstraint(constraintTree);
+        }
 
         // load the current ufboot tree
         // 2019-02-06: fix crash with -sp and -bnni
-        if (isSuperTree())
+        // 2025-03-20: fix crash with -rt and -bnni (tree should be read before model)
+        if (isSuperTree()) {
             boot_tree->PhyloTree::readTreeString(boot_trees[sample]);
-        else
+        } else {
             boot_tree->readTreeString(boot_trees[sample]);
-        
+        }
+
+        // copy model
+        // BQM 2019-05-31: bug fix with -bsam option
+        saved_mode = verbose_mode;
+        if (verbose_mode < VB_MED) verbose_mode = VB_QUIET;
+        boot_tree->initializeModel(*params, aln->model_name, models_block);
+        verbose_mode = saved_mode;
+        boot_tree->getModelFactory()->setCheckpoint(getCheckpoint());
+        if (isSuperTree()) {
+            ((PartitionModel*)boot_tree->getModelFactory())->PartitionModel::restoreCheckpoint();
+        } else {
+            boot_tree->getModelFactory()->restoreCheckpoint();
+        }
+
+        // re-initialize branch lengths for unlinked model
         if (boot_tree->isSuperTree() && params->partition_type == BRLEN_OPTIMIZE) {
             if (((PhyloSuperTree*)boot_tree)->size() > 1) {
-                // re-initialize branch lengths for unlinked model
                 boot_tree->wrapperFixNegativeBranch(true);
             }
         }
-        
+
         // TODO: check if this resolves the crash in reorientPartialLh()
         boot_tree->initializeAllPartialLh();
 
@@ -2822,8 +2832,11 @@ void IQTree::refineBootTrees() {
         // for bootstrap_alignment, they still thus need to be reoptimized a bit
         boot_tree->optimizeBranches(2);
 
-
+        // do NNI search
+        saved_mode = verbose_mode;
+        if (verbose_mode < VB_MED) verbose_mode = VB_QUIET;
         auto num_nnis = boot_tree->doNNISearch();
+        verbose_mode = saved_mode;
         if (num_nnis.second != 0)
             refined_trees++;
 
@@ -2861,8 +2874,8 @@ void IQTree::refineBootTrees() {
 
         checkpoint->dump();
 
-	}
-    
+    }
+
     delete models_block;
 
     cout << "Total " << refined_trees << " ufboot trees refined" << endl;
@@ -3204,7 +3217,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
         }
         trackProgress(1);
     }
-    doneProgress();
+    doneProgress(progress_display::getProgressDisplay());
 
     if (totalNNIApplied == 0 && verbose_mode >= VB_MED) {
         cout << "NOTE: Input tree is already NNI-optimal" << endl;

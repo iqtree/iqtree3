@@ -1061,12 +1061,26 @@ public:
      */
     virtual double computePatternLhCat(SiteLoglType wsl);
 
-    /**
-        compute state frequency for each pattern (for Huaichun)
-        @param[out] ptn_state_freq state frequency vector per pattern, 
-            should be pre-allocated with size of num_patterns * num_states
-    */
-    void computePatternStateFreq(double *ptn_state_freq);
+	/**
+	 compute state frequencies for each pattern (for site-specific models and -wsf option)
+	 @param[out] all_ptn_state_freq state frequencies per pattern,
+		should be passed as a NULL pointer,
+		will be allocated with the size of num_patterns * num_states
+	 @param[out] ptn_cat (optional) the best-fitting mixture component per pattern
+	 @param[out] ptn_pp (optional) PP of the best-fitting mixture component per pattern
+	 @param[out] ncat (optional) the number of mixture components
+	*/
+	void computePatternStateFreq(double* &all_ptn_state_freq, IntVector *ptn_cat = NULL, DoubleVector *ptn_pp = NULL, int *ncat = NULL);
+
+	/**
+	 compute rates for each pattern (for site-specific models and -wsr option)
+	 @param[out] ptn_rate rate scaler per pattern,
+		should be passed as an empty vector
+ 	 @param[out] ptn_cat (optional) the best-fitting rate category per pattern
+	 @param[out] ptn_pp (optional) PP of the best-fitting rate category per pattern
+	 @param[out] ncat (optional) the number of rate categories
+	*/
+	void computePatternRate(DoubleVector &ptn_rate, IntVector *ptn_cat = NULL, DoubleVector *ptn_pp = NULL, int *ncat = NULL);
 
     /****************************************************************************
             ancestral sequence reconstruction
@@ -2257,15 +2271,24 @@ public:
     */
     void forceConvertingToUnrooted();
 
+	/**
+	 write site state frequencies to a file in the following format:
+	 1	freq(A)_1	freq(R)_1	...
+	 2	freq(A)_2	freq(R)_2	...
+	 ...
+	 This function should be used by -wsf option
+	 @param out output stream to write freqs
+	*/
+	virtual void writeSiteFreqs(ostream &out, int partid = -1);
 
 	/**
-		write site-rates to a file in the following format:
-		1  rate_1
-		2  rate_2
-		....
-		This function will call computePatternRates()
-		@param out output stream to write rates
-        @param bayes TRUE to use empirical Bayesian, false for ML method
+	 write site rates to a file in the following format:
+	 1	rate_1
+	 2	rate_2
+	 ...
+	 This function should be used by -wsr option
+	 @param out output stream to write rates
+	 @param bayes TRUE to use empirical Bayesian, false for ML method
 	*/
 	virtual void writeSiteRates(ostream &out, bool bayes, int partid = -1);
 
@@ -2522,11 +2545,10 @@ protected:
         (if summary isn't borrowed, and isn't null, it needs to be deleted in the
         destructor*/
     bool isSummaryBorrowed;
-    
-    string distanceFileWritten;
-        /** Is set if/when a distance file has been written*/
 
-    
+    /** Is set if/when a distance file has been written*/
+    string distanceFileWritten;
+
     /** stack of tasks in progress (top of stack is innermost task) */
     progress_display* progress;
     int  progressStackDepth;
@@ -2534,7 +2556,7 @@ protected:
     void trackProgress(double amount);
     void hideProgress();
     void showProgress();
-    void doneProgress();
+    void doneProgress(bool display = true);
 };
 
 #endif

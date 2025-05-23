@@ -1823,23 +1823,20 @@ void IQTreeMix::computeBranchID() {
  * Generate the initial tree (usually used for model parameter estimation)
  */
 void IQTreeMix::computeInitialTree(LikelihoodKernel kernel, istream* in) {
-    size_t i;
-    ifstream fin;
-
     if (size() == 0)
-        outError("No tree is inputted for the tree-mixture model");
+        outError("No tree is inputted for multitree mixture model");
     if (params->user_file == NULL) {
-        outError("Tree file has to be inputed (using the option -te) for tree-mixture model");
+        outError("Tree file has to be inputted (using the option -te) for multitree mixture model");
     }
-    
+
+    ifstream fin;
     fin.open(params->user_file);
-    
-    for (i=0; i<size(); i++) {
+    cout << "Reading input trees from file " << params->user_file << " ..." << endl;
+    for (size_t i = 0; i < size(); i++) {
         at(i)->computeInitialTree(kernel, &fin);
     }
-    
     fin.close();
-    
+
     // show trees
     // showTree();
 }
