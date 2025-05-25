@@ -13,6 +13,8 @@ progress.cpp progress.h
 timeutil.h hammingdistance.h
 operatingsystem.cpp operatingsystem.h
 heapsort.h
+kernelParam.cpp
+kernelParam.h
 )
 
 if(ZLIB_FOUND)
@@ -33,6 +35,7 @@ if(BUILD_DECENTTREE)
   add_executable(decentTree
     decenttree.cpp
     starttree.cpp bionj.cpp bionj2.cpp
+    kernelParam.cpp kernelParam.h
     gzstream.cpp progress.cpp operatingsystem.cpp)
 endif(BUILD_DECENTTREE)
 

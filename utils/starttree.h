@@ -26,7 +26,7 @@
 #include <iostream>
 #include <vector>
 #include "timeutil.h"       //for getRealTime()
-#include "utils/tools.h"
+#include "kernelParam.h"
 
 namespace StartTree
 {

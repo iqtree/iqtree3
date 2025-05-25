@@ -23,6 +23,7 @@
 
 
 #include "tools.h"
+#include "kernelParam.h"
 #include "starttree.h" //for START_TREE_RECOGNIZED macro.
 #include "timeutil.h"
 #include "MPIHelper.h"
@@ -3540,8 +3541,10 @@ void parseArg(int argc, char *argv[], Params &params) {
 				cnt++;
 				if (cnt >= argc)
                     throw "-lk x86|SSE|AVX|FMA|AVX512";
-                if (strcmp(argv[cnt], "x86") == 0)
+                if (strcmp(argv[cnt], "x86") == 0){
                     params.SSE = LK_386;
+                    KernelParam::getInstance().setX86(true);
+                }
                 else if (strcmp(argv[cnt], "SSE") == 0)
                     params.SSE = LK_SSE2;
                 else if (strcmp(argv[cnt], "AVX") == 0)
