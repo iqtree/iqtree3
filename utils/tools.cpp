@@ -23,6 +23,7 @@
 
 
 #include "tools.h"
+#include "kernelParam.h"
 #include "starttree.h" //for START_TREE_RECOGNIZED macro.
 #include "timeutil.h"
 #include "MPIHelper.h"
@@ -1463,7 +1464,7 @@ void parseArg(int argc, char *argv[], Params &params) {
 	params.lh_mem_save = LM_PER_NODE; // auto detect
     params.buffer_mem_save = false;
 	params.start_tree = STT_PLL_PARSIMONY;
-    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
+//    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
 
     params.modelfinder_ml_tree = true;
     params.final_model_opt = true;
@@ -1498,7 +1499,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.date_outlier = -1.0;
     params.dating_mf = false;
     params.mcmc_clock = CORRELATED;
-    params.mcmc_bds = "1,1,0.5";
+    params.mcmc_bds = "1 1 0.5";
     params.mcmc_iter = "20000, 100, 20000";
 
     // added by TD
@@ -3540,8 +3541,10 @@ void parseArg(int argc, char *argv[], Params &params) {
 				cnt++;
 				if (cnt >= argc)
                     throw "-lk x86|SSE|AVX|FMA|AVX512";
-                if (strcmp(argv[cnt], "x86") == 0)
+                if (strcmp(argv[cnt], "x86") == 0){
                     params.SSE = LK_386;
+                    KernelParam::getInstance().setX86(true);
+                }
                 else if (strcmp(argv[cnt], "SSE") == 0)
                     params.SSE = LK_SSE2;
                 else if (strcmp(argv[cnt], "AVX") == 0)
@@ -5670,10 +5673,14 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.mcmc_bds = argv[cnt];
                 StrVector mcmc_bds_vec;
                 convert_string_vec(params.mcmc_bds.c_str(), mcmc_bds_vec, ',');
-                if (mcmc_bds_vec.size()!=3 || !strcmp(mcmc_bds_vec[2].c_str(), ""))
+                if (mcmc_bds_vec.size() != 3 || mcmc_bds_vec[0].empty() ||
+                    mcmc_bds_vec[1].empty() ||
+                    mcmc_bds_vec[2].empty())
                 {
-                    throw "three parameters should be set for birth-death model of MCMCtree (birth-rate, death-rate and sampling-fraction)";
+                    throw
+                        "three parameters should be set for birth-death model of MCMCtree (birth-rate, death-rate and sampling-fraction)";
                 }
+                params.mcmc_bds = mcmc_bds_vec[0] + " " + mcmc_bds_vec[1] + " " + mcmc_bds_vec[2];
                 continue;
             }
 
@@ -5682,7 +5689,9 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.mcmc_iter = argv[cnt];
                 StrVector mcmc_iter_vec;
                 convert_string_vec(params.mcmc_iter.c_str(), mcmc_iter_vec, ',');
-                if (mcmc_iter_vec.size()!=3  || !strcmp(mcmc_iter_vec[2].c_str(), ""))
+                if (mcmc_iter_vec.size() != 3 || mcmc_iter_vec[0].empty() ||
+                    mcmc_iter_vec[1].empty() ||
+                    mcmc_iter_vec[2].empty())
                 {
                     throw "three parameters should be set for MCMCtree dating (Burin, samplefreq and nsamples)";
                 }
@@ -6081,6 +6090,8 @@ void parseArg(int argc, char *argv[], Params &params) {
     {
         std::string sequence_type(params.sequence_type);
     }
+
+    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
 
     // parse the profile mixture model
     // R+Fx -> MIX{S+FO,S+FO,...,S+FO} with x classes and S is a linked substitution matrix (i.e. linked exchangeabilities)

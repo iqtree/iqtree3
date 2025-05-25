@@ -386,7 +386,7 @@ const int WT_BR_LEN_SHORT = 2048; // store only 6 digits after the comma for bra
 const int WT_BR_ATTR = 4096; // print branch attributes
 const double ONE_THIRD = 1.0 / 3.0;
 
-#if ! (defined WIN32 || defined _WIN32 || defined __WIN32__ || defined WIN64)
+#if ! (defined WIN32 || defined _WIN32 || defined __WIN32__ || defined WIN64 || defined  __APPLE__)
 const int TRUE = 1;
 const int FALSE = 0;
 #endif
@@ -550,7 +550,7 @@ struct NNIInfo {
     9  or above = AVX512F
 */
 enum LikelihoodKernel {
-	LK_386, LK_SSE, LK_SSE2, LK_SSE3, LK_SSSE3, LK_SSE41, LK_SSE42, LK_AVX, LK_AVX_FMA, LK_AVX512
+	LK_NONE, LK_386, LK_SSE, LK_SSE2, LK_SSE3, LK_SSSE3, LK_SSE41, LK_SSE42, LK_AVX, LK_AVX_FMA, LK_AVX512
 };
 
 enum LhMemSave {

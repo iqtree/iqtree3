@@ -2830,14 +2830,14 @@ void printTrees(vector<string> trees, Params &params, string suffix) {
     treesOut.close();
 }
 
-void processDervMCMCTree(double *gradient_vector, size_t branchNum, size_t nPtn, double *G_matrix,
-                         const Map<RowVectorXd> &ptn_freq_diagonal, RowVectorXd &gradient_vector_eigen,
+void processDervMCMCTree(double *gradient_vector, size_t branchNum, size_t mem_size, double *G_matrix,
+                         RowVectorXd &ptn_freq_diagonal, RowVectorXd &gradient_vector_eigen,
                          MatrixXd &hessian, double *hessian_diagonal) {
 
     Map<RowVectorXd> gradient_vector_eigen_mapped(gradient_vector, branchNum);
     gradient_vector_eigen = gradient_vector_eigen_mapped;
 
-    Map<Matrix<double, Dynamic, Dynamic, RowMajor>> G_matrix_eigen(G_matrix, branchNum, nPtn);
+    Map<Matrix<double, Dynamic, Dynamic, RowMajor>> G_matrix_eigen(G_matrix, branchNum, mem_size);
     MatrixXd G_matrix_eigen_t = G_matrix_eigen.transpose();
     hessian = G_matrix_eigen * ptn_freq_diagonal.asDiagonal() * G_matrix_eigen_t;
     hessian = (-1) * hessian;
@@ -2861,7 +2861,12 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
     size_t max_orig_nptn = get_safe_upper_limit(orig_nptn);
     size_t nPtn = max_orig_nptn + tree->getModelFactory()->unobserved_ptns.size();
     size_t nBranches = tree->branchNum;
-    Map<RowVectorXd> ptn_freq_diagonal(tree->ptn_freq, nPtn);
+    size_t mem_size = get_safe_upper_limit(tree->getAlnNPattern()) + max(get_safe_upper_limit(tree->getModel()->num_states),
+                                                                              get_safe_upper_limit(
+                                                                                    tree->getModelFactory()->unobserved_ptns.size()));
+
+    RowVectorXd ptn_freq_diagonal = RowVectorXd::Zero(mem_size);
+    ptn_freq_diagonal.head(nPtn) =  Map<RowVectorXd>(tree->ptn_freq, nPtn);
 
     // Retrieve the branch lengths for MCMCTREE output file
     DoubleVector branchLengths;
@@ -2908,10 +2913,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
             }
             partBrMmap = partBrMmap2;
         }
-        int numStates = tree->getModel()->num_states;
-        size_t mem_size = get_safe_upper_limit(tree->getAlnNSite()) + max(get_safe_upper_limit(numStates),
-                                                                          get_safe_upper_limit(
-                                                                                  tree->getModelFactory()->unobserved_ptns.size()));
+
         size_t branchNum = (superTree->params->partition_type != BRLEN_OPTIMIZE) ? superTree->branchNum
                                                                                  : tree->branchNum;
         size_t g_matrix_size = branchNum * mem_size;
@@ -2927,7 +2929,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
             for (auto mapping: partBrMmap) {
                 int stree_branch_id = mapping.first;
                 int part_branch_id = mapping.second;
-                memmove(G_matrix_part+stree_branch_id*nPtn, G_matrix_sub_tree+part_branch_id*nPtn, sizeof(double)*nPtn);
+                memmove(G_matrix_part+stree_branch_id*mem_size, G_matrix_sub_tree+part_branch_id*mem_size, sizeof(double)*mem_size);
                 gradient_vector_part[stree_branch_id] = tree->gradient_vector[part_branch_id];
                 hessian_diagonal_part[stree_branch_id] = tree->hessian_diagonal[part_branch_id];
             }
@@ -2943,7 +2945,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
                     continue;
                 }
                 brVisitedMap[part_branch_id] = 1;
-                memmove(G_matrix_part+branchCounter*nPtn, G_matrix_sub_tree+part_branch_id*nPtn, sizeof(double)*nPtn);
+                memmove(G_matrix_part+branchCounter*mem_size, G_matrix_sub_tree+part_branch_id*mem_size, sizeof(double)*mem_size);
                 gradient_vector_part[branchCounter] = tree->gradient_vector[part_branch_id];
                 hessian_diagonal_part[branchCounter] = tree->hessian_diagonal[part_branch_id];
                 branchLengths2.push_back(branchLengths[part_branch_id]);
@@ -2951,7 +2953,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
             }
             saveTreeMCMCTree(branchLengths2, branch_lengths_vector, tree, tree_stream);
         }
-        processDervMCMCTree(gradient_vector_part, branchNum, nPtn, G_matrix_part, ptn_freq_diagonal,
+        processDervMCMCTree(gradient_vector_part, branchNum, mem_size, G_matrix_part, ptn_freq_diagonal,
                             gradient_vector_eigen, hessian, hessian_diagonal_part);
         aligned_free(G_matrix_part);
         aligned_free(gradient_vector_part);
@@ -2959,9 +2961,6 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
 
     } else {
 
-        int numStates = tree->getModel()->num_states;
-        size_t mem_size = get_safe_upper_limit(tree->getAlnNSite()) + max(get_safe_upper_limit(numStates),
-                                                                          get_safe_upper_limit(tree->getModelFactory()->unobserved_ptns.size()));
         BranchVector singleAlnBranches;
         tree->getBranches(singleAlnBranches);
         vector<int> branch_ids;
@@ -2987,7 +2986,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
         int br_counter = 0;
         DoubleVector branchLengthsNew;
         for (int  br_id: branch_ids) {
-            memmove(G_matrix_new+br_counter*nPtn, G_matrix_tree+br_id*nPtn, sizeof(double)*nPtn);
+            memmove(G_matrix_new+br_counter*mem_size, G_matrix_tree+br_id*mem_size, sizeof(double)*mem_size);
             gradient_vector_new[br_counter] = tree->gradient_vector[br_id];
             hessian_diagonal_new[br_counter] = tree->hessian_diagonal[br_id];
             branchLengthsNew.push_back(branchLengths[br_id]);
@@ -2995,7 +2994,7 @@ void printMCMCFileFormat(PhyloTree *tree, MatrixXd &hessian, stringstream &tree_
         }
 
 
-        processDervMCMCTree(gradient_vector_new, nBranches, nPtn, G_matrix_new, ptn_freq_diagonal,
+        processDervMCMCTree(gradient_vector_new, nBranches, mem_size, G_matrix_new, ptn_freq_diagonal,
                             gradient_vector_eigen, hessian, hessian_diagonal_new);
         saveTreeMCMCTree(branchLengthsNew, branch_lengths_vector, tree, tree_stream);
 
@@ -3045,7 +3044,7 @@ void printMCMCTreeCtlFile(IQTree *iqtree, ofstream &ctl, ofstream &dummyAlignmen
         << "RootAge = <1.0  * safe constraint on root age, used if no fossil for root." << endl << endl
 
         << "BDparas = "  << Params::getInstance().mcmc_bds <<  "    * birth rate, death rate, sampling priors for sampling times" << endl
-        << "finetune = 1: 0.1  0.1  0.1  0.01 .5  * auto (0 or 1) : times, musigma2, rates, mixing, paras, FossilErr"
+        << "finetune = 1: 0.1  0.1  0.1  0.01 .5  * auto (0 or 1) : times, musigma2, rates, mixing, paras, FossilErr" << endl
         << "print = 1  * 1: normal output; 2: verbose output" << endl << endl
 
 
@@ -3207,7 +3206,8 @@ void printHessian(IQTree *iqtree, int partition_type) {
             }
         }
 
-        printMCMCFileFormat(iqtree, hessian, tree_stream, branch_lengths_vector, gradient_vector_eigen, NULL, 0, iqtree->leftSingleRoot);
+        printMCMCFileFormat(iqtree, hessian, tree_stream, branch_lengths_vector, gradient_vector_eigen, NULL, 0,
+                            iqtree->leftSingleRoot);
 
         outfile << endl << iqtree->aln->getNSeq() << endl << endl;
         outfile << tree_stream.str() << endl << endl;

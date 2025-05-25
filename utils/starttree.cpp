@@ -44,7 +44,9 @@ Factory& Factory::getInstance() {
     static Factory instance;
     if (instance.getBuilderCount()==0) {
         addBioNJ2009TreeBuilders(instance);
-        addBioNJ2020TreeBuilders(instance);
+        if (!KernelParam::getInstance().isX86()) {
+            addBioNJ2020TreeBuilders(instance);
+        }
         BuilderInterface *bench = new BenchmarkingTreeBuilder(instance, "BENCHMARK", "Benchmark");
         instance.addBuilder(bench->getName(), bench);
     }
