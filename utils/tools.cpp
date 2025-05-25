@@ -1499,7 +1499,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.date_outlier = -1.0;
     params.dating_mf = false;
     params.mcmc_clock = CORRELATED;
-    params.mcmc_bds = "1,1,0.5";
+    params.mcmc_bds = "1 1 0.5";
     params.mcmc_iter = "20000, 100, 20000";
 
     // added by TD
@@ -5673,10 +5673,14 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.mcmc_bds = argv[cnt];
                 StrVector mcmc_bds_vec;
                 convert_string_vec(params.mcmc_bds.c_str(), mcmc_bds_vec, ',');
-                if (mcmc_bds_vec.size()!=3 || !strcmp(mcmc_bds_vec[2].c_str(), ""))
+                if (mcmc_bds_vec.size() != 3 || mcmc_bds_vec[0].empty() ||
+                    mcmc_bds_vec[1].empty() ||
+                    mcmc_bds_vec[2].empty())
                 {
-                    throw "three parameters should be set for birth-death model of MCMCtree (birth-rate, death-rate and sampling-fraction)";
+                    throw
+                        "three parameters should be set for birth-death model of MCMCtree (birth-rate, death-rate and sampling-fraction)";
                 }
+                params.mcmc_bds = mcmc_bds_vec[0] + " " + mcmc_bds_vec[1] + " " + mcmc_bds_vec[2];
                 continue;
             }
 
@@ -5685,7 +5689,9 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.mcmc_iter = argv[cnt];
                 StrVector mcmc_iter_vec;
                 convert_string_vec(params.mcmc_iter.c_str(), mcmc_iter_vec, ',');
-                if (mcmc_iter_vec.size()!=3  || !strcmp(mcmc_iter_vec[2].c_str(), ""))
+                if (mcmc_iter_vec.size() != 3 || mcmc_iter_vec[0].empty() ||
+                    mcmc_iter_vec[1].empty() ||
+                    mcmc_iter_vec[2].empty())
                 {
                     throw "three parameters should be set for MCMCtree dating (Burin, samplefreq and nsamples)";
                 }

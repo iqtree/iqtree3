@@ -1655,7 +1655,7 @@ int CandidateModelSet::generate(Params &params, Alignment *aln, bool separate_ra
         StrVector extra_model_names;
         convert_string_vec(params.model_extra_set, extra_model_names);
         for (auto s : extra_model_names)
-            push_back(CandidateModel(s, "", aln));
+            push_back(CandidateModel(s, "", aln, MF_CANNOT_BE_IGNORED));
     }
     return max_cats;
 }
@@ -2832,7 +2832,7 @@ void CandidateModelSet::filterRates(int finished_model) {
             ok_rates.insert(rate_name);
         }
     for (model = finished_model+1; model < size(); model++)
-        if (ok_rates.find(at(model).orig_rate_name) == ok_rates.end())
+        if (ok_rates.find(at(model).orig_rate_name) == ok_rates.end() && !at(model).hasFlag(MF_CANNOT_BE_IGNORED))
             at(model).setFlag(MF_IGNORED);
 }
 
@@ -2854,11 +2854,11 @@ void CandidateModelSet::filterSubst(int finished_model) {
         if (at(model).getScore() <= ok_score) {
             string subst_name = at(model).orig_subst_name;
             ok_model.insert(subst_name);
-        } else
+        } else if (!at(model).hasFlag(MF_CANNOT_BE_IGNORED))
             at(model).setFlag(MF_IGNORED);
     }
     for (model = finished_model+1; model < size(); model++)
-        if (ok_model.find(at(model).orig_subst_name) == ok_model.end())
+        if (ok_model.find(at(model).orig_subst_name) == ok_model.end() && !at(model).hasFlag(MF_CANNOT_BE_IGNORED))
             at(model).setFlag(MF_IGNORED);
 }
 
