@@ -138,7 +138,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
         computeLikelihoodDervMixlenPointer = NULL;
         computePartialLikelihoodPointer = NULL;
         computeLikelihoodFromBufferPointer = NULL;
-        sse = LK_NONE;
+        sse = LK_386;
 #endif
         return;
     }

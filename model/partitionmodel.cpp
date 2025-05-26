@@ -451,10 +451,11 @@ double PartitionModel::computeMixLh(string &warning) {
                 // link sub_tree2 and sub_tree1_aln
                 sub_tree2->setAlignment(sub_tree1_aln);
                 sub_tree2->setRootNode(tree2->params->root);
+                // Params needs to be assigned early
+                sub_tree2->setParams(tree2->params);
                 sub_tree2->setModelFactory(tree2->getModelFactory());
                 //sub_tree2->setModel(tree2->getModel());
                 //sub_tree2->setRate(tree2->getRate());
-                sub_tree2->setParams(tree2->params);
                 sub_tree2->optimize_by_newton = tree2->params->optimize_by_newton;
                 sub_tree2->setLikelihoodKernel(tree2->params->SSE);
                 sub_tree2->setNumThreads(tree2->num_threads);
