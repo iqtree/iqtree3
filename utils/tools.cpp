@@ -1464,7 +1464,7 @@ void parseArg(int argc, char *argv[], Params &params) {
 	params.lh_mem_save = LM_PER_NODE; // auto detect
     params.buffer_mem_save = false;
 	params.start_tree = STT_PLL_PARSIMONY;
-//    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
+    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
 
     params.modelfinder_ml_tree = true;
     params.final_model_opt = true;
@@ -6090,8 +6090,6 @@ void parseArg(int argc, char *argv[], Params &params) {
     {
         std::string sequence_type(params.sequence_type);
     }
-
-    params.start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
 
     // parse the profile mixture model
     // R+Fx -> MIX{S+FO,S+FO,...,S+FO} with x classes and S is a linked substitution matrix (i.e. linked exchangeabilities)
