@@ -20,11 +20,12 @@
 #include "starttree.h"
 #include <iostream> //for std::cout
 #include <sstream>  //for std::stringstream
+#include <assert.h>
 
 namespace StartTree {
 
 extern void addBioNJ2009TreeBuilders(Factory& f);
-extern void addBioNJ2020TreeBuilders(Factory& f);
+extern void addBioNJ2020TreeBuilders(Factory& f, bool vectorization);
 
 Factory::Factory() {
 }
@@ -43,10 +44,10 @@ size_t Factory::getBuilderCount() {
 Factory& Factory::getInstance() {
     static Factory instance;
     if (instance.getBuilderCount()==0) {
+        // register allowed names of algorithms for parsing purpose
+        // This doesn't excute these algorithms yet
         addBioNJ2009TreeBuilders(instance);
-        if (!KernelParam::getInstance().isX86()) {
-            addBioNJ2020TreeBuilders(instance);
-        }
+        addBioNJ2020TreeBuilders(instance, !KernelParam::getInstance().isX86());
         BuilderInterface *bench = new BenchmarkingTreeBuilder(instance, "BENCHMARK", "Benchmark");
         instance.addBuilder(bench->getName(), bench);
     }

@@ -1089,6 +1089,19 @@ void parseArg(int argc, char *argv[], Params &params) {
     int cnt;
     progress_display::setProgressDisplay(false);
     verbose_mode = VB_MIN;
+
+    // set KernelParam early here for NJ stuffs
+    for (cnt = 1; cnt < argc; cnt++) {
+        if (strcmp(argv[cnt], "-lk") == 0) {
+            cnt++;
+            if (cnt >= argc)
+                throw "-lk x86|SSE|AVX|FMA|AVX512";
+            if (strcmp(argv[cnt], "x86") == 0) {
+                KernelParam::getInstance().setX86(true);
+            }
+        }
+    }
+    
     params.tree_gen = NONE;
     params.user_file = NULL;
     params.constraint_tree_file = NULL;
