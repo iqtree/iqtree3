@@ -323,6 +323,8 @@ set(CLANG "FALSE") # Clang compiler
 set(ICC "FALSE")   # Intel compiler
 set(VCC "FALSE")   # MS Visual C Compiler, note that it is different from MSVC variable
 set(CLANG_UNDER_VS "FALSE") #Clang compiler, used from inside Visual Studio
+set(NVHPC "FALSE") # NVIDIA HPC SDK compiler
+
 # using C++17 standard (unless IQTREE_FLAGS specifies c++14, required for compilation using mingw in Github actions)
 # disable AVX for NEON
 if (__ARM_NEON)
@@ -388,6 +390,10 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Intel")
     message("Compiler      : Intel C++ Compiler (icc)")
     set(ICC "TRUE")
     #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qstd=c99")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "NVHPC") # NVIDIA HPC SDK compiler
+    message("Compiler      : NVIDIA HPC SDK Compiler (nvc++)")
+    set(NVHPC "TRUE")
+    add_definitions(-DUSE_NVHPC)
 else()
     message("Compiler      : Unknown and untested yet")
 endif()
@@ -416,6 +422,12 @@ if (MSVC)
             add_definitions(/O3)
         endif()
     endif()
+endif()
+
+if (NVHPC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -noswitcherror")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -cuda") # to disable AVX512 intrinsics
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Minfo=accel")
 endif()
 
 # enable link time optimization
@@ -505,6 +517,9 @@ if (NOT IQTREE_FLAGS MATCHES "single")
             add_definitions(/MT)
         endif()
     endif()
+    if (NVHPC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mp")
+    endif()
 
     if(CLANG AND APPLE)
     	if(OSX_NATIVE_ARCHITECTURE STREQUAL "arm64")
@@ -573,6 +588,20 @@ if (IQTREE_FLAGS MATCHES "mpi")
     SET(EXE_SUFFIX "${EXE_SUFFIX}-mpi")
 else()
     message("MPI           : NONE")
+endif()
+
+##################################################################
+# configure OpenACC compilation
+##################################################################
+if (USE_OPENACC STREQUAL "ON")
+    message("OpenACC       : Yes")
+    if (GCC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenacc")
+    elseif (NVHPC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -acc")
+    endif()
+else()
+    message("OpenACC       : NONE")
 endif()
 
 ##################################################################
