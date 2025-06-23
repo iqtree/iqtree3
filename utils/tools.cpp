@@ -1487,6 +1487,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.ignore_checkpoint = false;
     params.checkpoint_dump_interval = 60;
     params.force_unfinished = false;
+    params.force_aa_mix_finder = false;
     params.print_all_checkpoints = false;
     params.suppress_output_flags = 0;
     params.ufboot2corr = false;
@@ -5475,6 +5476,11 @@ void parseArg(int argc, char *argv[], Params &params) {
 				params.force_unfinished = true;
 				continue;
 			}
+      
+      if (strcmp(argv[cnt], "-force-aa-mix-finder") == 0 || strcmp(argv[cnt], "--force-aa-mix-finder") == 0) {
+        params.force_aa_mix_finder = true;
+        continue;
+      }
 
 			if (strcmp(argv[cnt], "-cptime") == 0 || strcmp(argv[cnt], "--cptime") == 0) {
 				cnt++;

@@ -30,9 +30,11 @@ void ModelMorphology::init(const char *model_name, string model_params, StateFre
 		}
         num_params = 0;
     } else if (name == "GTR" || name == "GTRX") {
-        outWarning("GTRX multistate model will estimate " + convertIntToString(getNumRateEntries()-1) + " substitution rates that might be overfitting!");
-        outWarning("Please only use GTRX with very large data and always test for model fit!");
-        name = "GTRX";
+			if (num_states > 6 || phylo_tree->aln->getNPattern() < 100) {
+				outWarning("GTRX multistate model will estimate " + convertIntToString(getNumRateEntries()-1) + " substitution rates that might be overfitting for the length of your alignment/partition!");
+				outWarning("Please only use GTRX with large data and always test for model fit!");
+			}
+			name = "GTRX";
 	} else {
 		// if name does not match, read the user-defined model
 		readParameters(model_name);
