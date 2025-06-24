@@ -35,8 +35,9 @@ void ModelSubst::saveCheckpoint() {
 //    CKP_SAVE(name);
 //    CKP_SAVE(full_name);
 //    CKP_SAVE(freq_type);
-    if (freq_type == FREQ_ESTIMATE && !fixed_parameters)
-        CKP_ARRAY_SAVE(num_states, state_freq);
+    // if (freq_type == FREQ_ESTIMATE && !fixed_parameters)
+    // output the frequencies in any circumstances
+    CKP_ARRAY_SAVE(num_states, state_freq);
     endCheckpoint();
     CheckpointFactory::saveCheckpoint();
 }

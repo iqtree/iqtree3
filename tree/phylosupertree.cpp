@@ -1543,7 +1543,7 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
             /*if (saln->partitions[part]->seq_type == SEQ_CODON)
                 out << "CODON, ";*/
             if (!saln->partitions[part]->sequence_type.empty())
-                out << saln->partitions[part]->sequence_type << ",";
+                out << saln->partitions[part]->sequence_type;
             string pos = saln->partitions[part]->position_spec;
             replace(pos.begin(), pos.end(), ',' , ' ');
             if (!saln->partitions[part]->sequence_type.empty() && !pos.empty()) {

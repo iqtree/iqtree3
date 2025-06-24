@@ -122,20 +122,22 @@ string ModelMorphology::getName() {
 }
 
 string ModelMorphology::getNameParams(bool show_fixed_params) {
-    if (num_params == 0) return name;
     ostringstream retname;
     size_t pos_plus = name.find('+');
     if (pos_plus != string::npos) {
-        retname << name.substr(0, pos_plus) << '{';
+        retname << name.substr(0, pos_plus);
     } else {
-        retname << name << '{';
+        retname << name;
     }
-    int nrates = getNumRateEntries();
-    for (int i = 0; i < nrates; i++) {
-        if (i>0) retname << ',';
-        retname << rates[i];
+    if (num_params > 0 || show_fixed_params) {
+        retname << '{';
+        int nrates = getNumRateEntries();
+        for (int i = 0; i < nrates; i++) {
+            if (i > 0) retname << ',';
+            retname << rates[i];
+        }
+        retname << '}';
     }
-    retname << '}';
     if (pos_plus != string::npos) {
         retname << name.substr(pos_plus);
     } else {

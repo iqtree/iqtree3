@@ -126,10 +126,9 @@ public:
     virtual double targetFunk(double x[]);
 
     /**
-     compute the mixture-based log-likelihood for mAIC, mAICc, mBIC calculation.
-     @param warning the warning message when mixture-based log-likelihood calculation is skipped.
+     compute the marginal log-likelihood for mAIC, mAICc, mBIC calculation.
      */
-    virtual double computeMixLh(string &warning);
+    virtual double computeMarginalLh();
 
     /**
      rescale the state frequencies

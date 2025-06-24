@@ -1361,6 +1361,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
 				else
 					model = (ModelMarkov*)createModel(this_name, models_block, FREQ_USER_DEFINED, freq_vec[f]->description, tree);
 				model->total_num_subst = rate * freq_rates[f];
+				if (Params::getInstance().optimize_mixmodel_freq)
+					model->freq_type = FREQ_ESTIMATE;
 				push_back(model);
 				weights.push_back(weight * freq_weights[f]);
 				if (m+f > 0) {
@@ -1403,6 +1405,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
                     } else {
                         outError("The user defined frequency model is incorrect");
                     }
+                } else if (fstr == "+FU" || fstr == "+Fu") {
+                    model_freq = FREQ_USER_DEFINED;
                 } else if (fstr == "+FO" || fstr == "+Fo") {
                     model_freq = FREQ_ESTIMATE;
                 } else if (fstr == "+FQ" || fstr == "+Fq") {
@@ -1434,6 +1438,8 @@ void ModelMixture::initMixture(string orig_model_name, string model_name, string
                 model->name += "+F" + nxsmodel_freq_name + "";
                 model->full_name += "+F" + nxsmodel_freq_name + "";
             }
+            if (Params::getInstance().optimize_mixmodel_freq)
+                model->freq_type = FREQ_ESTIMATE;
 			push_back(model);
 			weights.push_back(weight);
 			if (m > 0) {
@@ -1636,7 +1642,7 @@ void ModelMixture::initFromClassMinusOne(double init_weight) {
         return;
     
     int nmix = getNMixtures();
-    checkpoint->startStruct("BestOfTheKClass");
+    checkpoint->startStruct("BestOfThe" + convertIntToString(nmix-1) + "Class");
     if (init_weight > 0) {
         if (nmix > 2) {
             checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()-1));
@@ -1670,7 +1676,6 @@ void ModelMixture::initFromClassMinusOne(double init_weight) {
             at(nmix - 1)->setStateFrequency(state_freq);
         }
 
-        //cout << "[init] " << getNameParams(false) << endl;
     } else {
         checkpoint->startStruct("ModelMixture" + convertIntToString(getNMixtures()));
         if (!fix_prop) {

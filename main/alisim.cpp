@@ -218,13 +218,28 @@ int computeTotalSequenceLengthAllPartitions(PhyloSuperTree *super_tree)
 */
 void generateRandomTree(Params &params)
 {
-    if (params.sub_size < 3 && !params.aln_file) {
-        outError(ERR_FEW_TAXA);
-    }
-
     if (!params.user_file) {
         outError("Please specify an output tree file name");
     }
+    try {
+        ofstream out;
+        out.open(params.user_file);
+        generateRandomTree(params, out);
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, params.user_file);
+    }
+}
+
+/**
+*  generate a random tree
+*/
+void generateRandomTree(Params &params, ostream &out)
+{
+    if (params.sub_size < 3) {
+        outError(ERR_FEW_TAXA);
+    }
+
     ////cout << "Random number seed: " << params.ran_seed << endl << endl;
 
     SplitGraph sg;
@@ -238,8 +253,8 @@ void generateRandomTree(Params &params)
                 string tmp_str(params.user_file);
                 outError(tmp_str + " exists. Use `-redo` option if you want to overwrite it.");
             }
-            ofstream out;
-            out.open(params.user_file);
+            // ofstream out;
+            // out.open(params.user_file);
             MTree itree;
 
             if (params.second_tree) {
@@ -293,7 +308,7 @@ void generateRandomTree(Params &params)
                 mtree.printTree(out);
                 out << endl;
             }
-            out.close();
+            // out.close();
             cout << params.repeated_time << " tree(s) printed to " << params.user_file << endl;
             if (params.num_zero_len) {
                 out2.close();

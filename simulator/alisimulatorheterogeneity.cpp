@@ -355,7 +355,8 @@ int AliSimulatorHeterogeneity::estimateStateFromOriginalTransMatrix(ModelSubst *
         #pragma omp critical
         #endif
         {
-            model->setStateFrequency(tmp_state_freqs);
+            model->getMixtureClass(model_component_index)->setStateFrequency(tmp_state_freqs);
+            model->getMixtureClass(model_component_index)->decomposeRateMatrix();
             // compute the transition matrix
             model->computeTransMatrix(combine_rate * branch_length * rate, trans_matrix, model_component_index, dad_state);
         }
