@@ -173,3 +173,48 @@ void ModelMorphology::writeInfo(ostream &out) {
         out << endl;
     }
 }
+
+void ModelMorphology::printMrBayesModelText(ofstream& out, string partition, string charset){
+    RateHeterogeneity* rate = phylo_tree->getRate();
+
+    // Free Rate should be substituted by +G (+I not supported)
+    bool has_gamma = rate->getGammaShape() != 0.0 || rate->isFreeRate();
+    bool ordered = strcmp(name.c_str(), "ORDERED") == 0;
+
+    // MrBayes' morph model is 'JC-like'
+    out << "using MrBayes model " << (ordered ? "ORDERED" : "JC") << (has_gamma ? "+G" : "") << "]" << endl;
+
+    // Warnings
+
+    // General Morph Data Warnings
+    out << "  [Morphological data in MrBayes is only supported with states from {0-9}]" << endl;
+    out << "  [Morphological data containing states {A-Z] may cause errors]" << endl;
+    outWarning("Use morphological data in MrBayes with caution; only states from {0-9} are supported!");
+
+    // Unsupported +I
+    if (rate->isFreeRate() || rate->getPInvar() > 0.0) {
+        out << "  [+I modifier ignored, not supported by MrBayes for morphological data]" << endl;
+        outWarning("MrBayes does not support Invariable Sites with Morphological Data! +I has been ignored!");
+    }
+
+    // Unsupported Freq
+    if (freq_type != FREQ_EQUAL) {
+        out << "  [Equal frequencies forced, not supported by MrBayes for morphological data]" << endl;
+        outWarning("MrBayes does not support non-equal frequencies for Morphological Data! Equal frequencies forced!");
+    }
+
+    // Lset Parameters
+    out << "  lset applyto=(" << partition << ") rates=";
+
+    if (has_gamma) {
+        // Rate Categories + Gamma
+        out << "gamma";
+    } else
+        out << "equal";
+
+    out << ";" << endl;
+
+    // ctype (ordered or not)
+    if (ordered)
+        out << "  ctype ordered: " << charset << ";" << endl;
+}

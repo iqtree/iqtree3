@@ -212,6 +212,14 @@ double *ModelSubst::newTransMatrix() {
 	return new double[num_states * num_states];
 }
 
+void ModelSubst::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    out << "using MrBayes model GTR+G+I]" << endl;
+    out << "  [Model not supported by MrBayes, defaulting to GTR+G+I (DNA)]" << endl;
+    outWarning("MrBayes output is not supported by model " + name + ", defaulting to GTR+G+I (DNA)!");
+
+    out << "  lset applyto=(" << partition << ") nucmodel=4by4 nst=" << 6 << " rates=" << "invgamma" << ";" << endl;
+}
+
 ModelSubst::~ModelSubst()
 {
     // mem space pointing to target model and thus avoid double free here
