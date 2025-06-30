@@ -1364,7 +1364,6 @@ void reportSubstitutionProcess(ostream &out, Params &params, IQTree &tree)
 
         PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
         PhyloSuperTree::iterator it;
-        it = stree->begin();
 
         int part;
 
@@ -1479,6 +1478,11 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
 
         out << "SEQUENCE ALIGNMENT" << endl << "------------------" << endl
                 << endl;
+        
+        if (tree.aln->sequence_type.empty()) {
+            out << "NOTE: Alignment sequence type is auto-detected. If in doubt, specify it via -st option." << endl;
+        }
+        
         if (tree.isSuperTree()) {
       // TODO DS: Changes may be needed here for PoMo.
             out << "Input data: " << tree.aln->getNSeq()+tree.removed_seqs.size() << " taxa with "
