@@ -123,33 +123,37 @@ double chi2prob (int deg, double chi2)
 } /* chi2prob */
 
 
-int Alignment::checkAbsentStates(string msg) {
-    double *state_freq = new double[num_states];
-    computeStateFreq(state_freq);
-    string absent_states, rare_states;
-    int count = 0;
-    // Skip check for PoMo.
+void Alignment::checkAbsentStates(string msg) {
+    // skip checking for PoMo
     if (seq_type == SEQ_POMO)
-      return 0;
-    for (int i = 0; i < num_states; i++)
-        if (state_freq[i] == 0.0) {
+        return;
+    string absent_states, rare_states;
+    int absent_cnt = 0;
+    double *state_freqs = new double[num_states];
+    computeStateFreq(state_freqs);
+    for (int x = 0; x < num_states; ++x) {
+        if (state_freqs[x] == 0.0) {
             if (!absent_states.empty())
                 absent_states += ", ";
-            absent_states += convertStateBackStr(i);
-            count++;
-        } else if (state_freq[i] <= Params::getInstance().min_state_freq) {
+            absent_states += convertStateBackStr(x);
+            absent_cnt++;
+        } else if (state_freqs[x] <= Params::getInstance().min_state_freq) {
             if (!rare_states.empty())
                 rare_states += ", ";
-            rare_states += convertStateBackStr(i);
+            rare_states += convertStateBackStr(x);
         }
-    if (count >= num_states-1 && Params::getInstance().fixed_branch_length != BRLEN_FIX)
-        outError("Only one state is observed in " + msg);
+    }
+    delete [] state_freqs;
+    if (absent_cnt == num_states)
+        outError("Only gaps observed in " + msg);
+    if (absent_cnt == num_states - 1)
+        outWarning("Only one state observed in " + msg);
+    if (absent_cnt > 0)
+        outWarning(convertIntToString(absent_cnt) + " states (see below) not observed in " + msg);
     if (!absent_states.empty())
-        cout << "NOTE: State(s) " << absent_states << " not present in " << msg << " and thus removed from Markov process to prevent numerical problems" << endl;
+        outWarning("State(s) " + absent_states + " not present in " + msg + " and may cause numerical problems");
     if (!rare_states.empty())
-        cout << "WARNING: States(s) " << rare_states << " rarely appear in " << msg << " and may cause numerical problems" << endl;
-    delete[] state_freq;
-    return count;
+        outWarning("State(s) " + rare_states + " rarely appear in " + msg + " and may cause numerical problems");
 }
 
 void Alignment::checkSeqName() {

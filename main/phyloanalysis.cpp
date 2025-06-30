@@ -3420,22 +3420,8 @@ bool isTreeMixture(Params& params) {
 
 void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 
-    //    string dist_file;
-    // params.startCPUTime = getCPUTime();
-    // params.start_real_time = getRealTime();
-    
-    int absent_states = 0;
-    if (iqtree->isSuperTree()) {
-        PhyloSuperTree *stree = (PhyloSuperTree*)iqtree;
-        for (auto i = stree->begin(); i != stree->end(); i++)
-            absent_states += (*i)->aln->checkAbsentStates("partition " + (*i)->aln->name);
-    } else {
-        absent_states = iqtree->aln->checkAbsentStates("alignment");
-    }
-    if (absent_states > 0) {
-        cout << "NOTE: " << absent_states << " states (see above) are not present and thus removed from Markov process to prevent numerical problems" << endl;
-    }
-    
+    iqtree->aln->checkAbsentStates("alignment");
+
     // Make sure that no partial likelihood of IQ-TREE is initialized when PLL is used to save memory
     if (params.pll) {
         iqtree->deleteAllPartialLh();
