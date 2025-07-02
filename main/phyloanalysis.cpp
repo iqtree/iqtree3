@@ -923,7 +923,21 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev) {
+    // mAIC is not available for non-reversible model
+    bool containNonRev = false;
+    if (tree.isSuperTree()) {
+        PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
+        for (size_t i = 0; i < stree->size(); i++) {
+            if (!stree->at(i)->getModel()->isReversible()) {
+                containNonRev = true;
+            }
+        }
+    } else {
+        if (!tree.getModel()->isReversible()) {
+            containNonRev = true;
+        }
+    }
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !containNonRev) {
         // compute mAIC/mBIC/mAICc if it is a partition model
         int ntrees; //mix_df;
         double mix_lh;
@@ -5100,11 +5114,13 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     /****************** read in alignment **********************/
     if (params.partition_file) {
         // Partition model analysis
-        if (!align_is_given)
-            if (params.partition_type == TOPO_UNLINKED)
+        if (!align_is_given) {
+            if (params.partition_type == TOPO_UNLINKED) {
                 alignment = new SuperAlignmentUnlinked(params);
-            else
+            } else {
                 alignment = new SuperAlignment(params);
+            }
+        }
     } else {
         if (!align_is_given)
             alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
