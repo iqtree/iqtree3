@@ -56,6 +56,7 @@ parstree.h
 discordance.cpp
 phylohmm.cpp
 phylohmm.h
+phylotreegpu.h
 )
 
 target_link_libraries(tree pll model alignment)

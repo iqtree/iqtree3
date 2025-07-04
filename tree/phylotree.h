@@ -878,11 +878,13 @@ public:
     template<class VectorClass>
     void computePartialInfo(TraversalInfo &info, VectorClass* buffer, double *echildren = NULL, double *partial_lh_leaves = NULL);
 
-    /** 
-        sort neighbor in descending order of subtree size (number of leaves within subree)
-        @param node the starting node, NULL to start from the root
-        @param dad dad of the node, used to direct the search
-    */
+    void computePartialInfoGPU(TraversalInfo &info, double* buffer, double *echildren = NULL, double *partial_lh_leaves = NULL);
+
+        /**
+            sort neighbor in descending order of subtree size (number of leaves within subree)
+            @param node the starting node, NULL to start from the root
+            @param dad dad of the node, used to direct the search
+        */
     void sortNeighborBySubtreeSize(PhyloNode *node, PhyloNode *dad);
 
     /****************************************************************************
@@ -1318,6 +1320,10 @@ public:
 
     template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false, const bool SITE_MODEL = false>
     void computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf);
+
+//#ifdef OPENMP_GPU
+    void computePartialLikelihoodGPU(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+//#endif
 
     /** For Mixlen stuffs */
     virtual int getCurMixture() { return 0; }

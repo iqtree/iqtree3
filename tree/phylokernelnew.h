@@ -19,6 +19,10 @@
 
 #include "phylotree.h"
 
+#ifdef OPENMP_GPU
+#include "phylokernelgpu.h"
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -1243,7 +1247,9 @@ void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compu
 
         
         if (!Params::getInstance().buffer_mem_save) {
-#ifdef _OPENMP
+#ifdef OPENMP_GPU
+            double *buffer_tmp = (double*)buffer;
+#elif _OPENMP
 #pragma omp parallel if (num_info >= 3) num_threads(num_threads)
         {
             VectorClass *buffer_tmp = (VectorClass*)buffer + aln->num_states*omp_get_thread_num();
@@ -1252,13 +1258,16 @@ void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compu
             VectorClass *buffer_tmp = (VectorClass*)buffer;
 #endif
             for (int i = 0; i < num_info; i++) {
-            #ifdef KERNEL_FIX_STATES
+
+            #ifdef OPENMP_GPU
+                computePartialInfoGPU(traversal_info[i], buffer_tmp);
+            #elif defined(KERNEL_FIX_STATES)
                 computePartialInfo<VectorClass, nstates>(traversal_info[i], buffer_tmp);
             #else
                 computePartialInfo<VectorClass>(traversal_info[i], buffer_tmp);
             #endif
             }
-#ifdef _OPENMP
+#if defined(_OPENMP) && !defined(OPENMP_GPU)
         }
 #endif
         }
@@ -1381,7 +1390,9 @@ void PhyloTree::computePartialLikelihoodGenericSIMD(TraversalInfo &info
             if (num_leaves > 0)
                 partial_lh_leaves = aligned_alloc<double>(get_safe_upper_limit((aln->STATE_UNKNOWN+1)*block*num_leaves));
             double *buffer_tmp = aligned_alloc<double>(nstates);
-#ifdef KERNEL_FIX_STATES
+#ifdef OPENMP_GPU
+            computePartialInfoGPU(info, buffer_tmp, echildren, partial_lh_leaves);
+#elif defined(KERNEL_FIX_STATES)
             computePartialInfo<VectorClass, nstates>(info, (VectorClass*)buffer_tmp, echildren, partial_lh_leaves);
 #else
             computePartialInfo<VectorClass>(info, (VectorClass*)buffer_tmp, echildren, partial_lh_leaves);

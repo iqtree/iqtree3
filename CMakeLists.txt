@@ -549,6 +549,7 @@ if (NOT IQTREE_FLAGS MATCHES "single")
         if (OPENMP_GPU)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mp=gpu")
             message("OpenMP GPU enabled")
+            add_definitions(-DOPENMP_GPU)
         else()
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mp")
         endif ()
@@ -800,6 +801,10 @@ include_directories("${PROJECT_BINARY_DIR}")
 # so that we will find cmaple/cmaple_config.h
 if (USE_CMAPLE STREQUAL "ON")
 	include_directories("${PROJECT_BINARY_DIR}/cmaple")
+endif()
+
+if (OPENMP_GPU)
+    add_definitions(-DOPENMP_GPU)  # todo: remove this from this level
 endif()
 
 #zlib will be detected for appearance
