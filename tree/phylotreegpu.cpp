@@ -16,7 +16,7 @@ void PhyloTree::computeTipPartialLikelihoodGPU() {
 
     computePtnFreq();
     // for +I model
-//    computePtnInvar(); HK: tmp remove +I model
+//    computePtnInvar(); // HK: tmp remove +I model
 
     // HK: tmp remove site-specific model
 /*
@@ -120,16 +120,19 @@ void PhyloTree::computeTipPartialLikelihoodGPU() {
 
     // 2020-06-23: refactor to use computeTipLikelihood
     int nmixtures = 1;
-    if (getModel()->useRevKernel())
-        nmixtures = getModel()->getNMixtures();
+    // HK: tmp remove Mixture related code
+/*    if (getModel()->useRevKernel())
+        nmixtures = getModel()->getNMixtures();*/
     int nstates = getModel()->num_states;
     int state;
-    if (aln->seq_type == SEQ_POMO) {
+
+    // HK: tmp remove SEQ_POMO
+/*    if (aln->seq_type == SEQ_POMO) {
         if (aln->pomo_sampling_method != SAMPLING_WEIGHTED_BINOM &&
             aln->pomo_sampling_method != SAMPLING_WEIGHTED_HYPER)
             outError("Sampling method not supported by PoMo.");
         ASSERT(aln->STATE_UNKNOWN == nstates + aln->pomo_sampled_states.size());
-    }
+    }*/
 
     // assign tip_partial_lh for all admissible states
     for (state = 0; state <= aln->STATE_UNKNOWN; state++) {
