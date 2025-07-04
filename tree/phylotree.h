@@ -899,6 +899,7 @@ public:
   // hypergeometric sampling.
   void computeTipPartialLikelihoodPoMo(int state, double *lh, bool hypergeometric=false);
     void computeTipPartialLikelihood();
+    void computeTipPartialLikelihoodGPU();
     void computeTipPartialParsimony();
     void computePtnInvar();
     void computePtnFreq();

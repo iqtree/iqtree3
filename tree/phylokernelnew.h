@@ -1156,8 +1156,13 @@ template<class VectorClass>
 #endif
 void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compute_partial_lh) {
 
-    if ((tip_partial_lh_computed & 1) == 0)
+    if ((tip_partial_lh_computed & 1) == 0) {
+#ifdef OPENMP_GPU
+        computeTipPartialLikelihoodGPU();
+#else
         computeTipPartialLikelihood();
+#endif
+    }
 
     traversal_info.clear();
 #ifndef KERNEL_FIX_STATES
