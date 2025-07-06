@@ -870,6 +870,7 @@ public:
     template<class VectorClass>
     void computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compute_partial_lh);
 
+    void computeTraversalInfoGPU(PhyloNode *node, PhyloNode *dad, bool compute_partial_lh);
     /**
         precompute info for models
     */

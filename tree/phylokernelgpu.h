@@ -12,6 +12,37 @@
  *
  *   Likelihood function for GPU
  **********************************************************************/
+inline void computeBoundsGPU(int threads, int packets, size_t elements, vector<size_t> &limits) {
+    int parallel_threads = 1; // to replace the VectorClass::size()
+
+    //It is assumed that threads divides packets evenly
+    limits.reserve(packets+1);
+    elements = roundUpToMultiple(elements, parallel_threads);
+    size_t block_start = 0;
+
+    for (int wave = packets/threads; wave>=1; --wave) {
+        size_t elementsThisWave = (elements-block_start);
+        if (1<wave) {
+            elementsThisWave = (elementsThisWave * 3) / 4;
+        }
+        elementsThisWave = roundUpToMultiple(elementsThisWave, parallel_threads);
+        size_t stopElementThisWave = block_start + elementsThisWave;
+        for (int threads_to_go=threads; 1<=threads_to_go; --threads_to_go) {
+            limits.push_back(block_start);
+            size_t block_size = (stopElementThisWave - block_start)/threads_to_go;
+            block_size = roundUpToMultiple(block_size, parallel_threads);
+            block_start += block_size;
+        }
+    }
+    limits.push_back(elements);
+
+    if (limits.size() != packets+1) {
+        if (Params::getInstance().num_threads == 0)
+            outError("Too many threads may slow down analysis [-nt option]. Reduce threads");
+        else
+            outError("Too many threads may slow down analysis [-nt option]. Reduce threads or use -nt AUTO to automatically determine it");
+    }
+}
 
 //void PhyloTree::computePartialLikelihoodGPU(TraversalInfo &info
 //        , size_t ptn_lower, size_t ptn_upper, int packet_id)
@@ -87,8 +118,7 @@
 //            partial_lh_leaves = aligned_alloc<double>(get_safe_upper_limit((aln->STATE_UNKNOWN+1)*block*num_leaves));
 //        double *buffer_tmp = aligned_alloc<double>(nstates);
 //
-//        computePartialInfo<VectorClass>(info, (VectorClass*)buffer_tmp, echildren, partial_lh_leaves);
-//
+//        computePartialInfoGPU(info, buffer_tmp, echildren, partial_lh_leaves);
 //        aligned_free(buffer_tmp);
 //    } else {
 //        echildren = info.echildren;
@@ -123,18 +153,18 @@
 //        double *vec_left = buffer_partial_lh_ptr + thread_buf_size * packet_id;
 //
 //        double *vec_right =  &vec_left[block*parallel_threads]; // HK: tmp remove SITE_MODEL
-//        VectorClass *partial_lh_tmp = (VectorClass*)vec_right+block; // HK: tmp remove SITE_MODEL
+//        double *partial_lh_tmp = vec_right+block; // HK: tmp remove SITE_MODEL
 //
 //        auto leftStateRow  = this->getConvertedSequenceByNumber(left->node->id);
 //        auto rightStateRow = this->getConvertedSequenceByNumber(right->node->id);
 //        auto unknown = aln->STATE_UNKNOWN;
 //
 //        for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=parallel_threads) {
-//            VectorClass *partial_lh = (VectorClass*)(dad_branch->partial_lh + ptn*block);
+//            double *partial_lh = dad_branch->partial_lh + ptn*block;
 //
 //            // HK: tmp remove SITE_MODEL
-//            VectorClass *vleft  = (VectorClass*)vec_left;
-//            VectorClass *vright = (VectorClass*)vec_right;
+//            double *vleft  = vec_left;
+//            double *vright = vec_right;
 //            // load data for tip
 //            for (size_t x = 0; x < parallel_threads; x++) {
 //                int leftState;
@@ -211,18 +241,18 @@
 //
 //
 //        double *vec_left = buffer_partial_lh_ptr + thread_buf_size * packet_id;
-//        VectorClass *partial_lh_tmp = (VectorClass*)vec_left+block; // HK: tmp remove SITE_MODEL
+//        double *partial_lh_tmp = vec_left+block; // HK: tmp remove SITE_MODEL
 //
 //        auto leftStateRow = this->getConvertedSequenceByNumber(left->node->id);
 //        auto unknown = aln->STATE_UNKNOWN;
 //
 //        for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=parallel_threads) {
-//            VectorClass *partial_lh = (VectorClass*)(dad_branch->partial_lh + ptn*block);
-//            VectorClass *partial_lh_right = (VectorClass*)(right->partial_lh + ptn*block);
-//            VectorClass lh_max = 0.0;
+//            double *partial_lh = dad_branch->partial_lh + ptn*block;
+//            double *partial_lh_right = right->partial_lh + ptn*block;
+//            double lh_max = 0.0;
 //
 //            // HK: tmp remove SITE_MODEL
-//            VectorClass *vleft = (VectorClass*)vec_left;
+//            double *vleft = vec_left;
 //            // load data for tip
 //            for (size_t x = 0; x < parallel_threads; x++) {
 //                int state;
@@ -253,7 +283,7 @@
 //                double *inv_evec_ptr = inv_evec + mix_addr_malign[c];
 //                // compute real partial likelihood vector
 //                for (size_t x = 0; x < nstates; x++) {
-//                    VectorClass vright;
+//                    double vright;
 //
 //                    dotProductVec<VectorClass, double, FMA>(eright_ptr, partial_lh_right, vright, nstates);
 //
@@ -295,13 +325,13 @@
 //
 //        /*--------------------- INTERNAL-INTERNAL NODE case ------------------*/
 //
-//        VectorClass *partial_lh_tmp
-//                = (VectorClass*)(buffer_partial_lh_ptr + thread_buf_size * packet_id);
+//        double *partial_lh_tmp
+//                = buffer_partial_lh_ptr + thread_buf_size * packet_id;
 //        for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=parallel_threads) {
-//            VectorClass *partial_lh = (VectorClass*)(dad_branch->partial_lh + ptn*block);
-//            VectorClass *partial_lh_left = (VectorClass*)(left->partial_lh + ptn*block);
-//            VectorClass *partial_lh_right = (VectorClass*)(right->partial_lh + ptn*block);
-//            VectorClass lh_max = 0.0;
+//            double *partial_lh = (dad_branch->partial_lh + ptn*block);
+//            double *partial_lh_left = (left->partial_lh + ptn*block);
+//            double *partial_lh_right = (right->partial_lh + ptn*block);
+//            double lh_max = 0.0;
 //            UBYTE *scale_dad, *scale_left, *scale_right;
 //
 //            // HK: tmp remove SAFE_NUMERIC
@@ -315,7 +345,7 @@
 //
 //            double *eleft_ptr = eleft;
 //            double *eright_ptr = eright;
-//            VectorClass *expleft, *expright, *eval_ptr, *evec_ptr, *inv_evec_ptr;
+//            double *expleft, *expright, *eval_ptr, *evec_ptr, *inv_evec_ptr;
 //
 //            // HK: tmp remove SITE_MODEL
 //
@@ -461,5 +491,114 @@ void PhyloTree::computePartialInfoGPU(TraversalInfo &info, double* buffer, doubl
 }
 
 
+void PhyloTree::computeTraversalInfoGPU(PhyloNode *node, PhyloNode *dad, bool compute_partial_lh) {
+
+    if ((tip_partial_lh_computed & 1) == 0) {
+        computeTipPartialLikelihoodGPU();
+    }
+
+    traversal_info.clear();
+    size_t nstates = aln->num_states;
+    int parallel_threads = 1;
+
+    // reserve beginning of buffer_partial_lh for other purpose
+    size_t ncat_mix = 1;
+    size_t block = aln->num_states;
+    double *buffer = buffer_partial_lh + block*parallel_threads*num_packets + get_safe_upper_limit(block)*(aln->STATE_UNKNOWN+2);
+
+    // HK: tmp remove non-reversible models
+/*
+    // more buffer for non-reversible models
+    if (!model->useRevKernel()) {
+        buffer += get_safe_upper_limit(3*block*nstates);
+        buffer += get_safe_upper_limit(block)*(aln->STATE_UNKNOWN+1)*2;
+        buffer += block*2*parallel_threads*num_packets;
+    }
+*/
+
+    // HK: tmp remove mem save
+
+    PhyloNeighbor *dad_branch = (PhyloNeighbor*)dad->findNeighbor(node);
+    PhyloNeighbor *node_branch = (PhyloNeighbor*)node->findNeighbor(dad);
+    bool dad_locked = computeTraversalInfo(dad_branch, dad, buffer);
+    bool node_locked = computeTraversalInfo(node_branch, node, buffer);
+
+    // HK: tmp remove mem save
+
+/*
+    if (verbose_mode >= VB_DEBUG && traversal_info.size() > 0) {
+        Node *saved = root;
+        root = dad;
+        drawTree(cout);
+        root = saved;
+    }
+*/
+
+    if (traversal_info.empty())
+        return;
+
+    if (!model->isSiteSpecificModel()) {
+
+        int num_info = traversal_info.size();
+
+        // HK: tmp debugging verbose mode
+       /* if (verbose_mode >= VB_DEBUG) {
+            cout << "traversal order:";
+            for (auto it = traversal_info.begin(); it != traversal_info.end(); it++) {
+                cout << "  ";
+                if (it->dad->isLeaf())
+                    cout << it->dad->name;
+                else
+                    cout << it->dad->id;
+                cout << "->";
+                if (it->dad_branch->node->isLeaf())
+                    cout << it->dad_branch->node->name;
+                else
+                    cout << it->dad_branch->node->id;
+                if (params->lh_mem_save == LM_MEM_SAVE) {
+                    if (it->dad_branch->partial_lh_computed)
+                        cout << " [";
+                    else
+                        cout << " (";
+                    cout << mem_slots.findNei(it->dad_branch) - mem_slots.begin();
+                    if (it->dad_branch->partial_lh_computed)
+                        cout << "]";
+                    else
+                        cout << ")";
+                }
+            }
+            cout << endl;
+        }*/
+
+
+        if (!Params::getInstance().buffer_mem_save) {
+
+            double *buffer_tmp = (double*)buffer;
+
+            for (int i = 0; i < num_info; i++) {
+                computePartialInfoGPU(traversal_info[i], buffer_tmp);
+            }
+
+        }
+    }
+
+    if (compute_partial_lh) {
+        vector<size_t> limits;
+        size_t orig_nptn = roundUpToMultiple(aln->size(), parallel_threads);
+        size_t nptn      = roundUpToMultiple(orig_nptn+model_factory->unobserved_ptns.size(),parallel_threads);
+        computeBoundsGPU(num_threads, num_packets, nptn, limits);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,1) num_threads(num_threads)
+#endif
+        for (int packet_id = 0; packet_id < num_packets; ++packet_id) {
+            for (auto it = traversal_info.begin(); it != traversal_info.end(); it++) {
+                computePartialLikelihood(*it, limits[packet_id], limits[packet_id+1], packet_id);
+            }
+        }
+        traversal_info.clear();
+    }
+    return;
+}
 
 #endif //IQTREE_PHYLOKERNELGPU_H

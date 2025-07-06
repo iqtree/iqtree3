@@ -1156,13 +1156,8 @@ template<class VectorClass>
 #endif
 void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compute_partial_lh) {
 
-    if ((tip_partial_lh_computed & 1) == 0) {
-#ifdef OPENMP_GPU
-        computeTipPartialLikelihoodGPU();
-#else
+    if ((tip_partial_lh_computed & 1) == 0)
         computeTipPartialLikelihood();
-#endif
-    }
 
     traversal_info.clear();
 #ifndef KERNEL_FIX_STATES
@@ -1252,9 +1247,7 @@ void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compu
 
         
         if (!Params::getInstance().buffer_mem_save) {
-#ifdef OPENMP_GPU
-            double *buffer_tmp = (double*)buffer;
-#elif _OPENMP
+#ifdef _OPENMP
 #pragma omp parallel if (num_info >= 3) num_threads(num_threads)
         {
             VectorClass *buffer_tmp = (VectorClass*)buffer + aln->num_states*omp_get_thread_num();
@@ -1263,16 +1256,13 @@ void PhyloTree::computeTraversalInfo(PhyloNode *node, PhyloNode *dad, bool compu
             VectorClass *buffer_tmp = (VectorClass*)buffer;
 #endif
             for (int i = 0; i < num_info; i++) {
-
-            #ifdef OPENMP_GPU
-                computePartialInfoGPU(traversal_info[i], buffer_tmp);
-            #elif defined(KERNEL_FIX_STATES)
+            #ifdef KERNEL_FIX_STATES
                 computePartialInfo<VectorClass, nstates>(traversal_info[i], buffer_tmp);
             #else
                 computePartialInfo<VectorClass>(traversal_info[i], buffer_tmp);
             #endif
             }
-#if defined(_OPENMP) && !defined(OPENMP_GPU)
+#ifdef _OPENMP
         }
 #endif
         }
@@ -2271,7 +2261,9 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
     }
     int branch_id = node_branch->id;
 
-#ifdef KERNEL_FIX_STATES
+#ifdef OPENMP_GPU
+    computeTraversalInfoGPU(node, dad, false);
+#elif defined(KERNEL_FIX_STATES)
     computeTraversalInfo<VectorClass, nstates>(node, dad, false);
 #else
     computeTraversalInfo<VectorClass>(node, dad, false);
@@ -2692,7 +2684,9 @@ double PhyloTree::computeLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, 
     	node_branch = tmp_nei;
     }
 
-#ifdef KERNEL_FIX_STATES
+#ifdef OPENMP_GPU
+    computeTraversalInfoGPU(node, dad, false);
+#elif defined(KERNEL_FIX_STATES)
     computeTraversalInfo<VectorClass, nstates>(node, dad, false);
 #else
     computeTraversalInfo<VectorClass>(node, dad, false);
@@ -3532,7 +3526,12 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
         node_branch = tmp_nei;
     }
 
-#ifdef KERNEL_FIX_STATES
+#ifdef OPENMP_GPU
+    computeTraversalInfoGPU(node, dad, false);
+    #ifndef KERNEL_FIX_STATES
+        size_t nstates = aln->num_states;
+    #endif
+#elif defined(KERNEL_FIX_STATES)
     computeTraversalInfo<VectorClass, nstates>(node, dad, false);
 #else
     computeTraversalInfo<VectorClass>(node, dad, false);
