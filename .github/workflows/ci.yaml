@@ -24,12 +24,14 @@ jobs:
           - gcc-version: 9
             cmake-version: 3.14.7
             upload: true
-            runtime-arg: 4
+            runtime-arg: Linux-gcc-9
+            memory-arg: Linux-gcc-9
           # Latest supported gcc and cmake versions
           - gcc-version: 12
             cmake-version: latest
             upload: false
-            runtime-arg: 5
+            runtime-arg: Linux-gcc-12
+            memory-arg: Linux-gcc-12
 
     steps:
       - name: Checkout
@@ -81,6 +83,11 @@ jobs:
           chmod +x test_scripts/verify_runtime.sh
           ./test_scripts/verify_runtime.sh "${{ matrix.runtime-arg }}"
 
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh "${{ matrix.memory-arg }}"
+
   build-linux-aarch64:
     name: Linux aarch64
     runs-on: ubuntu-22.04-arm
@@ -125,7 +132,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 6
+          ./test_scripts/verify_runtime.sh Linux-aarch64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh Linux-aarch64
 
   compile-linux-universal:
     name: Linux Universal
@@ -210,7 +222,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 7
+          ./test_scripts/verify_runtime.sh mac-os-x86-64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh mac-os-x86-64
 
   build-macos-arm:
     name: Mac OS ARM64
@@ -258,7 +275,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 8
+          ./test_scripts/verify_runtime.sh mac-os-arm64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh mac-os-arm64
 
   compile-mac-universal:
     name: Mac OS Universal
@@ -371,3 +393,7 @@ jobs:
         shell: pwsh
         run: |
           ./test_scripts/verify_runtime.ps1
+
+      - name: Run verify_memory.ps1
+        run: |
+          ./test_scripts/verify_memory.ps1
