@@ -2566,6 +2566,11 @@ public:
     bool alisim_no_copy_gaps;
     
     /**
+    *  TRUE if users have specified the random seed
+    */
+    bool seed_specified;
+    
+    /**
     *  original parameters
     */
     string original_params;
@@ -2727,6 +2732,11 @@ public:
     *  branch-scale factor
     */
     double alisim_branch_scale;
+    
+    /**
+    *  TRUE to skip branch length checking
+    */
+    bool alisim_skip_bl_check;
     
     /**
     *  TRUE to output all replicate alignments into a single file
