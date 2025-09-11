@@ -1119,6 +1119,14 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
                     break;
             }
         }
+        
+        // fix crashing issue because accessing to deallocated pointer
+        // delete first_insertion
+        if (super_alisimulator->first_insertion)
+        {
+            delete super_alisimulator->first_insertion;
+            super_alisimulator->first_insertion = nullptr;
+        }
     }
     
     // output full tree (with internal node names) if outputting internal sequences
@@ -1234,8 +1242,9 @@ void generatePartitionAlignmentFromSingleSimulator(AliSimulator *&alisimulator, 
         delete tmp_alisimulator;
 
         // bug fixes: avoid accessing to deallocated pointer
-        if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
-            alisimulator->first_insertion = nullptr;
+        // Update: we must keep first_insertion for partition model, this pointer will be deleted in a later step
+        /*if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
+            alisimulator->first_insertion = nullptr;*/
     }
 
 }
