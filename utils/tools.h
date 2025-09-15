@@ -2860,6 +2860,11 @@ public:
     *  site starting index (for predefined mutations in AliSim)
     */
     int site_starting_index;
+
+    /**
+    * Whether to output a MrBayes Block File
+    */
+    bool mr_bayes_output;
     
     /**
      *  input tree string (instead of a file)
@@ -3825,5 +3830,22 @@ double frob_norm (double m[], int n, double scale=1.0);
 */
 string getOutputNameWithExt(const InputType& format, const string& output_filepath);
 
+/**
+ * ensures a number, to be inputted into MrBayes, is larger than the minimum value for MrBayes (0.01)
+ */
+double minValueCheckMrBayes(double orig_value);
+
+
+/**
+ * get a map of iqtree amino acid/protein substitution models to MrBayes amino acid/protein substitution models.<br>
+ * models which are not supported by mrbayes are not included. GTR20 is assumed as default.
+ */
+unordered_map<string, string> getIqTreeToMrBayesAAModels();
+
+/**
+ * get the MrBayes equivalent of a genetic code, given the id of the code. Returns and empty string if that code
+ * is not supported in MrBayes.
+ */
+string getMrBayesGeneticCode(int geneticCodeId);
 
 #endif
