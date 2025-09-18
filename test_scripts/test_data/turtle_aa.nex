@@ -1,0 +1,6 @@
+#nexus
+begin sets;
+charset ENSGALG00000016122.macse_AA_gb = 1-172;
+charset ENSGALG00000016996.macse_AA_gb = 173-388;
+charset ENSGALG00000010671.macse_AA_gb = 389-774;
+end;

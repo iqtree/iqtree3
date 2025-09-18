@@ -1,0 +1,5 @@
+#nexus
+begin sets;
+  charset ENSGALG00000000223.macse_DNA_gb = 1-50;
+  charset ENSGALG00000000224.macse_DNA_gb = 51-100;
+end;
