@@ -477,6 +477,15 @@ private:
     bool test_merge;
     SuperAlignment *super_aln;
 
+    double lh_marginal;
+    double inf_score_maic;
+    ModelPairSet sorted_pairs;
+    ModelPairSet better_pairs_maic;
+    SuperAlignment *cur_super_aln; // for mAIC calculation when partition merging
+    //PhyloSuperTree *maic_tree; // for mAIC calculation when partition merging
+    vector<set<int> > cur_gene_sets;
+    double lhmix;
+    int dfmix;
 
     // retreive the answers from checkpoint
     // and remove those jobs from the array jobIDs

@@ -1213,6 +1213,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.merge_models = "1";
     params.merge_rates = "1";
     params.partfinder_log_rate = true;
+    params.marginal_lh_aic = false;
     
     params.sequence_type = NULL;
     params.aln_output = NULL;
@@ -5029,13 +5030,18 @@ void parseArg(int argc, char *argv[], Params &params) {
                 cnt++;
 				if (cnt >= argc)
 					throw "Use -merit AIC|AICC|BIC";
-                if (strcmp(argv[cnt], "AIC") == 0)
+                if (strcmp(argv[cnt], "AIC") == 0) {
                     params.model_test_criterion = MTC_AIC;
-                else if (strcmp(argv[cnt], "AICc") == 0 || strcmp(argv[cnt], "AICC") == 0)
+                } else if (strcmp(argv[cnt], "AICc") == 0 || strcmp(argv[cnt], "AICC") == 0) {
                     params.model_test_criterion = MTC_AICC;
-                else if (strcmp(argv[cnt], "BIC") == 0)
+                } else if (strcmp(argv[cnt], "mAIC") == 0 || strcmp(argv[cnt], "MAIC") == 0) {
+                    params.model_test_criterion = MTC_AIC;
+                    params.marginal_lh_aic = true;
+                } else if (strcmp(argv[cnt], "BIC") == 0) {
                     params.model_test_criterion = MTC_BIC;
-                else throw "Use -merit AIC|AICC|BIC";
+                } else {
+                    throw "Use -merit AIC|AICC|BIC";
+                }
 				continue;
 			}
 			if (strcmp(argv[cnt], "-ms") == 0) {

@@ -399,6 +399,10 @@ double PartitionModel::computeMarginalLh() {
         Alignment *tree1_aln = tree->at(j)->aln;
         int tree1_nsite = tree1_aln->getNSite();
         StrVector tree1_seqs = t_seqs_vec_array[j];
+        string modelpara = tree->at(j)->getModel()->getNameParams(true);
+        string ratepara = tree->at(j)->getRate()->getNameParams();
+        string treepara = tree->at(j)->getTreeString();
+        cout << "******[model para part " << j << "]: " << modelpara << ratepara << " " << treepara << endl;
 
         // get the site-log-likelihood the the partition under each tree and the corresponding model
         double *lh_array = new double [ntrees*tree1_nsite];
@@ -565,8 +569,9 @@ double PartitionModel::computeMarginalLh() {
                 sub_tree2->aln = NULL;
                 delete sub_tree2;
                 delete[] ptn_lh_array;
-            } else if (tree2->getModel()->isReversible()) {
-                // case when the intersection of taxon sets is 1
+            } else if (tree2->getModel()->isReversible() || inter_seqs.size() == 0) {
+                // case when the intersection of taxon sets is 1 and reversible model
+                // case when the intersection of taxon sets is 0
                 for (int l = 0; l < tree1_nsite; l++) {
                     double site_lh = 0.0;
                     Pattern p = tree1_aln->at(tree1_aln->getPatternID(l));
