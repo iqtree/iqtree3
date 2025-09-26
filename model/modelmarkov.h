@@ -327,7 +327,7 @@ public:
 
   // Report the stationary frequencies state_freq or custom_state_freq (if
   // given) to output stream out.
-  void report_state_freqs(ostream &out, double *custom_state_freq=NULL);
+  void report_state_freqs(ostream &out, double *custom_state_freq=nullptr);
 
 	/**
 		write information

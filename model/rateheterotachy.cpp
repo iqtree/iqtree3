@@ -11,7 +11,7 @@
 
 RateHeterotachy::RateHeterotachy(int ncat, string params, PhyloTree *tree) : RateHeterogeneity() {
     phylo_tree = tree;
-    prop = NULL;
+    prop = nullptr;
     fix_params = 0;
     optimize_steps = 0;
     setNCategory(ncat);

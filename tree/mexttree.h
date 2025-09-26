@@ -41,18 +41,18 @@ public:
 		@param userTreeFile the name of the user tree
 		@param is_rooted (IN/OUT) true if tree is rooted
 	*/
-	MExtTree(const char *userTreeFile, bool &is_rooted) : MTree(userTreeFile, is_rooted) {};
+	MExtTree(const char *userTreeFile, bool &is_rooted) : MTree(userTreeFile, is_rooted) {}
 
 	/**
 		constructor, get from another tree
 		@param tree another MTree
 	*/
-	MExtTree(MTree &tree) : MTree(tree) {};
+	MExtTree(MTree &tree) : MTree(tree) {}
 
 	/**
 		constructor
 	*/
-    MExtTree() : MTree() {};
+    MExtTree() : MTree() {}
 
 
 /********************************************************
@@ -77,7 +77,6 @@ public:
 	/**
 		generate a random tree following Yule-Harding model satisfying a constraint tree
 		@param params program parameters
-		@param binary TRUE if you want to generate a binary tree
         @param constraint_tree a (multifurcating) constraint tree
         @param taxnames taxa names
 	*/
@@ -94,7 +93,6 @@ public:
     /**
         generate a random tree following birth-death model
         @param params program parameters
-        @param scale_birth_rate (birth_rate/(birth_rate+death_rate)
     */
     void generateBirthDeath(Params &params);
 
@@ -120,7 +118,7 @@ public:
 	 * generate random branch lengths on the given topology
 	 * 		@param params program parameters
 	 */
-	void generateRandomBranchLengths(Params &params, Node* node = NULL, Node *dad = NULL);
+	void generateRandomBranchLengths(Params &params, Node* node = nullptr, Node *dad = nullptr);
 
 	/**
 		set the leaf ID and names when generating random tree
@@ -139,15 +137,15 @@ public:
 		create CLUSTER for each branch, useful for likelihood mapping analysis
 		@param taxa an order of taxa
 		@param clusters (OUT) list of all clusters
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 	*/
-	void createCluster(NodeVector &taxa, mmatrix(int) &clusters, Node *node = NULL, Node *dad = NULL);
+	void createCluster(NodeVector &taxa, mmatrix(int) &clusters, Node *node = nullptr, Node *dad = nullptr);
 
 	/**
 		create CLUSTER for each branch, useful for likelihood mapping analysis
 		@param clu_num cluster number
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 	*/
 	void createCluster(int clu_num, Node *node, Node *dad);
@@ -160,7 +158,7 @@ public:
         collapse all branches with support lower than minsup (in back-slash separated format)
         implemented for Ricardo
     */
-    void collapseLowBranchSupport(DoubleVector &minsup, Node *node = NULL, Node *dad = NULL);
+    void collapseLowBranchSupport(DoubleVector &minsup, Node *node = nullptr, Node *dad = nullptr);
 
 };
 

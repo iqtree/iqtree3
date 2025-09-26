@@ -44,7 +44,7 @@ public:
 		@param max_count max number of trees to load
 	*/
 	MTreeSet(const char *userTreeFile, bool &is_rooted, int burnin, int max_count, 
-		const char *tree_weight_file = NULL);
+		const char *tree_weight_file = nullptr);
 
 	/**
 		initialize the tree from a NEWICK tree file
@@ -54,7 +54,7 @@ public:
 		@param max_count max number of trees to load
 	*/
 	void init(const char *userTreeFile, bool &is_rooted, int burnin, int max_count, 
-		const char *tree_weight_file = NULL, IntVector *weights = NULL, bool compressed = false);
+		const char *tree_weight_file = nullptr, IntVector *weights = nullptr, bool compressed = false);
 
 	void init(StringIntMap &treels, bool &is_rooted, IntVector &weights);
 
@@ -78,7 +78,7 @@ public:
 		@param max_count max number of trees to load
 	*/
 	void readTrees(const char *userTreeFile, bool &is_rooted, int burnin, int max_count,
-		IntVector *weights = NULL, bool compressed = false);
+		IntVector *weights = nullptr, bool compressed = false);
 
 	/**
 		assign the leaf IDs with their names for all trees
@@ -172,7 +172,7 @@ public:
             false to do all-by-all
 	*/
 	void computeRFDist(double *rfdist, MTreeSet *treeset2, bool k_by_k,
-		const char* info_file = NULL, const char *tree_file = NULL, double *incomp_splits = NULL);
+		const char* info_file = nullptr, const char *tree_file = nullptr, double *incomp_splits = nullptr);
 
 	int categorizeDistinctTrees(IntVector &category);
 

@@ -229,7 +229,7 @@ void printSiteLhCategory(const char*filename, PhyloTree *tree, SiteLoglType wsl)
 
 void printAncestralSequences(const char *out_prefix, PhyloTree *tree, AncestralSeqType ast) {
     
-    //    int *joint_ancestral = NULL;
+    //    int *joint_ancestral = nullptr;
     //
     //    if (tree->params->print_ancestral_sequence == AST_JOINT) {
     //        joint_ancestral = new int[nptn*tree->leafNum];
@@ -1123,14 +1123,14 @@ void evaluateTrees(istream &in, Params &params, IQTree *tree, vector<TreeInfo> &
     
     double time_start = getRealTime();
     
-    int *boot_samples = NULL;
-    //double *saved_tree_lhs = NULL;
-    double *tree_lhs = NULL; // RELL score matrix of size #trees x #replicates
-    double *pattern_lh = NULL;
-    double *pattern_lhs = NULL;
-    double *orig_tree_lh = NULL; // Original tree log-likelihoods
-    double *max_lh = NULL;
-    double *lhdiff_weights = NULL;
+    int *boot_samples = nullptr;
+    //double *saved_tree_lhs = nullptr;
+    double *tree_lhs = nullptr; // RELL score matrix of size #trees x #replicates
+    double *pattern_lh = nullptr;
+    double *pattern_lhs = nullptr;
+    double *orig_tree_lh = nullptr; // Original tree log-likelihoods
+    double *max_lh = nullptr;
+    double *lhdiff_weights = nullptr;
     size_t nptn = tree->getAlnNPattern();
     size_t maxnptn = get_safe_upper_limit(nptn);
     

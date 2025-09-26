@@ -172,7 +172,7 @@ void pllSaveQuartetForSubTree(pllInstance* tr, nodeptr p, SearchInfo &searchinfo
  *  @param[in] swap: represents one of the 2 NNI moves. Could be either 0 or 1
  *  @param[in] NNI_Type
  */
-double doOneNNI(pllInstance * tr, partitionList *pr, nodeptr p, int swap, NNI_Type nni_type, SearchInfo *searchinfo = NULL);
+double doOneNNI(pllInstance * tr, partitionList *pr, nodeptr p, int swap, NNI_Type nni_type, SearchInfo *searchinfo = nullptr);
 
 void pllGetAllInBran(pllInstance *tr, vector<nodeptr> &branlist);
 

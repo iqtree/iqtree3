@@ -179,8 +179,8 @@ void MPIHelper::gatherCheckpoint(Checkpoint *ckp) {
     int msgCount = str.length();
 
     // first send the counts to MASTER
-    int *msgCounts = NULL, *displ = NULL;
-    char *recvBuffer = NULL;
+    int *msgCounts = nullptr, *displ = nullptr;
+    char *recvBuffer = nullptr;
     int totalCount = 0;
 
     if (isMaster()) {

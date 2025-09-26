@@ -29,7 +29,7 @@ void Greedy::run(Params &params, vector<PDTaxaSet> &taxa_set)
 {
 	Node *node1, *node2;
 	NodeVector subtree;
-	subtree.resize(nodeNum, NULL);
+	subtree.resize(nodeNum, nullptr);
 
 	//if (params.is_rooted) subsize++;
 
@@ -115,7 +115,7 @@ void Greedy::buildOnInitialSet(NodeVector &subtree, NodeVector &nodestack, Node 
 		Node *next = (*it)->node;
 		nodestack.push_back(next);
 
-		if (next->isLeaf() && subtree[next->id] != NULL) {
+		if (next->isLeaf() && subtree[next->id] != nullptr) {
 			// the next node is a leaf and is in the initial set
 			// put all node on the stack into the subtree
 			for (NodeVector::iterator itnode = nodestack.begin(); itnode != nodestack.end(); itnode++) {
@@ -136,19 +136,19 @@ double Greedy::updateOnInitialSet(NodeVector &subtree) {
 	int i;
 	// scan through interior nodes
 	for (i = leafNum; i < nodeNum; i++) 
-		if (subtree[i] != NULL) {
+		if (subtree[i] != nullptr) {
 			Node *node = subtree[i];
 			for (NeighborVec::iterator it = node->neighbors.begin(); it != node->neighbors.end(); it++) 
-				if (subtree[(*it)->node->id] == NULL){
+				if (subtree[(*it)->node->id] == nullptr){
 					addNeighbor((*it));
 				}
 		}
 	double len = 0.0;
 	for (i = 0; i < nodeNum; i++) 
-		if (subtree[i] != NULL) {
+		if (subtree[i] != nullptr) {
 			Node *node = subtree[i];
 			for (NeighborVec::iterator it = node->neighbors.begin(); it != node->neighbors.end(); it++) 
-				if (subtree[(*it)->node->id] != NULL){
+				if (subtree[(*it)->node->id] != nullptr){
 					len += (*it)->length;
 				}
 		}
@@ -167,9 +167,9 @@ void Greedy::updateOnLongestPath(Node *node, NodeVector &subtree, PDTaxaSet &cur
 		next = current->highestNei->node;
 		// redirect the highest neighbor of the current
 		//for (int i = 0; i < current->neighbors.size(); i++)
-			//if (subtree[current->neighbors[i]->node->id] == NULL && current->neighbors[i]->node != next)
+			//if (subtree[current->neighbors[i]->node->id] == nullptr && current->neighbors[i]->node != next)
 		FOR_NEIGHBOR_IT(current, next, it)
-			if (subtree[(*it)->node->id] == NULL) {
+			if (subtree[(*it)->node->id] == nullptr) {
 				addNeighbor((*it));
 			}
 	}

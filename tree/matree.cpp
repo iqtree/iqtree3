@@ -144,7 +144,7 @@ void MaTree::comparedTo (MTreeSet &trees, DoubleMatrix &brLenMatrix, IntVector &
         //go through each split in the compared tree
         for ( SplitIntMap::iterator fsit = hs->begin(); fsit != hs->end(); fsit++ )
         {
-            Split* fSplit = sim.findSplit(fsit->first);
+            const Split* fSplit = sim.findSplit(fsit->first);
             if (!fSplit) {
                 rf++;
                 bsd += fsit->first->getWeight() * fsit->first->getWeight();

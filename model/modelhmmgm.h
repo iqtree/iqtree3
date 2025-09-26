@@ -13,7 +13,7 @@
 #define MIN_VALUE 1e-5
 #define MAX_VALUE 10000
 
-using namespace std;
+// using namespace std;
 
 class PhyloHmm;
 

@@ -35,7 +35,7 @@ public:
      */
     TinaTree(Alignment *alignment);
 
-    ~TinaTree();
+    ~TinaTree() override;
     /**
             SLOW VERSION: compute the parsimony score of the tree, given the alignment
             @return the parsimony score
@@ -50,11 +50,11 @@ public:
             @param ptn pattern ID
             @param states set of admissible states at the current node (in binary code)
      */
-    int computeParsimonyScore(int ptn, int &states, PhyloNode *node = NULL, PhyloNode *dad = NULL);
+    int computeParsimonyScore(int ptn, int &states, PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
 
-	virtual void initializeAllPartialLh();
+	virtual void initializeAllPartialLh() override;
 
-	virtual void initializeAllPartialLh(int &index, int &indexlh, PhyloNode *node = NULL, PhyloNode *dad = NULL);
+	virtual void initializeAllPartialLh(int &index, int &indexlh, PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
 
 };
 

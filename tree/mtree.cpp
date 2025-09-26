@@ -25,7 +25,7 @@
 #include "pda/splitgraph.h"
 #include "utils/tools.h"
 #include "mtreeset.h"
-using namespace std;
+// using namespace std;
 
 /*********************************************
 	class MTree
@@ -35,7 +35,7 @@ using namespace std;
 const string MTree::ANTT_MUT = "mutations";
 
 MTree::MTree() {
-    root = NULL;
+    root = nullptr;
     leafNum = 0;
     nodeNum = 0;
     rooted = false;
@@ -95,7 +95,7 @@ void MTree::init(MTree &tree) {
     rooted = tree.rooted;
     //userFile = tree.userFile;
     // have to delete the root when exchange to another object
-    tree.root = NULL;
+    tree.root = nullptr;
     num_precision = tree.num_precision;
     len_scale = tree.len_scale;
     fig_char = tree.fig_char;
@@ -157,7 +157,7 @@ void MTree::copyTree(MTree *tree, string &taxa_set) {
         nodeNum += (*it);
     double new_len;
     if (root) freeNode();
-    root = NULL;
+    root = nullptr;
     root = copyTree(tree, taxa_set, new_len);
     if (rooted)
         ASSERT(root->name == ROOT_NAME);
@@ -175,7 +175,7 @@ Node* MTree::copyTree(MTree *tree, string &taxa_set, double &len, Node *node, No
                 }
         }
     }
-    Node *new_node = NULL;
+    Node *new_node = nullptr;
     NodeVector new_nodes;
     DoubleVector new_lens;
     if (node->isLeaf()) {
@@ -197,7 +197,7 @@ Node* MTree::copyTree(MTree *tree, string &taxa_set, double &len, Node *node, No
             new_lens.push_back((*it)->length + new_len);
         }
     }
-    if (new_nodes.empty()) return NULL;
+    if (new_nodes.empty()) return nullptr;
     if (new_nodes.size() == 1) {
         len = new_lens[0];
         return new_nodes[0];
@@ -328,7 +328,7 @@ bool MTree::isBifurcating(Node *node, Node *dad) {
 
 void MTree::printBranchLengths(ostream &out, Node *node, Node *dad)
 {
-    if (node == NULL) {
+    if (node == nullptr) {
     	node = root;
     	sortTaxa();
     }
@@ -343,7 +343,7 @@ void MTree::printBranchLengths(ostream &out, Node *node, Node *dad)
 
 int MTree::countZeroBranches(Node *node, Node *dad, double epsilon) {
     int count = 0;
-    if (node == NULL) node = root;
+    if (node == nullptr) node = root;
     FOR_NEIGHBOR_IT(node, dad, it) {
         if ((*it)->length <= epsilon) count++;
         count += countZeroBranches((*it)->node, node, epsilon);
@@ -353,7 +353,7 @@ int MTree::countZeroBranches(Node *node, Node *dad, double epsilon) {
 
 int MTree::countZeroInternalBranches(Node *node, Node *dad, double epsilon) {
     int count = 0;
-    if (node == NULL) node = root;
+    if (node == nullptr) node = root;
     FOR_NEIGHBOR_IT(node, dad, it) {
         if ((*it)->length <= epsilon && !(*it)->node->isLeaf() && !node->isLeaf()) count++;
         count += countZeroInternalBranches((*it)->node, node, epsilon);
@@ -364,7 +364,7 @@ int MTree::countZeroInternalBranches(Node *node, Node *dad, double epsilon) {
 
 int MTree::countLongBranches(Node *node, Node *dad, double upper_limit) {
     int count = 0;
-    if (node == NULL) node = root;
+    if (node == nullptr) node = root;
     FOR_NEIGHBOR_IT(node, dad, it) {
         if ((*it)->length >= upper_limit) count++;
         count += countLongBranches((*it)->node, node, upper_limit);
@@ -527,7 +527,7 @@ int MTree::printTree(ostream &out, int brtype, Node *node, Node *dad)
         // internal node
         out << "(";
         bool first = true;
-        Neighbor *length_nei = NULL;
+        Neighbor *length_nei = nullptr;
         //for (int i = 0; i < node->neighbors.size(); i++)
         //if (node->neighbors[i]->node != dad)
         if (! (brtype & WT_SORT_TAXA)) {
@@ -573,7 +573,7 @@ int MTree::printTree(ostream &out, int brtype, Node *node, Node *dad)
             out << node->id;
         else if (!node->name.empty() && (brtype & WT_BR_ATTR) == 0)
             out << node->name;
-        if (dad != NULL || length_nei) {
+        if (dad != nullptr || length_nei) {
         	printBranchLength(out, brtype, !node->name.empty(), length_nei);
         }
     }
@@ -596,12 +596,12 @@ void MTree::printSubTree(ostream &out, NodeVector &subtree, Node *node, Node *da
     NeighborVec::iterator it;
     double length = 0.0, dad_length = 0.0;
     // go down if only 1 child available
-    Node *child = NULL;
+    Node *child = nullptr;
     int degree;
     do {
         degree = 0;
         FOR_NEIGHBOR(node, dad, it) {
-            if (subtree[(*it)->node->id] != NULL) {
+            if (subtree[(*it)->node->id] != nullptr) {
                 degree++;
                 child = (*it)->node;
             }
@@ -623,7 +623,7 @@ void MTree::printSubTree(ostream &out, NodeVector &subtree, Node *node, Node *da
         bool first = true;
 
         FOR_NEIGHBOR(node, dad, it)	{
-            if (subtree[(*it)->node->id] != NULL) {
+            if (subtree[(*it)->node->id] != nullptr) {
                 if ((*it)->node->name != ROOT_NAME) {
                     if (!first)
                         out << ",";
@@ -638,7 +638,7 @@ void MTree::printSubTree(ostream &out, NodeVector &subtree, Node *node, Node *da
         out << ")";
         if (!node->name.empty())
             out << node->name;
-        if (dad != NULL || length > 1e-20)
+        if (dad != nullptr || length > 1e-20)
             out << ":" << length;
     }
 }
@@ -679,7 +679,7 @@ void MTree::printTaxa(ostream &out, Node *node, Node *dad)
 
 void MTree::printTaxa(ostream &out, NodeVector &subtree) {
     for (int i = 0; i < leafNum; i++)
-        if (subtree[i] != NULL) {
+        if (subtree[i] != nullptr) {
             out << subtree[i]->name << endl;
         }
 }
@@ -761,7 +761,7 @@ void MTree::readTree(istream &in, bool &is_rooted)
             
             
         } else { // assign root to one of the neighbor of node, if any
-            FOR_NEIGHBOR_IT(node, NULL, it)
+            FOR_NEIGHBOR_IT(node, nullptr, it)
             if ((*it)->node->isLeaf()) {
                 root = (*it)->node;
                 break;
@@ -889,7 +889,7 @@ void MTree::parseFile(istream &infile, char &ch, Node* &root, DoubleVector &bran
         ch = readNextChar(infile);
         while (ch != ')' && !infile.eof())
         {
-            node = NULL;
+            node = nullptr;
             parseFile(infile, ch, node, brlen);
             //if (brlen == -1.0)
             //throw "Found branch with no length.";
@@ -1236,7 +1236,7 @@ void MTree::generateNNIBraches(NodeVector &nodes1, NodeVector &nodes2, SplitGrap
     if (!(*it)->node->isLeaf()) {
         generateNNIBraches(nodes1, nodes2, excludeSplits, (*it)->node, node);
         if (!node->isLeaf()) {
-        	if (excludeSplits != NULL && excludeSplits->size() != 0) {
+        	if (excludeSplits != nullptr && excludeSplits->size() != 0) {
         		Split* sp = getSplit(node, (*it)->node);
         		if (excludeSplits->containSplit(*sp)) {
         			delete sp;
@@ -1296,7 +1296,7 @@ bool MTree::isInnerBranch(Node* node1, Node* node2) {
 }
 
 bool MTree::isABranch(Node* node1, Node* node2) {
-    return (node1->findNeighbor(node2) != NULL && node2->findNeighbor(node1) != NULL);
+    return (node1->findNeighbor(node2) != nullptr && node2->findNeighbor(node1) != nullptr);
 }
 
 void MTree::getBranches(NodeVector &nodes, NodeVector &nodes2, Node *node, Node *dad, bool post_traversal) {
@@ -1527,7 +1527,7 @@ void MTree::getTaxaID(vector<int> &taxa, Node *node, Node *dad) {
     }
 }
 
-bool MTree::containsSplits(SplitGraph& splits) {
+/* bool MTree::containsSplits(SplitGraph& splits) {
 	SplitGraph treeSplits;
 	convertSplits(treeSplits);
 	//check if treeSplits contains all splits in splits
@@ -1538,10 +1538,10 @@ bool MTree::containsSplits(SplitGraph& splits) {
 	//treeSplits.report(cout);
 	//splits.report(cout);
 	return true;
-}
+}*/
 
 Split* MTree::getSplit(Node* node1, Node* node2) {
-    Neighbor* node12 = node1->findNeighbor(node2);
+    const Neighbor* node12 = node1->findNeighbor(node2);
     return node12->split;
 }
 
@@ -1664,16 +1664,16 @@ void MTree::convertToTree(SplitGraph &sg) {
     // create the ground nodes, first as the leaves
     NodeVector leaves;
     vector<Split*> cladetaxa;
-    leaves.resize(leafNum, NULL);
-    cladetaxa.resize(leafNum, NULL);
+    leaves.resize(leafNum, nullptr);
+    cladetaxa.resize(leafNum, nullptr);
     // first add all trivial splits into tree
     for (it = sg.begin(), count = 0; it != sg.end(); it++, count++) {
         //(*it)->report(cout);
         taxid = (*it)->trivial();
         if (taxid < 0) break;
-        ASSERT(leaves[taxid] == NULL);
+        ASSERT(leaves[taxid] == nullptr);
         leaves[taxid] = newNode(taxid, sg.getTaxa()->GetTaxonLabel(taxid).c_str());
-        leaves[taxid]->addNeighbor(NULL, (*it)->getWeight());
+        leaves[taxid]->addNeighbor(nullptr, (*it)->getWeight());
         cladetaxa[taxid] = (*it);
     }
     // now fill in all missing taxa with zero terminal branch
@@ -1691,7 +1691,7 @@ void MTree::convertToTree(SplitGraph &sg) {
             if (cladetaxa[taxid]->subsetOf(*mysp)) // clade is a subset of current split
             {
                 count += cladetaxa[taxid]->countTaxa();
-                double len = leaves[taxid]->updateNeighbor(NULL, newnode);
+                double len = leaves[taxid]->updateNeighbor(nullptr, newnode);
                 newnode->addNeighbor(leaves[taxid], len);
                 leaves[taxid] = leaves.back();
                 leaves.pop_back();
@@ -1702,13 +1702,13 @@ void MTree::convertToTree(SplitGraph &sg) {
         cladetaxa.push_back(mysp);
         leaves.push_back(newnode);
 
-        newnode->addNeighbor(NULL, mysp->getWeight());
+        newnode->addNeighbor(nullptr, mysp->getWeight());
         nodeNum++;
     }
     ASSERT(leaves.size() >= 3);
     Node *newnode = newNode(nodeNum);
     for (taxid = 0; taxid < leaves.size(); taxid++) {
-        double len = leaves[taxid]->updateNeighbor(NULL, newnode);
+        double len = leaves[taxid]->updateNeighbor(nullptr, newnode);
         newnode->addNeighbor(leaves[taxid], len);
     }
     root = newnode;
@@ -1730,7 +1730,7 @@ Node *MTree::findNodeName(string &name, Node *node, Node *dad) {
         Node *res = findNodeName(name, (*it)->node, node);
         if (res) return res;
     }
-    return NULL;
+    return nullptr;
 }
 /* WRONG IMPLEMENTATION
 bool MTree::findNodeNames(unordered_set<string> &taxa_set, pair<Node*,Neighbor*> &res, Node *node, Node *dad) {
@@ -1761,7 +1761,7 @@ bool MTree::findNodeNames(unordered_set<string> &taxa_set, pair<Node*,Neighbor*>
         res.second = target;
         if (target != node->neighbors[0]) {
             // move target into the first neighbor
-            FOR_NEIGHBOR_IT(node, NULL, it)
+            FOR_NEIGHBOR_IT(node, nullptr, it)
             if ((*it) == target) {
                 (*it) = node->neighbors[0];
                 node->neighbors[0] = target;
@@ -1817,7 +1817,7 @@ Node *MTree::findLeafName(string &name, Node *node, Node *dad) {
         Node *res = findLeafName(name, (*it)->node, node);
         if (res) return res;
     }
-    return NULL;
+    return nullptr;
 }
 
 Node *MTree::findNodeID(int id, Node *node, Node* dad) {
@@ -1827,13 +1827,13 @@ Node *MTree::findNodeID(int id, Node *node, Node* dad) {
         Node *res = findNodeID(id, (*it)->node, node);
         if (res) return res;
     }
-    return NULL;
+    return nullptr;
 }
 
 
 void MTree::scaleLength(double norm, bool make_int, Node *node, Node *dad) {
     if (!node) node = root;
-    FOR_NEIGHBOR_DECLARE(node, NULL, it) {
+    FOR_NEIGHBOR_DECLARE(node, nullptr, it) {
         (*it)->length *= norm;
         if (make_int)
             (*it)->length = round((*it)->length);
@@ -1846,7 +1846,7 @@ void MTree::scaleLength(double norm, bool make_int, Node *node, Node *dad) {
 
 void MTree::transformBranchLenRAX(double factor, Node *node, Node *dad) {
     if (!node) node = root;
-    FOR_NEIGHBOR_DECLARE(node, NULL, it) {
+    FOR_NEIGHBOR_DECLARE(node, nullptr, it) {
         (*it)->length /= factor;
         (*it)->length = exp(-(*it)->length);
     }
@@ -1880,14 +1880,14 @@ void MTree::scaleCladeSupport(double norm, bool make_int, Node *node, Node *dad)
 
 MTree::~MTree()
 {
-    if (root != NULL)
+    if (root != nullptr)
         freeNode();
-    root = NULL;
+    root = nullptr;
 }
 
 int MTree::freeNode(Node *node, Node *dad)
 {
-	if ( root == NULL )
+	if ( root == nullptr )
 		return 0;
     if (!node) node = root;
     NeighborVec::reverse_iterator it;
@@ -1970,12 +1970,13 @@ void MTree::convertToUnrooted() {
     // delete root node
     if (node->degree() == 3) {
         // delete and join adjacent branches
-        Node *node1 = NULL, *node2 = NULL;
+        Node *node1 = nullptr, *node2 = nullptr;
         double len = 0.0;
         FOR_NEIGHBOR_IT(node, root, it) {
             if (!node1) node1 = (*it)->node; else node2 = (*it)->node;
             len += (*it)->length;
         }
+        ASSERT(node1 && node2);
         node1->updateNeighbor(node, node2, len);
         node2->updateNeighbor(node, node1, len);
         delete node;
@@ -2019,13 +2020,13 @@ int MTree::sortTaxa(Node *node, Node *dad) {
     return taxid_nei_map.begin()->first;
 }
 
-void MTree::setExtendedFigChar() {
+/* void MTree::setExtendedFigChar() {
 	//fig_char[0] = 179;
 	//fig_char[1] = 196;
 	fig_char[2] = '/';
 	//fig_char[3] = 195;
 	fig_char[4] = '\\';
-}
+}*/
 
 void MTree::drawTree(ostream &out, int brtype, double zero_epsilon) {
     IntVector sub_tree_br;
@@ -2200,7 +2201,7 @@ void MTree::drawTree2(ostream &out, int brtype, double brscale, IntVector &subtr
     }
 }
 
-bool MTree::equalTopology(MTree *tree) {
+/* bool MTree::equalTopology(MTree *tree) {
 	ASSERT(root->isLeaf());
 	Node *root2 = tree->findLeafName(root->name);
 	if (!root2) return false;
@@ -2208,7 +2209,7 @@ bool MTree::equalTopology(MTree *tree) {
 	printTree(ostr, WT_TAXON_ID | WT_SORT_TAXA);
 	tree->printTree(ostr2, WT_TAXON_ID | WT_SORT_TAXA, root2);
 	return ostr.str() == ostr2.str();
-}
+}*/
 
 void MTree::calcDist(char *filename) {
     vector<string> taxname;
@@ -2233,7 +2234,7 @@ void MTree::calcDist(char *filename) {
         for (i = 0; i < leafNum; i++) {
             out << taxname[i] << "   ";
             for (j = 0; j < leafNum; j++) {
-                out << dist[i*leafNum + j] << "  ";
+                out << dist[(i*leafNum) + j] << "  ";
             }
             out << endl;
         }
@@ -2247,7 +2248,7 @@ void MTree::calcDist(char *filename) {
 void MTree::calcDist(double* &dist, Node *node, Node *dad) {
     if (!node) node = root;
     if (node->isLeaf()) {
-        calcDist(node, 0.0, dist, node, NULL);
+        calcDist(node, 0.0, dist, node, nullptr);
     }
     //for (NeighborVec::iterator it = node->neighbors.begin(); it != node->neighbors.end(); it++)
     //if ((*it)->node != dad)	{
@@ -2260,8 +2261,8 @@ void MTree::calcDist(Node *aroot, double cur_len, double* &dist, Node *node, Nod
     double branch_length;
 	if (!node) node = root;
     if (node->isLeaf()) {
-        dist[aroot->id * leafNum + node->id] = cur_len;
-        dist[node->id * leafNum + aroot->id] = cur_len;
+        dist[(aroot->id * leafNum) + node->id] = cur_len;
+        dist[(node->id * leafNum) + aroot->id] = cur_len;
     }
     //for (NeighborVec::iterator it = node->neighbors.begin(); it != node->neighbors.end(); it++)
     //if ((*it)->node != dad)	{
@@ -2693,7 +2694,7 @@ void MTree::computeRFDist(istream &in, DoubleVector &dist, int assign_sup, bool 
 
 		//cout << "common_splits = " << common_splits << endl;
         double max_dist = branchNum-leafNum + tree.branchNum-tree.leafNum;
-        double rf_val = max_dist - 2*common_splits;
+        double rf_val = max_dist - (2*common_splits);
         if (Params::getInstance().normalize_tree_dist) {
             rf_val = rf_val / max_dist;
         }
@@ -2746,7 +2747,7 @@ void MTree::createBootstrapSupport(vector<string> &taxname, MTreeSet &trees, Spl
 			//SplitIntMap::iterator ass_it = hash_ss.find(&mysplit);
 			Split *sp = hash_ss.findSplit(&mysplit);
 			// if found smt
-			if (sp != NULL) {
+			if (sp != nullptr) {
 				//Split *sp = ass_it->first;
 				/*char tmp[100];
 				if ((*it)->node->name.empty()) {
@@ -2887,7 +2888,7 @@ Node *MTree::findFirstTaxon(Node *node, Node *dad) {
 			node = (*it)->node;
             break;
 		}
-	return NULL;
+	return nullptr;
 }
 
 int MTree::removeTaxa(StrVector &taxa_names) {
@@ -2906,7 +2907,7 @@ int MTree::removeTaxa(StrVector &taxa_names) {
 		}
 
 		Node *innode = node->neighbors[0]->node;
-		Node *othernodes[2] = { NULL, NULL };
+		Node *othernodes[2] = { nullptr, nullptr };
 		int i;
 		double length = 0;
 
@@ -2914,9 +2915,9 @@ int MTree::removeTaxa(StrVector &taxa_names) {
 
 		FOR_NEIGHBOR_DECLARE(innode, node, it)	{
 			length += (*it)->length;
-			if (othernodes[0] == NULL)
+			if (othernodes[0] == nullptr)
 				othernodes[0] = (*it)->node;
-			else if (othernodes[1] == NULL)
+			else if (othernodes[1] == nullptr)
 				othernodes[1] = (*it)->node;
 			else
 				should_merge = false;
@@ -2979,7 +2980,7 @@ void MTree::buildNodeSplit(Split *resp, Node *node, Node *dad) {
         node = root;
         // The neighbor that represents root
         Neighbor* rootNei = root->neighbors[0]->node->findNeighbor(root);
-        if (rootNei->split == NULL) {
+        if (rootNei->split == nullptr) {
             rootNei->split = new Split(leafNum);
         } else {
             delete rootNei->split;
@@ -2989,7 +2990,7 @@ void MTree::buildNodeSplit(Split *resp, Node *node, Node *dad) {
     }
     bool has_child = false;
     FOR_NEIGHBOR_IT(node, dad, it) {
-            if ((*it)->split == NULL) {
+            if ((*it)->split == nullptr) {
                 (*it)->split = new Split(leafNum);
             } else {
                 delete (*it)->split;
@@ -3001,7 +3002,7 @@ void MTree::buildNodeSplit(Split *resp, Node *node, Node *dad) {
             has_child = true;
         }
 
-    if (dad != NULL) {
+    if (dad != nullptr) {
         Neighbor* dadNei = node->findNeighbor(dad);
         dadNei->split = new Split(*resp);
         dadNei->split->invert();
@@ -3046,7 +3047,7 @@ Node *MTree::findFarthestLeaf(Node *node, Node *dad) {
         node->height = 0.0;
         return node;
     }
-    Node *res = NULL;
+    Node *res = nullptr;
     node->height = 0.0;
     FOR_NEIGHBOR_IT(node, dad, it) {
         Node *leaf = findFarthestLeaf((*it)->node, node);

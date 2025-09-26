@@ -108,7 +108,7 @@ public:
     /**
             constructor
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param intype (OUT) input format of the file
      */
     Alignment(char *filename, char *sequence_type, InputType &intype, string model);
@@ -116,7 +116,7 @@ public:
     /**
      constructor
      @param data_block nexus DATA block
-     @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+     @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
      */
     Alignment(NxsDataBlock *data_block, char *sequence_type, string model);
 
@@ -212,7 +212,7 @@ public:
     /**
             do-read the alignment in PHYLIP format (interleaved)
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadPhylip(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -220,7 +220,7 @@ public:
     /**
             read the alignment in PHYLIP format (interleaved)
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readPhylip(char *filename, char *sequence_type);
@@ -228,7 +228,7 @@ public:
     /**
             do-read the alignment in sequential PHYLIP format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadPhylipSequential(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -236,7 +236,7 @@ public:
     /**
             read the alignment in sequential PHYLIP format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readPhylipSequential(char *filename, char *sequence_type);
@@ -253,7 +253,7 @@ public:
     /**
             do-read the alignment in FASTA format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadFasta(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -261,7 +261,7 @@ public:
     /**
             read the alignment in FASTA format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readFasta(char *filename, char *sequence_type);
@@ -281,7 +281,7 @@ public:
     /**
             do-read the alignment in CLUSTAL format.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadClustal(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -289,7 +289,7 @@ public:
     /**
             read the alignment in CLUSTAL format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readClustal(char *filename, char *sequence_type);
@@ -297,7 +297,7 @@ public:
     /**
             do-read the alignment in MSF format.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadMSF(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -305,7 +305,7 @@ public:
     /**
             read the alignment in MSF format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readMSF(char *filename, char *sequence_type);
@@ -319,7 +319,7 @@ public:
     /**
             extract sequences, nseq, nsite from an input file.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void extractSequences(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -397,21 +397,21 @@ public:
     int buildRetainingSites(const char *aln_site_list, IntVector &kept_sites,
             int exclude_sites, const char *ref_seq_name);
 
-    void printAlignment(InputType format, const char *filename, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL);
+    void printAlignment(InputType format, const char *filename, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
     virtual void printAlignment(InputType format, ostream &out, const char* file_name
-                                , bool append = false, const char *aln_site_list = NULL
-                                , int exclude_sites = 0, const char *ref_seq_name = NULL);
+                                , bool append = false, const char *aln_site_list = nullptr
+                                , int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
-    void printPhylip(ostream &out, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL, bool print_taxid = false);
+    void printPhylip(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr, bool print_taxid = false);
 
-    void printFasta(ostream &out, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL);
+    void printFasta(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
-    void printNexus(ostream &out, bool append = false, const char *aln_site_list = NULL,
-                    int exclude_sites = 0, const char *ref_seq_name = NULL, bool print_taxid = false);
+    void printNexus(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+                    int exclude_sites = 0, const char *ref_seq_name = nullptr, bool print_taxid = false);
     /**
             Print the number of gaps per site
             @param filename output file name
@@ -434,8 +434,9 @@ public:
      */
     inline size_t getNSite() {
         // if expected_num_sites is specified -> resizing site_pattern
-        if (expected_num_sites > -1)
+        if (expected_num_sites > -1) {
             site_pattern.resize(expected_num_sites);
+        }
         
         return site_pattern.size();
     }
@@ -568,7 +569,7 @@ public:
             @param min_taxa only keep alignment that has >= min_taxa sequences
             @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL);
+    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = nullptr);
 
     /**
             extract a sub-set of patterns
@@ -587,28 +588,28 @@ public:
     /**
             create a non-parametric bootstrap alignment from an input alignment
             @param aln input alignment
-            @param pattern_freq (OUT) resampled pattern frequencies if not NULL
+            @param pattern_freq (OUT) resampled pattern frequencies if not nullptr
             @param spec bootstrap specification of the form "l1:b1,l2:b2,...,lk:bk"
             	to randomly draw b1 sites from the first l1 sites, etc. Note that l1+l2+...+lk
             	must equal m, where m is the alignment length. Otherwise, an error will occur.
-            	If spec == NULL, a standard procedure is applied, i.e., randomly draw m sites.
+            	If spec == nullptr, a standard procedure is applied, i.e., randomly draw m sites.
      */
-    virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = NULL, const char *spec = NULL);
+    virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = nullptr, const char *spec = nullptr);
 
     /**
             resampling pattern frequency by a non-parametric bootstrap 
             @param pattern_freq (OUT) resampled pattern frequencies
             @param spec bootstrap specification, see above
      */
-    virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = NULL);
+    virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = nullptr);
 
     /**
             resampling pattern frequency by a non-parametric bootstrap
             @param pattern_freq (OUT) resampled pattern frequencies
             @param spec bootstrap specification, see above
-            @param rstream random generator stream, NULL to use the global randstream
+            @param rstream random generator stream, nullptr to use the global randstream
      */
-    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = NULL, int *rstream = NULL);
+    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = nullptr, int *rstream = nullptr);
 
 	/**
 			Diep: This is for UFBoot2-Corr
@@ -840,7 +841,7 @@ public:
         @param out_stat output stream to print pairwise statistics
      */
     virtual void doSymTest(size_t vecid, vector<SymTestResult> &sym, vector<SymTestResult> &marsym,
-                           vector<SymTestResult> &intsym, int *rstream = NULL, vector<SymTestStat> *stats = NULL);
+                           vector<SymTestResult> &intsym, int *rstream = nullptr, vector<SymTestStat> *stats = nullptr);
 
     /**
             count the fraction of constant sites in the alignment, update the variable frac_const_sites
@@ -905,13 +906,13 @@ public:
 
 	/**
 	 * For codon sequences: index of 61 non-stop codons to 64 codons
-	 * For other sequences: NULL
+	 * For other sequences: nullptr
 	 */
 	char *codon_table;
 
 	/**
 	 * For codon_sequences: 64 amino-acid letters for genetic code of AAA,AAC,AAG,AAT,...,TTT
-	 * For other sequences: NULL
+	 * For other sequences: nullptr
 	 */
 	char *genetic_code;
 
@@ -1085,7 +1086,7 @@ protected:
     /**
             alisim: caching ntfreq if it has already randomly initialized
      */
-    double* cache_ntfreq = NULL;
+    double* cache_ntfreq = nullptr;
 
 private:
     /**

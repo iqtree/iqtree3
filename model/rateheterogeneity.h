@@ -26,7 +26,7 @@
 #include "utils/tools.h"
 #include "utils/checkpoint.h"
 
-using namespace std;
+// using namespace std;
 
 class PhyloTree;
 

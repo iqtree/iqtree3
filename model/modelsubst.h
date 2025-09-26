@@ -18,7 +18,7 @@
 #include "utils/checkpoint.h"
 #include "phylo-yaml/statespace.h"
 
-using namespace std;
+// using namespace std;
 
 const char OPEN_BRACKET = '{';
 const char CLOSE_BRACKET = '}';
@@ -152,7 +152,7 @@ public:
 	 * @param cat mixture class ID
 	 * @return corresponding mixture model component
 	 */
-    virtual ModelSubst* getMixtureClass(int cat) { return NULL; }
+    virtual ModelSubst* getMixtureClass(int cat) { return nullptr; }
 
 	/**
 	 * @param cat mixture class ID
@@ -361,11 +361,11 @@ public:
     virtual void report(ostream &out) {}
 
 	virtual double *getEigenvalues() const {
-		return NULL;
+		return nullptr;
 	}
 
 	virtual double *getEigenvectors() const {
-		return NULL;
+		return nullptr;
 	}
 
 	virtual double *getInverseEigenvectors() const {

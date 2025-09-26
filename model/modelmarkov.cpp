@@ -1958,7 +1958,7 @@ void ModelMarkov::setRates() {
 	        return (new ModelLieMarkov(model_name, tree, model_params, freq_type, freq_params));
 	} else {
 		cerr << "Unrecognized model name " << model_name << endl;
-		return (NULL);
+		return (nullptr);
 	}
 }
 

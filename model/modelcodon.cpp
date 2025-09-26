@@ -232,13 +232,13 @@ ModelCodon::ModelCodon(const char *model_name, string model_params, StateFreqTyp
     codon_freq_style = CF_TARGET_CODON;
     codon_kappa_style = CK_ONE_KAPPA;
 	ntfreq = new double[12];
-	empirical_rates = NULL;
+	empirical_rates = nullptr;
 	int nrates = getNumRateEntries();
     delete [] rates;
     rates = new double[nrates];
     empirical_rates = new double [nrates];
 
-    rate_attr = NULL;
+    rate_attr = nullptr;
     computeRateAttributes();
 
    	init(model_name, model_params, freq, freq_params);
@@ -254,15 +254,15 @@ ModelCodon::ModelCodon(const char *model_name, string model_params, StateFreqTyp
 ModelCodon::~ModelCodon() {
 	if (rate_attr) {
 		delete [] rate_attr;
-		rate_attr = NULL;
+		rate_attr = nullptr;
 	}
 	if (empirical_rates) {
 		delete [] empirical_rates;
-		empirical_rates = NULL;
+		empirical_rates = nullptr;
 	}
 	if (ntfreq) {
 		delete [] ntfreq;
-		ntfreq = NULL;
+		ntfreq = nullptr;
 	}
 }
 

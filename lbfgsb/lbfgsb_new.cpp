@@ -78,7 +78,7 @@ void lbfgsb_R(int n, double* x, double* l, int maxit, void* ex) {
 
 	int m = 5;          // number of BFGS updates retained in the "L-BFGS-B" method. It defaults to 5.
 
-	double *u = NULL;   // upper bounds of the variables;
+	double *u = nullptr;   // upper bounds of the variables;
 
 	int *nbd;           // 0: unbounded; 1: lower bounded; 2: both lower & upper; 3: upper bounded
 	nbd = new int[n];

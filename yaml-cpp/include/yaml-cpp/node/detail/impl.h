@@ -109,11 +109,11 @@ inline node* node_data::get(const Key& key,
       break;
     case NodeType::Undefined:
     case NodeType::Null:
-      return NULL;
+      return nullptr;
     case NodeType::Sequence:
       if (node* pNode = get_idx<Key>::get(m_sequence, key, pMemory))
         return pNode;
-      return NULL;
+      return nullptr;
     case NodeType::Scalar:
       throw BadSubscript();
   }
@@ -124,7 +124,7 @@ inline node* node_data::get(const Key& key,
     }
   }
 
-  return NULL;
+  return nullptr;
 }
 
 template <typename Key>

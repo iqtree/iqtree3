@@ -92,14 +92,14 @@ void AliSimulatorHeterogeneity::intializeSiteSpecificModelIndex(int sequence_len
             for (int i = 0; i < sequence_length; i++)
             {
                 // randomly select a model from the set of model components, considering its probability array.
-                new_site_specific_model_index[i] = getRandomItemWithAccumulatedProbMatrixMaxProbFirst(mixture_accumulated_weight, 0, num_models, mixture_max_weight_pos, NULL);
+                new_site_specific_model_index[i] = getRandomItemWithAccumulatedProbMatrixMaxProbFirst(mixture_accumulated_weight, 0, num_models, mixture_max_weight_pos, nullptr);
             }
             
             // delete the mixture_accumulated_weight if mixture model at substitution level is not used
             if (!params->alisim_mixture_at_sub_level)
             {
                 delete[] mixture_accumulated_weight;
-                mixture_accumulated_weight = NULL;
+                mixture_accumulated_weight = nullptr;
             }
         }
     }
@@ -140,7 +140,7 @@ void AliSimulatorHeterogeneity::intSiteSpecificModelIndexPosteriorProb(int seque
     if (tree->params->alisim_insertion_ratio + tree->params->alisim_deletion_ratio == 0)
     {
         delete [] ptn_model_dis;
-        ptn_model_dis = NULL;
+        ptn_model_dis = nullptr;
     }
 }
 
@@ -257,7 +257,7 @@ vector<short int> AliSimulatorHeterogeneity::regenerateSequenceMixtureModelPoste
     if (tree->params->alisim_insertion_ratio + tree->params->alisim_deletion_ratio == 0)
     {
         delete [] ptn_accumulated_state_freq;
-        ptn_accumulated_state_freq = NULL;
+        ptn_accumulated_state_freq = nullptr;
     }
     
     return new_sequence;
@@ -433,7 +433,7 @@ void AliSimulatorHeterogeneity::getSiteSpecificRatesDiscrete(vector<short int> &
     for (int i = 0; i < sequence_length; i++)
     {
         // randomly select a rate from the set of rate categories, considering its probability array.
-        int rate_category = getRandomItemWithAccumulatedProbMatrixMaxProbFirst(category_probability_matrix, 0, num_rate_categories, max_prob_pos, NULL);
+        int rate_category = getRandomItemWithAccumulatedProbMatrixMaxProbFirst(category_probability_matrix, 0, num_rate_categories, max_prob_pos, nullptr);
         
         // if rate_category == -1 <=> this site is invariant -> return dad's state
         if (rate_category == -1)
@@ -532,7 +532,7 @@ void AliSimulatorHeterogeneity::getSiteSpecificPosteriorRateHeterogeneity(vector
     if (ptn_accumulated_rate_dis && tree->params->alisim_insertion_ratio + tree->params->alisim_deletion_ratio == 0)
     {
         delete [] ptn_accumulated_rate_dis;
-        ptn_accumulated_rate_dis = NULL;
+        ptn_accumulated_rate_dis = nullptr;
     }
 }
 

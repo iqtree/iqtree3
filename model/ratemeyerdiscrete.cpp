@@ -180,8 +180,8 @@ RateMeyerDiscrete::RateMeyerDiscrete(int ncat, int cat_type, char *file_name, Ph
  : RateMeyerHaeseler(file_name, tree, rate_type)
 {
 	ncategory = ncat;
-	rates = NULL;
-	ptn_cat = NULL;
+	rates = nullptr;
+	ptn_cat = nullptr;
 	is_categorized = false;
 	mcat_type = cat_type;
 	if (ncat > 0) {
@@ -197,11 +197,11 @@ RateMeyerDiscrete::RateMeyerDiscrete(int ncat, int cat_type, char *file_name, Ph
 
 RateMeyerDiscrete::RateMeyerDiscrete() {
 	ncategory = 0;
-	rates = NULL;
-	ptn_cat = NULL;
+	rates = nullptr;
+	ptn_cat = nullptr;
 	is_categorized = false;
 	mcat_type = 0;
-	rates = NULL;
+	rates = nullptr;
 	name = full_name = "";
 	rate_mh = true;
 }

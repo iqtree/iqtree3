@@ -33,9 +33,9 @@
 
 Node::Node(int aid) {
     id = aid;
-    //name = NULL;
+    //name = nullptr;
     height = -1;
-    sequence = NULL;
+    sequence = nullptr;
 }
 
 Node::Node(int aid, int aname) {
@@ -44,7 +44,7 @@ Node::Node(int aid, int aname) {
     snprintf(str, 20, "%d", aname);
     name = str;
     height = -1;
-    sequence = NULL;
+    sequence = nullptr;
 }
 
 Node::Node(int aid, const char *aname) {
@@ -52,7 +52,7 @@ Node::Node(int aid, const char *aname) {
     if (aname)
         name = aname;
     height = -1;
-    sequence = NULL;
+    sequence = nullptr;
 }
 
 bool Node::isLeaf() {
@@ -88,15 +88,15 @@ int Node::degree() {
         @return the leaf at the lowest level. Also modify the height, highestNei of this class.
  */
 Node *Node::calcHeight(Node *dad) {
-    if (isLeaf() && dad != NULL) {
+    if (isLeaf() && dad != nullptr) {
         // if a leaf, but not the root
         height = 0;
-        highestNei = NULL;
+        highestNei = nullptr;
         return this;
     }
     // scan through all children
     height = -INFINITY;
-    Node *lowestLeaf = NULL;
+    Node *lowestLeaf = nullptr;
     for (NeighborVec::iterator it = neighbors.begin(); it != neighbors.end(); it++)
         if ((*it)->node != dad) {
             Node *leaf = (*it)->node->calcHeight(this);
@@ -110,16 +110,16 @@ Node *Node::calcHeight(Node *dad) {
 }
 
 int Node::calDist(Node* partner, Node* dad, int curLen) {
-    if ( this->isLeaf() && this != partner && dad != NULL )
+    if ( this->isLeaf() && this != partner && dad != nullptr )
         return 0;
-    if ( this->isLeaf() && dad == NULL ) {
+    if ( this->isLeaf() && dad == nullptr ) {
         return this->neighbors[0]->node->calDist(partner, this, 1);
     } else {
         Node* left = nullptr;
         Node* right = nullptr;
         for (NeighborVec::iterator it = neighbors.begin(); it != neighbors.end(); it++) {
             if ((*it)->node != dad) {
-                if (left == NULL)
+                if (left == nullptr)
                     left = (*it)->node;
                 else
                     right = (*it)->node;
@@ -179,7 +179,7 @@ Neighbor *Node::findNeighbor(Node *node) {
                     return (*it);*/
     cout << "ERROR : Could not find neighbors of node " << node->id << endl;
     ASSERT(0);
-    return NULL;
+    return nullptr;
 }
 
 bool Node::isNeighbor(Node* node) {
@@ -268,7 +268,7 @@ Node::~Node() {
     if (sequence)
     {
         delete sequence;
-        sequence = NULL;
+        sequence = nullptr;
     }
 }
 

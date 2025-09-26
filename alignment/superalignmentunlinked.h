@@ -34,7 +34,7 @@ public:
     /**
      initialize seq_names, taxon_index, buildPattern
      */
-    virtual void init(StrVector *sequence_names = NULL);
+    virtual void init(StrVector *sequence_names = nullptr);
     
     /**
      * build all patterns of super alignent from partitions and taxa_index

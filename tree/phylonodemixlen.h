@@ -48,7 +48,7 @@ public:
      allocate a new Neighbor by just copying from this one
      @return pointer to newly created Neighbor
      */
-    virtual Neighbor* newNeighbor() {
+    virtual Neighbor* newNeighbor() override {
         return (new PhyloNeighborMixlen(this));
     }
 
@@ -61,7 +61,7 @@ public:
         @param c class index
         @return branch length for class c
     */
-    virtual double getLength(int c) { 
+    virtual double getLength(int c) override {
         if (lengths.empty())
             return length; 
         ASSERT(c < lengths.size());
@@ -73,7 +73,7 @@ public:
         the default is just to return a single branch length
         @return branch length for class c
     */
-    virtual void getLength(DoubleVector &vec) { 
+    virtual void getLength(DoubleVector &vec) override {
         vec = lengths;
     }
 
@@ -83,7 +83,7 @@ public:
         @param vec (OUT) destination branch length vector
         @param start_pos starting position in vec to copy to
     */
-    virtual void getLength(DoubleVector &vec, int start_pos) { 
+    virtual void getLength(DoubleVector &vec, int start_pos) override {
         ASSERT(start_pos+lengths.size() <= vec.size());
         for (int i = 0; i < lengths.size(); i++)
             vec[start_pos+i] = lengths[i];
@@ -96,7 +96,7 @@ public:
         @param c class index
         @return branch length for class c
     */
-    virtual void setLength(int c, double len) {
+    virtual void setLength(int c, double len) override {
         if (lengths.empty()) {
             length = len;
             return;
@@ -110,7 +110,7 @@ public:
         the default is just to return a single branch length
         @return branch length for class c
     */
-    virtual void setLength(DoubleVector &vec) { 
+    virtual void setLength(DoubleVector &vec) override {
         lengths = vec;
     }
 
@@ -120,8 +120,8 @@ public:
         @param nei source neigbor to copy branch lengths
         @return branch length for class c
     */
-    virtual void setLength(Neighbor *nei) { 
-        length = nei->length; 
+    virtual void setLength(Neighbor *nei) override {
+        length = nei->length;
         lengths = ((PhyloNeighborMixlen*)nei)->lengths;
     }
     
@@ -131,7 +131,7 @@ public:
         @param vec source branch length vector
         @param start_pos starting position in vec to copy from
     */
-    virtual void setLength(DoubleVector &vec, int start_pos, int num_elem) { 
+    virtual void setLength(DoubleVector &vec, int start_pos, int num_elem) override {
         ASSERT(start_pos+num_elem <= vec.size());
         lengths.clear();
         lengths.insert(lengths.begin(), vec.begin()+start_pos, vec.begin()+start_pos+num_elem);
@@ -175,7 +175,7 @@ public:
         @param length branch length
         @param id branch ID
      */
-    virtual void addNeighbor(Node *node, double length, int id = -1);
+    virtual void addNeighbor(Node *node, double length, int id = -1) override;
 
     /**
         add a neighbor for heterotachy model
@@ -183,7 +183,7 @@ public:
         @param length branch length
         @param id branch ID
      */
-    virtual void addNeighbor(Node *node, DoubleVector &length, int id = -1);
+    virtual void addNeighbor(Node *node, DoubleVector &length, int id = -1) override;
 
 protected:
 };

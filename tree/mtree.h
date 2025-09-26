@@ -95,15 +95,15 @@ public:
      */
     virtual void copyTree(MTree *tree, string &taxa_set);
 
-    Node* copyTree(MTree *tree, string &taxa_set, double &len, Node *node = NULL, Node *dad = NULL);
+    Node* copyTree(MTree *tree, string &taxa_set, double &len, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             In case of mulfurcating tree, extract a bifurcating subtree by randomly removing multifurcation
             If the tree is bifurcating, nothing change
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void extractBifurcatingSubTree(Node *node = NULL, Node *dad = NULL);
+    void extractBifurcatingSubTree(Node *node = nullptr, Node *dad = nullptr);
 
 
     /**
@@ -147,43 +147,43 @@ public:
             @param node_name node name
             @return a new node
      */
-    virtual Node* newNode(int node_id = -1, const char* node_name = NULL);
+    virtual Node* newNode(int node_id = -1, const char* node_name = nullptr);
 
     virtual Node* newNode(int node_id, int node_name);
 
 
     /**
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @return the number of branches with zero length ( <= epsilon)
      */
-    int countZeroBranches(Node *node = NULL, Node *dad = NULL, double epsilon = 0.000001);
+    int countZeroBranches(Node *node = nullptr, Node *dad = nullptr, double epsilon = 0.000001);
 
     /**
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @return the number of internal branches with zero length ( <= epsilon)
      */
-    int countZeroInternalBranches(Node *node = NULL, Node *dad = NULL, double epsilon = 0.000001);
+    int countZeroInternalBranches(Node *node = nullptr, Node *dad = nullptr, double epsilon = 0.000001);
 
 	/**
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 		@return the number of long branches
 	*/
-	int countLongBranches(Node *node = NULL, Node *dad = NULL, double epsilon = 8.8);
+	int countLongBranches(Node *node = nullptr, Node *dad = nullptr, double epsilon = 8.8);
     /********************************************************
             PRINT INFORMATION
      ********************************************************/
 
 	/** @return true if tree is bifurcating, false otherwise */
-	virtual bool isBifurcating(Node *node = NULL, Node *dad = NULL);
+	virtual bool isBifurcating(Node *node = nullptr, Node *dad = nullptr);
     /**
             print information
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void printBranchLengths(ostream &out, Node *node = NULL, Node *dad = NULL);
+    void printBranchLengths(ostream &out, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             print the tree to the output file in newick format
@@ -216,12 +216,12 @@ public:
     /**
             print the tree to the output file in newick format
             @param out the output file.
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param brtype type of branch to print
             @return ID of the taxon with smallest ID
      */
-    virtual int printTree(ostream &out, int brtype, Node *node, Node *dad = NULL);
+    virtual int printTree(ostream &out, int brtype, Node *node, Node *dad = nullptr);
 
 
     /**
@@ -234,11 +234,11 @@ public:
     /**
             print the sub-tree to the output file in newick format
             @param out the output file.
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param subtree list of nodes (internal & external) contained in the new tree
      */
-    void printSubTree(ostream &out, NodeVector &subtree, Node *node, Node *dad = NULL);
+    void printSubTree(ostream &out, NodeVector &subtree, Node *node, Node *dad = nullptr);
 
 
     /**
@@ -250,10 +250,10 @@ public:
     /**
             print the taxa set to the output file
             @param out the output file.
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void printTaxa(ostream &out, Node *node = NULL, Node *dad = NULL);
+    void printTaxa(ostream &out, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             print the taxa set of a given subtree
@@ -270,27 +270,27 @@ public:
 
     /**
             Sort the taxa by their IDs
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @return smallest taxon ID of the subtree
      */
-    int sortTaxa(Node *node = NULL, Node *dad = NULL);
+    int sortTaxa(Node *node = nullptr, Node *dad = nullptr);
 
 	virtual void drawTree(ostream &out, int brtype = WT_BR_SCALE + WT_INT_NODE, double zero_epsilon = 2e-6);
 
 	/** OBSOLETE:
 	void drawTree(ostream &out, int brtype, double brscale, IntVector &sub_tree_br, double zero_epsilon,
-            Node *node = NULL, Node *dad = NULL);
+            Node *node = nullptr, Node *dad = nullptr);
     */
 
 	void drawTree2(ostream &out, int brtype, double brscale, IntVector &sub_tree_br, double zero_epsilon,
-            Node *node = NULL, Node *dad = NULL);
+            Node *node = nullptr, Node *dad = nullptr);
 
     /**
      * @param tree the other tree to compare with
      * @return TRUE if this tree is topologically equal to tree
      */
-    bool equalTopology(MTree *tree);
+    // bool equalTopology(MTree *tree);
 
     /********************************************************
             READ TREE FROM FILE
@@ -345,10 +345,10 @@ public:
 
     /**
             initialize tree, set node structure
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void initializeTree(Node *node = NULL, Node* dad = NULL);
+    void initializeTree(Node *node = nullptr, Node* dad = nullptr);
 
 
     /********************************************************
@@ -357,38 +357,38 @@ public:
 
     /**
             @return sum of all branch lengths
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    virtual double treeLength(Node *node = NULL, Node *dad = NULL);
+    virtual double treeLength(Node *node = nullptr, Node *dad = nullptr);
 
     /**
             @param[out] lenvec tree lengths for each class in mixlen model
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    virtual void treeLengths(DoubleVector &lenvec, Node *node = NULL, Node *dad = NULL) {}
+    virtual void treeLengths(DoubleVector &lenvec, Node *node = nullptr, Node *dad = nullptr) {}
 
     /**
             @return sum length of all internal branches
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    virtual double treeLengthInternal(double epsilon, Node *node = NULL, Node *dad = NULL);
+    virtual double treeLengthInternal(double epsilon, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             @return maximum path length from root node to taxa
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    double treeDepth(Node *node = NULL, Node *dad = NULL);
+    double treeDepth(Node *node = nullptr, Node *dad = nullptr);
     /**
         get the descending taxa ID list below the node
-        @param node the starting node, NULL to start from the root
+        @param node the starting node, nullptr to start from the root
         @param dad dad of the node, used to direct the search
         @param taxa (OUT) taxa ID
      */
-    void getTaxaID(vector<int> &taxa, Node *node = NULL, Node *dad = NULL);
+    void getTaxaID(vector<int> &taxa, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      * get all node within a subtree
@@ -401,52 +401,52 @@ public:
 
     /**
      * get number of taxa below the node
-     * @param node the starting node, NULL to start from the root
+     * @param node the starting node, nullptr to start from the root
      * @param dad dad of the node, used to direct the search
      * @return number of taxa
      */
-    int getNumTaxa(Node *node = NULL, Node *dad = NULL);
+    int getNumTaxa(Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending taxa below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param taxa (OUT) vector of taxa
      */
-    void getTaxa(NodeVector &taxa, Node *node = NULL, Node *dad = NULL);
+    void getTaxa(NodeVector &taxa, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      	get all descending taxa which are in non-cherry position
-  		@param node the starting node, NULL to start from the root
+  		@param node the starting node, nullptr to start from the root
         @param dad dad of the node, used to direct the search
         @param noncherry (OUT) vector of non-cherry taxa
         @param cherry (OUT) vector of cherry taxa
      */
-    void getNonCherryLeaves(NodeVector &noncherry, NodeVector &cherry, Node *node = NULL, Node *dad = NULL);
+    void getNonCherryLeaves(NodeVector &noncherry, NodeVector &cherry, Node *node = nullptr, Node *dad = nullptr);
 
 	/**
 		get the descending taxa below the node
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 		@param taxa (OUT) vector of taxa
 	*/
-	void getTaxa(Split &taxa, Node *node = NULL, Node *dad = NULL);
+	void getTaxa(Split &taxa, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending taxa below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param taxa (OUT) vector of taxa
      */
-    void getOrderedTaxa(NodeVector &taxa, Node *node = NULL, Node *dad = NULL);
+    void getOrderedTaxa(NodeVector &taxa, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending taxa names below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param[out] taxname taxa name, with size equal leafNum and ordered with taxon ID
      */
-    void getTaxaName(vector<string> &taxname, Node *node = NULL, Node *dad = NULL);
+    void getTaxaName(vector<string> &taxname, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending taxa names below the node, and map each
@@ -461,16 +461,16 @@ public:
     
     /**
             get the descending node names below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param[out] nodename node names, with size equal leafNum and ordered with taxon ID
      */
-    void getNodeName(set<string> &nodename, Node *node = NULL, Node *dad = NULL);
+    void getNodeName(set<string> &nodename, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending taxa names below the node. different from getTaxaName() in that the
             taxa are not ordered by ID at all!
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param[out] taxname taxa name
      */
@@ -478,80 +478,80 @@ public:
 
     /**
             get the descending internal nodes below \a node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param nodes (OUT) vector of internal nodes
      */
-    void getInternalNodes(NodeVector &nodes, Node *node = NULL, Node *dad = NULL);
+    void getInternalNodes(NodeVector &nodes, Node *node = nullptr, Node *dad = nullptr);
 
     /**
          get the descending internal nodes below \a node
-         @param node the starting node, NULL to start from the root
+         @param node the starting node, nullptr to start from the root
          @param dad dad of the node, used to direct the search
          @param nodes (OUT) vector of internal nodes
      */
-    void getMultifurcatingNodes(NodeVector &nodes, Node *node = NULL, Node *dad = NULL);
+    void getMultifurcatingNodes(NodeVector &nodes, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get the descending internal branches below \a node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param nodes (OUT) vector of one end node of branch
             @param nodes2 (OUT) vector of the other end node of branch
             @param excludeSplits do not collect branches in here
      */
-    void generateNNIBraches(vector<Node*> &nodes, vector<Node*> &nodes2, SplitGraph* excludeSplits = NULL, Node *node = NULL, Node *dad = NULL);
+    void generateNNIBraches(vector<Node*> &nodes, vector<Node*> &nodes2, SplitGraph* excludeSplits = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             get all descending branches below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param nodes (OUT) vector of one end node of branch
             @param nodes2 (OUT) vector of the other end node of branch
             @param post_traversal true to add branches in post traversal order, default: pre-traversal
      */
-    void getBranches(NodeVector &nodes, NodeVector &nodes2, Node *node = NULL, Node *dad = NULL,
+    void getBranches(NodeVector &nodes, NodeVector &nodes2, Node *node = nullptr, Node *dad = nullptr,
                      bool post_traversal = false);
 
     /**
             get all descending branches and the node IDs below the node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param nodes (OUT) vector of one end node of branch
             @param nodes2 (OUT) vector of the other end node of branch
             @param post_traversal true to add branches in post traversal order, default: pre-traversal
      */
-    void getBranches(NodeVector &nodes, NodeVector &nodes2, IntVector &nodeids, Node *node = NULL, Node *dad = NULL, bool post_traversal = false);
+    void getBranches(NodeVector &nodes, NodeVector &nodes2, IntVector &nodeids, Node *node = nullptr, Node *dad = nullptr, bool post_traversal = false);
 
     /**
      get all descending branches below the node not further away from max_dist
      @param max_dist maximum distance for descending branches
-     @param node the starting node, NULL to start from the root
+     @param node the starting node, nullptr to start from the root
      @param dad dad of the node, used to direct the search
      @param nodes (OUT) vector of one end node of branch
      @param nodes2 (OUT) vector of the other end node of branch
      */
-    void getBranches(int max_dist, NodeVector &nodes, NodeVector &nodes2, Node *node = NULL, Node *dad = NULL);
+    void getBranches(int max_dist, NodeVector &nodes, NodeVector &nodes2, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      get all branches below the node
      @param branches the branches are stored here
      @param post_traveral true for post-traversal, false for pre-traversal
      */
-    void getBranches(BranchVector& branches, Node *node = NULL, Node *dad = NULL, bool post_traversal = false);
+    void getBranches(BranchVector& branches, Node *node = nullptr, Node *dad = nullptr, bool post_traversal = false);
 
     /**
             get all inner branches below the node
             @param branches the branches are stored here
      */
-    void getInnerBranches(Branches& branches, Node *node = NULL, Node *dad = NULL);
+    void getInnerBranches(Branches& branches, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      get all inner branches below the node
      @param branches the branches are stored here
      @param post_traveral true for post-traversal, false for pre-traversal
      */
-    void getInnerBranches(BranchVector& branches, Node *node = NULL, Node *dad = NULL, bool post_traversal = false);
+    void getInnerBranches(BranchVector& branches, Node *node = nullptr, Node *dad = nullptr, bool post_traversal = false);
 
     /**
      *      get all descending internal branches below \a node and \a dad up to depth \a depth
@@ -577,18 +577,18 @@ public:
      */
     bool isABranch(Node* node1, Node* node2);
 
-    void getBranchLengths(vector<DoubleVector> &len, Node *node = NULL, Node *dad = NULL);
+    void getBranchLengths(vector<DoubleVector> &len, Node *node = nullptr, Node *dad = nullptr);
 
-    void setBranchLengths(vector<DoubleVector> &len, Node *node = NULL, Node *dad = NULL);
+    void setBranchLengths(vector<DoubleVector> &len, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             find a node with corresponding name
             @param name node name
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
-            @return node if found, otherwise NULL
+            @return node if found, otherwise nullptr
      */
-    Node *findNodeName(string &name, Node *node = NULL, Node* dad = NULL);
+    Node *findNodeName(string &name, Node *node = nullptr, Node* dad = nullptr);
 
     /**
          find a node with corresponding taxa names
@@ -604,63 +604,63 @@ public:
     /**
             find a leaf with corresponding name
             @param name leaf name
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
-            @return node if found, otherwise NULL
+            @return node if found, otherwise nullptr
      */
-    Node *findLeafName(string &name, Node *node = NULL, Node* dad = NULL);
+    Node *findLeafName(string &name, Node *node = nullptr, Node* dad = nullptr);
 
     /**
             find a node with corresponding ID
             @param id node ID
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
-            @return node if found, otherwise NULL
+            @return node if found, otherwise nullptr
      */
-    Node *findNodeID(int id, Node *node = NULL, Node* dad = NULL);
+    Node *findNodeID(int id, Node *node = nullptr, Node* dad = nullptr);
 
 
     /**
             scale the length of all branches to a norm factor
             @param norm normalized factor
             @param make_int TRUE to round lengths to int, FALSE otherwise
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void scaleLength(double norm, bool make_int = false, Node *node = NULL, Node *dad = NULL);
+    void scaleLength(double norm, bool make_int = false, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             scale the length of all branches for RAxML internal presentation
             @param norm normalized factor
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void transformBranchLenRAX(double factor, Node *node = NULL, Node *dad = NULL);
+    void transformBranchLenRAX(double factor, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             scale the clade supports of all internal nodes to a norm factor
             @param norm normalized factor
             @param make_int TRUE to round lengths to int, FALSE otherwise
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void scaleCladeSupport(double norm, bool make_int = false, Node *node = NULL, Node *dad = NULL);
+    void scaleCladeSupport(double norm, bool make_int = false, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             assign the leaf IDs with their names
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
 
      */
-    void assignLeafID(Node *node = NULL, Node *dad = NULL);
+    void assignLeafID(Node *node = nullptr, Node *dad = nullptr);
 
     /**
             assign the leaf name with its ID
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
 
      */
-    void assignLeafNameByID(Node *node = NULL, Node *dad = NULL);
+    void assignLeafNameByID(Node *node = nullptr, Node *dad = nullptr);
 
     /********************************************************
             CONVERT TREE INTO SPLIT SYSTEM
@@ -670,51 +670,51 @@ public:
             convert the tree into the split system
             @param sg (OUT) resulting split graph
      */
-	void convertSplits(SplitGraph &sg, NodeVector *nodes = NULL, Node *node = NULL, Node *dad = NULL);
+	void convertSplits(SplitGraph &sg, NodeVector *nodes = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             convert the tree into the split system
             @param taxname certain taxa name
             @param sg (OUT) resulting split graph
      */
-	void convertSplits(vector<string> &taxname, SplitGraph &sg, NodeVector *nodes = NULL, Node *node = NULL, Node *dad = NULL);
+	void convertSplits(vector<string> &taxname, SplitGraph &sg, NodeVector *nodes = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             convert the tree into the split system, iterative procedure
             @param sg (OUT) resulting split graph
             @param resp (internal) set of taxa below node
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void convertSplits(SplitGraph &sg, Split *resp, NodeVector *nodes = NULL, Node *node = NULL, Node *dad = NULL);
+    void convertSplits(SplitGraph &sg, Split *resp, NodeVector *nodes = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             convert the tree into the split system, iterative procedure
             @param sg (OUT) resulting split graph
             @param resp (internal) set of taxa below node
             @param[out] branches set of corresponding branches
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    void convertSplits(SplitGraph &sg, Split *resp, BranchVector *branches, Node *node = NULL, Node *dad = NULL);
+    void convertSplits(SplitGraph &sg, Split *resp, BranchVector *branches, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      * Initialize the hash stable splitBranchMap which contain mapping from split to branch
      * @param resp (internal) set of taxa below node
-     * @param node the starting node, NULL to start from the root
+     * @param node the starting node, nullptr to start from the root
      * @param dad dad of the node, used to direct the search
      */
-    void initializeSplitMap(Split *resp = NULL, Node *node = NULL, Node *dad = NULL);
+    void initializeSplitMap(Split *resp = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
     *   Generate a split for each neighbor node
     */
-    void buildNodeSplit(Split *resp = NULL, Node *node = NULL, Node *dad = NULL);
+    void buildNodeSplit(Split *resp = nullptr, Node *node = nullptr, Node *dad = nullptr);
 
     /**
      *  Get split graph based on split stored in nodes
      */
-    void getSplits(SplitGraph &splits, Node* node = NULL, Node* dad = NULL);
+    void getSplits(SplitGraph &splits, Node* node = nullptr, Node* dad = nullptr);
 
     /**
     *   Update the Split-Branch map with the new split defined by a branch
@@ -741,7 +741,7 @@ public:
      *  @param splits list of splits to check
      *  @return true or false
      */
-    bool containsSplits(SplitGraph& splits);
+    // bool containsSplits(SplitGraph& splits);
 
     /********************************************************
             CONVERT SPLIT SYSTEM INTO TREE
@@ -766,16 +766,16 @@ public:
 
     /**
             calculate the pairwise distances on the tree
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param dist (OUT) distance matrix
      */
-    void calcDist(double* &dist, Node *node = NULL, Node *dad = NULL);
+    void calcDist(double* &dist, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             calculate the pairwise distances on the tree
             @param aroot the starting root
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param cur_len current length from aroot to node
             @param dist (OUT) distance matrix
@@ -790,7 +790,7 @@ public:
      @param[out] subtrees consecutive 4 subtrees
      @param[out] branches corresponding inner branch vector
      */
-	void extractQuadSubtrees(vector<Split*> &subtrees, BranchVector &branches, Node *node = NULL, Node *dad = NULL);
+	void extractQuadSubtrees(vector<Split*> &subtrees, BranchVector &branches, Node *node = nullptr, Node *dad = nullptr);
 
 	/**
      * OBSOLETE: now in PhyloTree::computeGeneConcordance
@@ -826,7 +826,7 @@ public:
 	virtual int removeTaxa(StrVector &taxa_names);
 
 	/** find a first taxon below a subtree */
-	Node *findFirstTaxon(Node *node = NULL, Node *dad = NULL);
+	Node *findFirstTaxon(Node *node = nullptr, Node *dad = nullptr);
 
 	/********************************************************
             TREE TRAVERSAL
@@ -834,19 +834,19 @@ public:
 
     /** 
         @return the leaf farthest from the node within the subtree rooted at node 
-        @param node the starting node, NULL to start from the root
+        @param node the starting node, nullptr to start from the root
         @param dad dad of the node, used to direct the search
     */
-    Node *findFarthestLeaf(Node *node = NULL, Node *dad = NULL);
+    Node *findFarthestLeaf(Node *node = nullptr, Node *dad = nullptr);
         
     /** 
-        @get pre-order branches going into swallow subtrees first
+        get pre-order branches going into swallow subtrees first
         @param nodes one endpoint of branch
         @params nodes2 other endpoint of branch
-        @param node the starting node, NULL to start from the root
+        @param node the starting node, nullptr to start from the root
         @param dad dad of the node, used to direct the search
     */
-    void getPreOrderBranches(NodeVector &nodes, NodeVector &nodes2, Node *node, Node *dad = NULL);
+    void getPreOrderBranches(NodeVector &nodes, NodeVector &nodes2, Node *node, Node *dad = nullptr);
 
 	/********************************************************
             PROPERTIES OF TREE
@@ -903,15 +903,15 @@ public:
     const static string ANTT_MUT;
 
     /** a generic pointer to the expected starting node -> to make sure (after unrooting a rooted tree) we traverse the tree at the same starting node as BaseML*/
-    void* traversal_starting_node = NULL;
+    void* traversal_starting_node = nullptr;
     /**
             release the nemory.
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
-    int freeNode(Node *node = NULL, Node *dad = NULL);
+    int freeNode(Node *node = nullptr, Node *dad = nullptr);
 
-    void setExtendedFigChar();
+    // void setExtendedFigChar();
 
     /** set pointer of params variable */
     virtual void setParams(Params* params) {
@@ -924,7 +924,7 @@ public:
 
 	/**
 		create support value for each internal node to the weight of split in the split graph
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 		@param sg split graph
 		@param hash_ss hash split set
@@ -932,7 +932,7 @@ public:
 		@param trees set of trees
 	*/
 	void createBootstrapSupport(vector<string> &taxname, MTreeSet &trees, SplitIntMap &hash_ss, char *tag,
-		Node *node = NULL, Node *dad = NULL);
+		Node *node = nullptr, Node *dad = nullptr);
 
 	void reportDisagreedTrees(vector<string> &taxname, MTreeSet &trees, Split &mysplit);
 
@@ -950,21 +950,21 @@ public:
 
     /**
         Collapse all branches with length <= threshold
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
         @param threshold branch length threshold
         @return number of branches collapsed
     */
-	int collapseZeroBranches(Node *node = NULL, Node *dad = NULL, double threshold = 0.0);
+	int collapseZeroBranches(Node *node = nullptr, Node *dad = nullptr, double threshold = 0.0);
 
     /**
         Collapse all internal branches with length <= threshold
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
         @param threshold branch length threshold
         @return number of branches collapsed
     */
-    virtual int collapseInternalBranches(Node *node = NULL, Node *dad = NULL, double threshold = 0.0);
+    virtual int collapseInternalBranches(Node *node = nullptr, Node *dad = nullptr, double threshold = 0.0);
 
 protected:
     /**
@@ -999,11 +999,11 @@ protected:
 
     /**
             check tree is bifurcating tree (every leaf with level 1 or 3)
-            @param node the starting node, NULL to start from the root
+            @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
             @param stop (IN/OUT) set = true to stop the search
      */
-    void checkValidTree(bool& stop, Node *node = NULL, Node *dad = NULL);
+    void checkValidTree(bool& stop, Node *node = nullptr, Node *dad = nullptr);
 
     /**
             read the next character from a NEWICK file. Ignore comments [...]
@@ -1024,6 +1024,7 @@ protected:
      */
     inline string getBranchID(Node* node1, Node* node2) {
         string key("");
+        ASSERT(node1 && node2);
         if (node1->id < node2->id) {
             key += convertIntToString(node1->id) + "-"
                     + convertIntToString(node2->id);

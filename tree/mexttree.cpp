@@ -21,7 +21,7 @@
 #include "alignment/alignment.h"
 
 void MExtTree::generateRandomTree(TreeGenType tree_type, Params &params, bool binary) {
-	Alignment *alignment = NULL;
+	Alignment *alignment = nullptr;
 	if (params.aln_file) {
 		// generate random tree with leaf sets taken from an alignment
 		alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
@@ -71,8 +71,8 @@ void MExtTree::setZeroInternalBranches(int num_zero_len) {
 		i++;
 		nodes[id]->findNeighbor(nodes2[id])->length = 0.0;
 		nodes2[id]->findNeighbor(nodes[id])->length = 0.0;
-		nodes[id] = NULL;
-		nodes2[id] = NULL;
+		nodes[id] = nullptr;
+		nodes2[id] = nullptr;
 	}
 }
 
@@ -218,7 +218,7 @@ void MExtTree::generateUniform(Params &params, bool binary)
 	for (i = 2; i < size; i++)
 	{
 		int index;
-		index = random_int(2*i-3);
+		index = random_int((2*i)-3);
 		//cout << "step " << i << " left = " << leftend[index]->id << " right = " << rightend[index]->id << endl;
 
 		// add an internal node
@@ -293,7 +293,7 @@ void MExtTree::generateBirthDeath(Params &params)
     
     // list of leaves
     NodeVector myleaves;
-    Node *node = NULL, *new_node = NULL;
+    Node *node = nullptr, *new_node = nullptr;
     double len, random_num;
     int i;
     
@@ -339,7 +339,7 @@ void MExtTree::generateBirthDeath(Params &params)
             // death event occurs
             else
             {
-                Node *dad_node = NULL;
+                Node *dad_node = nullptr;
                 
                 // if the death event occurs when the tree has only root node -> restart
                 if (node->neighbors.size() == 0)
@@ -352,7 +352,7 @@ void MExtTree::generateBirthDeath(Params &params)
                 len = randomLen(params);
 
                 // detect the two siblings of the current node
-                Node *sibling_node1 = NULL, *sibling_node2 = NULL;
+                Node *sibling_node1 = nullptr, *sibling_node2 = nullptr;
                 for (NeighborVec::iterator it = dad_node->neighbors.begin(); it != dad_node->neighbors.end(); it++)
                 {
                     if ((*it)->node == node)
@@ -603,7 +603,7 @@ void MExtTree::setLeavesName(NodeVector &myleaves) {
 
 
 void MExtTree::createCluster(NodeVector &taxa, mmatrix(int) &clusters, Node *node, Node *dad) {
-	if (node == NULL) node = root;
+	if (node == nullptr) node = root;
 	FOR_NEIGHBOR_IT(node, dad, it) {
 		// if both end-nodes are bifurcating
 		Node *child = (*it)->node;

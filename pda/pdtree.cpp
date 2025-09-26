@@ -36,7 +36,7 @@ void PDTree::init(Params &params) {
 		params.sub_size++;
 		params.min_size++;
 	}
-	if (params.is_rooted && params.root != NULL) {
+	if (params.is_rooted && params.root != nullptr) {
 		outError(ERR_CONFLICT_ROOT);
 	}
 
@@ -51,14 +51,14 @@ void PDTree::init(Params &params) {
 		initialset.push_back(root);
 	}
 	// read the parameter file
-	if (params.param_file != NULL) {
+	if (params.param_file != nullptr) {
 		readParams(params);
 	}
 	// identify the root
-	if (params.root != NULL) 
+	if (params.root != nullptr) 
 		readRootNode(params.root);
 	// read the initial set of taxa, incoporate info into the split system
-	if (params.initial_file != NULL) {
+	if (params.initial_file != nullptr) {
 		readInitialSet(params);
 	}
 }
@@ -105,17 +105,17 @@ Node *PDTree::findNode(char *name, Node *node, Node *dad) {
 		//if ((*it)->node != dad) {
 	FOR_NEIGHBOR_IT(node, dad, it) {
 		Node *res = findNode(name, (*it)->node, node);
-		if (res != NULL)
+		if (res != nullptr)
 			return res;
 	}
-	return NULL;
+	return nullptr;
 }
 */
 
 void PDTree::readRootNode(const char *root_name) {
 	string name = root_name;
 	Node *node = findNodeName(name);
-	if (node == NULL)
+	if (node == nullptr)
 		outError(ERR_NO_ROOT, root_name);
 	initialset.push_back(node);
 }
@@ -185,7 +185,7 @@ void PDTree::readParams(Params &params) {
 
 void PDTree::incoporateParams(double &scale, DoubleVector &tax_weight, Node* node, Node* dad) {
 	if (!node) node = root;
-	FOR_NEIGHBOR_DECLARE(node, NULL, it) {
+	FOR_NEIGHBOR_DECLARE(node, nullptr, it) {
 		double newlen;
 		newlen = (*it)->length * scale;
 		if (node->isLeaf())
@@ -386,7 +386,7 @@ int PDTree::findNearestTaxon(Node* &taxon, Node *node, Node *dad) {
 		return 0;
 	}
 	int distance = 10000000;
-	taxon = NULL;
+	taxon = nullptr;
 	FOR_NEIGHBOR_IT(node, dad, it) {
 		Node *mytaxon;
 		int mydistance = findNearestTaxon(mytaxon, (*it)->node, node);

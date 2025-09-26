@@ -392,7 +392,7 @@ void Checkpoint::transferSubCheckpoint(Checkpoint *target, string partial_key, b
  *-------------------------------------------------------------*/
 
 CheckpointFactory::CheckpointFactory() {
-    checkpoint = NULL;
+    checkpoint = nullptr;
 }
 
 void CheckpointFactory::setCheckpoint(Checkpoint *checkpoint) {

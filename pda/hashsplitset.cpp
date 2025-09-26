@@ -25,7 +25,7 @@ Split *SplitIntMap::findSplit(Split *sp) {
     if (ass_it != end()) {
         return ass_it->first;
     }
-    return NULL;
+    return nullptr;
 }
 
 
@@ -36,7 +36,7 @@ Split *SplitIntMap::findSplit(Split *sp, int &value) {
         return ass_it->first;
     }
     value = 0;
-    return NULL;
+    return nullptr;
 }
 
 int SplitIntMap::getValue(Split *sp) {

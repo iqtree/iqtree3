@@ -18,8 +18,8 @@ AliSimulator::AliSimulator(Params *input_params, int expected_number_sites, doub
     num_sites_per_state = tree->aln->seq_type == SEQ_CODON?3:1;
     STATE_UNKNOWN = tree->aln->STATE_UNKNOWN;
     max_num_states = tree->aln->getMaxNumStates();
-    latest_insertion = NULL;
-    first_insertion = NULL;
+    latest_insertion = nullptr;
+    first_insertion = nullptr;
     
     // estimating the appropriate length_ratio in cases models with +ASC
     estimateLengthRatio();
@@ -52,8 +52,8 @@ AliSimulator::AliSimulator(Params *input_params, IQTree *iq_tree, int expected_n
     num_sites_per_state = tree->aln->seq_type == SEQ_CODON?3:1;
     STATE_UNKNOWN = tree->aln->STATE_UNKNOWN;
     max_num_states = tree->aln->getMaxNumStates();
-    latest_insertion = NULL;
-    first_insertion = NULL;
+    latest_insertion = nullptr;
+    first_insertion = nullptr;
     
     // estimating the appropriate length_ratio in cases models with +ASC
     estimateLengthRatio();
@@ -790,8 +790,8 @@ void AliSimulator::simulateSeqsForTree(map<string,string> input_msa, std::vector
 
 void AliSimulator::executeEM(int thread_id, int &sequence_length, int default_segment_length, ModelSubst *model, map<string,string> input_msa, std::vector<bool>* const site_locked_vec, string output_filepath, std::ios_base::openmode open_mode, bool write_sequences_to_tmp_data, bool store_seq_at_cache, int max_depth, vector<string> &state_mapping)
 {
-    ostream *single_output = NULL;
-    ostream *out = NULL;
+    ostream *single_output = nullptr;
+    ostream *out = nullptr;
     vector<vector<short int>> sequence_cache;
     int actual_segment_length = sequence_length;
     
@@ -1007,7 +1007,7 @@ void AliSimulator::mergeOutputFiles(ostream *&single_output, int thread_id, stri
 void AliSimulator::executeIM(int thread_id, int &sequence_length, int default_segment_length, ModelSubst *model, map<string,string> input_msa, std::vector<bool>* const site_locked_vec, string output_filepath, std::ios_base::openmode open_mode, bool write_sequences_to_tmp_data, bool store_seq_at_cache, int max_depth, vector<string> &state_mapping)
 {
     int actual_segment_length = sequence_length;
-    ostream *out = NULL;
+    ostream *out = nullptr;
     vector<vector<short int>> sequence_cache;
     
     // Bug fix: in some cases the ids of leaves are not continuous -> in IM algorithm with multiple threads, we use the leaf id to jump to the current position to output the simulated sequences -> we need to build a vector of continuous ids
@@ -1265,7 +1265,7 @@ void AliSimulator::initVariables(int sequence_length, string output_filepath, ve
 
         // clone site_locked_vec
         std::vector<bool> site_needs_updating = *site_locked_vec;
-        updateRootSeq4PredefinedMut(site_needs_updating, tree->root, NULL);
+        updateRootSeq4PredefinedMut(site_needs_updating, tree->root, nullptr);
     }
 
     // check whether we could temporarily write sequences at tips to tmp_data file => a special case: with Indels without FunDi/ASC/Partitions
@@ -2667,7 +2667,7 @@ void AliSimulator::generateRandomSequenceFromStateFreqs(int sequence_length, vec
     
     // randomly generate each site in the sequence follows the base frequencies defined by the user
     for (int i = 0; i < sequence_length; i++)
-        sequence[i] =  getRandomItemWithAccumulatedProbMatrixMaxProbFirst(state_freqs, 0, max_num_states, max_prob_pos, NULL);
+        sequence[i] =  getRandomItemWithAccumulatedProbMatrixMaxProbFirst(state_freqs, 0, max_num_states, max_prob_pos, nullptr);
 }
 
 /**
@@ -3554,7 +3554,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
         insertion->phylo_nodes[i]->sequence->sequence_chunks[0] = genome_tree->exportNewGenome(insertion->phylo_nodes[i]->sequence->sequence_chunks[0], seq_length, tree->aln->STATE_UNKNOWN);
     
         // delete the insertion_pos of this node as we updated its sequence.
-        insertion->phylo_nodes[i]->sequence->insertion_pos = NULL;
+        insertion->phylo_nodes[i]->sequence->insertion_pos = nullptr;
     }
     
     // keep track of previous insertion
@@ -3615,7 +3615,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
                 insertion->phylo_nodes[i]->sequence->sequence_chunks[0] = genome_tree->exportNewGenome(insertion->phylo_nodes[i]->sequence->sequence_chunks[0], seq_length, tree->aln->STATE_UNKNOWN);
             
                 // delete the insertion_pos of this node as we updated its sequence.
-                insertion->phylo_nodes[i]->sequence->insertion_pos = NULL;
+                insertion->phylo_nodes[i]->sequence->insertion_pos = nullptr;
             }
         }
         
@@ -3628,7 +3628,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
 }
 
 /**
-*  reset tree (by setting the parents of all node to NULL) -> only using when simulating MSAs with openMP
+*  reset tree (by setting the parents of all node to nullptr) -> only using when simulating MSAs with openMP
 *
 */
 void AliSimulator::resetTree(int &max_depth, bool store_seq_at_cache, Node *node, Node *dad)

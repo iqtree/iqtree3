@@ -65,12 +65,12 @@ public:
 
 	/**
 		build the initial subtree based on the initial set of taxa
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 		@param subtree (OUT) resulted subtree
 		@param nodestack (TEMP) stack of node, used only by function
 	*/
-	void buildOnInitialSet(NodeVector &subtree, NodeVector &nodestack, Node *node = NULL, Node *dad = NULL);
+	void buildOnInitialSet(NodeVector &subtree, NodeVector &nodestack, Node *node = nullptr, Node *dad = nullptr);
 
 	/**
 		initialize the ordered list based on the initial subtree structure

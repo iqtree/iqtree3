@@ -33,7 +33,7 @@ RateGamma::RateGamma(int ncat, double shape, bool median, PhyloTree *tree) : Rat
 	//gamma_shape = MAX_GAMMA_SHAPE-1.0;
 	gamma_shape = max(tree->params->min_gamma_shape, fabs(shape));
 	fix_gamma_shape = false;
-	rates = NULL;
+	rates = nullptr;
 	if (shape > 0.0) {
 		// true unless -optfromgiven cmd line option
 		fix_gamma_shape = !(Params::getInstance().optimize_from_given_params);

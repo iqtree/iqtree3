@@ -91,7 +91,7 @@ public:
     void replace(PhyloNeighbor *new_nei, PhyloNeighbor *old_nei);
 
     /** restore neighbor, after calling replace */
-    void restore(PhyloNeighbor *new_nei, PhyloNeighbor *old_nei);
+    // void restore(PhyloNeighbor *new_nei, PhyloNeighbor *old_nei);
 
 protected:
 

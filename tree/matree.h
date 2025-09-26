@@ -87,11 +87,11 @@ public:
 		convert the tree into SplitIntMap, iterative procedure
 		@param sim (OUT) resulting splitIntMap
 		@param resp (internal) set of taxa below node
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 		@param taxonID (IN) the ID of an external node (taxon) to be presented in all splits
 	*/
-	void convertSplitIntMap(SplitIntMap &sg, Split *resp, const int taxonID, Node *node = NULL, Node *dad = NULL);
+	void convertSplitIntMap(SplitIntMap &sg, Split *resp, const int taxonID, Node *node = nullptr, Node *dad = nullptr);
 };
 
 #endif

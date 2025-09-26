@@ -27,7 +27,7 @@ RateHeterogeneity::RateHeterogeneity()
 {
 	name = "";
 	full_name = "Uniform";
-	phylo_tree = NULL;
+	phylo_tree = nullptr;
 }
 
 void RateHeterogeneity::setTree(PhyloTree *tree) {

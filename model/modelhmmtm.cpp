@@ -21,7 +21,7 @@ ModelHmmTm::ModelHmmTm(int numcat, int numtype, int* siteTypes, int numsite, str
     transit_normalize = aligned_alloc<double>(transit_size);
     tranSameCats = aligned_alloc<double>(get_safe_upper_limit(ntypepair));
 
-    transit_fwd = NULL; // site i-1 -> site i
+    transit_fwd = nullptr; // site i-1 -> site i
     // create the mapping between site ID and which matrix should be used for the transition between the previous site and the current site
     initialize_transit_id(siteTypes, nsite, typeDescs);
 }
@@ -30,13 +30,13 @@ ModelHmmTm::ModelHmmTm(int numcat, int numtype, int* siteTypes, int numsite, str
  destructor
  */
 ModelHmmTm::~ModelHmmTm() {
-    if (transit != NULL)
+    if (transit != nullptr)
         aligned_free(transit);
-    if (transit_normalize != NULL)
+    if (transit_normalize != nullptr)
         aligned_free(transit_normalize);
-    if (transit_fwd != NULL)
+    if (transit_fwd != nullptr)
         aligned_free(transit_fwd);
-    if (tranSameCats != NULL)
+    if (tranSameCats != nullptr)
         aligned_free(tranSameCats);
 }
 
@@ -46,7 +46,7 @@ void ModelHmmTm::initialize_transitLog() {
 
     // memory allocation of the array
     size_t transit_size = get_safe_upper_limit(ncat * ncat * ntypepair);
-    if (transitLog != NULL)
+    if (transitLog != nullptr)
         aligned_free(transitLog);
     transitLog = aligned_alloc<double>(transit_size);
 
@@ -79,7 +79,7 @@ void ModelHmmTm::initialize_transit_id(int* siteTypes, int nsite, string* typeDe
     }
     
     size_t array_size = get_safe_upper_limit(nsite);
-    if (transit_fwd != NULL)
+    if (transit_fwd != nullptr)
         aligned_free(transit_fwd);
     
     // which transit matrix should be used for each site
@@ -302,7 +302,7 @@ void ModelHmmTm::computeLogTransits() {
  * @return log values of transition matrix
  */
 double* ModelHmmTm::getTransitLog(int site_i) {
-    if (transit_fwd == NULL || transit_fwd[site_i] == -1)
-        return NULL;
+    if (transit_fwd == nullptr || transit_fwd[site_i] == -1)
+        return nullptr;
     return transitLog + transit_fwd[site_i] * sq_ncat;
 }

@@ -20,10 +20,10 @@ GenomeNode::GenomeNode()
     cumulative_converts_from_left_child = 0;
     cumulative_converts_from_parent = 0;
     
-    parent = NULL;
-    left_child = NULL;
-    right_child = NULL;
-    insertion = NULL;
+    parent = nullptr;
+    left_child = nullptr;
+    right_child = nullptr;
+    insertion = nullptr;
 }
 
 /**
@@ -39,10 +39,10 @@ GenomeNode::GenomeNode(GenomeNodeType n_type, int n_pos_ori, int n_length, int n
     cumulative_converts_from_left_child = 0;
     cumulative_converts_from_parent = 0;
     
-    parent = NULL;
-    left_child = NULL;
-    right_child = NULL;
-    insertion = NULL;
+    parent = nullptr;
+    left_child = nullptr;
+    right_child = nullptr;
+    insertion = nullptr;
 }
 
 /**
@@ -58,22 +58,22 @@ GenomeNode::~GenomeNode()
     if (left_child)
     {
         delete left_child;
-        left_child = NULL;
+        left_child = nullptr;
     }
     
     if (right_child)
     {
         delete right_child;
-        right_child = NULL;
+        right_child = nullptr;
     }
 }
 
 /**
     update relations
  */
-void GenomeNode::updateRelation(GenomeNode* n_parent, GenomeNode* n_left_child, GenomeNode* n_right_child)
+/* void GenomeNode::updateRelation(GenomeNode* n_parent, GenomeNode* n_left_child, GenomeNode* n_right_child)
 {
     parent = n_parent;
     left_child = n_left_child;
     right_child = n_right_child;
-}
+}*/

@@ -25,7 +25,7 @@ PhyloTreeMixlen::PhyloTreeMixlen() : IQTree()
 {
 	mixlen = 1;
     cur_mixture = -1;
-//    relative_treelen = NULL;
+//    relative_treelen = nullptr;
     initializing_mixlen = false;
 }
 
@@ -36,7 +36,7 @@ PhyloTreeMixlen::PhyloTreeMixlen(Alignment *aln, int mixlen) : IQTree(aln)
 {
 //	cout << "Initializing heterotachy mixture branch lengths" << endl;
     cur_mixture = -1;
-//    relative_treelen = NULL;
+//    relative_treelen = nullptr;
     initializing_mixlen = false;
     setMixlen(mixlen);
 }
@@ -448,7 +448,7 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
             // E-step
             // decoupled weights (prop) from _pattern_lh_cat to obtain L_ci and compute pattern likelihood L_i
             for (size_t ptn = 0; ptn < nptn; ptn++) {
-                double *this_lk_cat = _pattern_lh_cat + ptn*nmix;
+                double *this_lk_cat = _pattern_lh_cat + (ptn*nmix);
                 double lk_ptn = ptn_invar[ptn];
                 for (size_t c = 0; c < nmix; c++) {
                     lk_ptn += this_lk_cat[c];
@@ -468,7 +468,7 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
             computePtnFreq();
             
             for (cur_mixture = 0; cur_mixture < mixlen; cur_mixture++) {
-                double *this_lk_cat = _pattern_lh_cat+cur_mixture;
+                const double *this_lk_cat = _pattern_lh_cat+cur_mixture;
                 for (size_t ptn = 0; ptn < nptn; ptn++) {
                     ptn_freq[ptn] = this_lk_cat[ptn*nmix];
                 }                
@@ -789,23 +789,23 @@ void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
 #pragma omp parallel for
 #endif
             for (size_t ptn = 0; ptn < nptn; ptn++) {
-                double *partial_lh_dad = dad_branch->partial_lh + ptn*block;
-                double *theta = theta_all + ptn*block;
+                const double *partial_lh_dad = dad_branch->partial_lh + (ptn*block);
+                double *theta = theta_all + (ptn*block);
                 
                 // TODO: check with vectorclass!
-                double *lh_tip = tip_partial_lh +
+                const double *lh_tip = tip_partial_lh +
                 ((int)((ptn < orig_nptn) ? (aln->at(ptn))[dad->id] :  model_factory->unobserved_ptns[ptn-orig_nptn][dad->id]))*statemix;
                 for (size_t m = 0; m < nmixture; m++) {
                     for (size_t i = 0; i < statecat; i++) {
-                        theta[m*statecat+i] = lh_tip[m*nstates + i%nstates] * partial_lh_dad[m*statecat+i];
+                        theta[(m*statecat)+i] = lh_tip[(m*nstates) + (i%nstates)] * partial_lh_dad[(m*statecat)+i];
                     }
                 }
             }
 			// ascertainment bias correction
 	    } else {
 	    	// both dad and node are internal nodes
-		    double *partial_lh_node = node_branch->partial_lh;
-		    double *partial_lh_dad = dad_branch->partial_lh;
+		    const double *partial_lh_node = node_branch->partial_lh;
+		    const double *partial_lh_dad = dad_branch->partial_lh;
 
             size_t all_entries = nptn*block;
 #ifdef _OPENMP
@@ -833,9 +833,9 @@ void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
             // length for heterotachy model
             double val = exp(cof*dad_branch->getLength(cur_mixture)) * prop * model->getMixtureWeight(cur_mixture);
             double val1_ = cof*val;
-            val0[(c)*nstates+i] = val;
-            val1[(c)*nstates+i] = val1_;
-            val2[(c)*nstates+i] = cof*val1_;
+            val0[((c)*nstates)+i] = val;
+            val1[((c)*nstates)+i] = val1_;
+            val2[((c)*nstates)+i] = cof*val1_;
         }
     }
 
@@ -846,7 +846,7 @@ void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
 #endif
     for (size_t ptn = 0; ptn < nptn; ptn++) {
         double lh_ptn = ptn_invar[ptn], df_ptn = 0.0, ddf_ptn = 0.0;
-        double *theta = theta_all + ptn*block + cur_mixture*statecat;
+        const double *theta = theta_all + (ptn*block) + (cur_mixture*statecat);
         for (size_t i = 0; i < statecat; i++) {
             lh_ptn += val0[i] * theta[i];
             df_ptn += val1[i] * theta[i];
