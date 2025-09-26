@@ -820,6 +820,18 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
              << num_variant_sites-num_informative_sites << " singleton sites, "
              << (int)(frac_const_sites*getNSite()) << " constant sites" << endl;
     }
+    
+    // Bug fix: automatically switch to PARS instead of PLL when #sites * #taxa > 2^31
+    unsigned long int num_taxa_sites = static_cast<unsigned long int>(getNSeq()) * static_cast<unsigned long int>(getNSite());
+    if (num_taxa_sites >= static_cast<unsigned long int>(INT_MAX) && Params::getInstance().start_tree != STT_PARSIMONY)
+    {
+        Params::getInstance().start_tree = STT_PARSIMONY;
+        
+        if (verbose_mode >= VB_MED) {
+            cout << "Switch to using Parsimony to build start trees." << endl;
+        }
+    }
+    
     //buildSeqStates();
     checkSeqName();
     // OBSOLETE: identical sequences are handled later
@@ -860,6 +872,18 @@ Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model
         << num_informative_sites << " parsimony-informative, "
         << num_variant_sites-num_informative_sites << " singleton sites, "
         << (int)(frac_const_sites*getNSite()) << " constant sites" << endl;
+    
+    // Bug fix: automatically switch to PARS instead of PLL when #sites * #taxa > 2^31
+    unsigned long int num_taxa_sites = static_cast<unsigned long int>(getNSeq()) * static_cast<unsigned long int>(getNSite());
+    if (num_taxa_sites >= static_cast<unsigned long int>(INT_MAX) && Params::getInstance().start_tree != STT_PARSIMONY)
+    {
+        Params::getInstance().start_tree = STT_PARSIMONY;
+        
+        if (verbose_mode >= VB_MED) {
+            cout << "Switch to using Parsimony to build start trees." << endl;
+        }
+    }
+    
     //buildSeqStates();
     checkSeqName();
     // OBSOLETE: identical sequences are handled later
@@ -908,6 +932,18 @@ Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, str
              << num_variant_sites-num_informative_sites << " singleton sites, "
              << (int)(frac_const_sites*getNSite()) << " constant sites" << endl;
     }
+    
+    // Bug fix: automatically switch to PARS instead of PLL when #sites * #taxa > 2^31
+    unsigned long int num_taxa_sites = static_cast<unsigned long int>(getNSeq()) * static_cast<unsigned long int>(getNSite());
+    if (num_taxa_sites >= static_cast<unsigned long int>(INT_MAX) && Params::getInstance().start_tree != STT_PARSIMONY)
+    {
+        Params::getInstance().start_tree = STT_PARSIMONY;
+        
+        if (verbose_mode >= VB_MED) {
+            cout << "Switch to using Parsimony to build start trees." << endl;
+        }
+    }
+    
     //buildSeqStates();
     checkSeqName();
     // OBSOLETE: identical sequences are handled later

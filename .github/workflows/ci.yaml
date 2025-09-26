@@ -311,13 +311,12 @@ jobs:
         shell: cmd
         run: choco install llvm --version=14.0.6 --allow-downgrade
 
-      - name: Install Boost
-        uses: MarkusJx/install-boost@v2.4.5
-        id: install-boost
-        with:
-          boost_version: 1.84.0
-          platform_version: 2022
-          toolset: mingw
+      - name: Download and Extract Boost 1.84.0
+        shell: pwsh
+        run: |
+          curl -L -o boost.tar.gz https://github.com/MarkusJx/prebuilt-boost/releases/download/1.84.0/boost-1.84.0-windows-2022-mingw-static-x86.tar.gz
+          tar -xzf boost.tar.gz
+          mv boost C:/local/boost
 
       - name: Install Eigen3
         shell: cmd
@@ -334,14 +333,14 @@ jobs:
             -DCMAKE_C_FLAGS=--target=x86_64-pc-windows-gnu ^
             -DCMAKE_CXX_FLAGS=--target=x86_64-pc-windows-gnu ^
             -DCMAKE_MAKE_PROGRAM=mingw32-make ^
-            -DBoost_INCLUDE_DIR=${{steps.install-boost.outputs.BOOST_ROOT}}/include ^
-            -DBoost_LIBRARY_DIRS=${{steps.install-boost.outputs.BOOST_ROOT}}/lib ^
+            -DBoost_INCLUDE_DIR="C:/local/boost/include" ^
+            -DBoost_LIBRARY_DIRS="C:/local/boost/lib" ^
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
             -DIQTREE_FLAGS="static cpp14" ..
           make -j
           make package
         env:
-          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
+          BOOST_ROOT: "C:/local/boost"
 
       - name: Check File Arch
         shell: bash
