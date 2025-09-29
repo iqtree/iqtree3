@@ -1840,16 +1840,17 @@ void mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, S
 }
 
 // for mAIC
-void mergePartitionsAln(SuperAlignment *&super_aln, vector<set<int> > &gene_sets) {
+void mergePartitionsmAIC(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, StrVector &model_names) {
+    //cout << "Merging into " << gene_sets.size() << " partitions..." << endl;
     vector<set<int> >::iterator it;
-    //SuperAlignment *super_aln = (SuperAlignment*)super_tree->aln;
+    SuperAlignment *super_aln = (SuperAlignment*)super_tree->aln;
     vector<PartitionInfo> part_info;
-    //vector<PhyloTree*> tree_vec;
+    vector<PhyloTree*> tree_vec;
     SuperAlignment *new_super_aln = new SuperAlignment();
     for (it = gene_sets.begin(); it != gene_sets.end(); it++) {
         Alignment *aln = super_aln->concatenateAlignments(*it);
         PartitionInfo info;
-        //aln->model_name = model_names[it-gene_sets.begin()];
+        aln->model_name = model_names[it-gene_sets.begin()];
         info.part_rate = 1.0; // BIG FIX: make -spp works with -m TESTMERGE now!
         info.evalNNIs = 0;
         for (set<int>::iterator i = it->begin(); i != it->end(); i++) {
@@ -1879,18 +1880,29 @@ void mergePartitionsAln(SuperAlignment *&super_aln, vector<set<int> > &gene_sets
         info.nniMoves[0].ptnlh = NULL;
         info.nniMoves[1].ptnlh = NULL;
         part_info.push_back(info);
-        //PhyloTree *tree = super_tree->extractSubtree(*it);
-        //tree->setParams(super_tree->params);
-        //tree->setAlignment(aln);
-        //tree_vec.push_back(tree);
+        PhyloTree *tree = super_tree->extractSubtree(*it);
+        tree->setParams(super_tree->params);
+        tree->setAlignment(aln);
+        tree_vec.push_back(tree);
         new_super_aln->partitions.push_back(aln);
     }
 
+    // BUG FIX 2016-11-29: when merging partitions with -m TESTMERGE, sequence order is changed
+    // get the taxa names from existing tree
+    StrVector seq_names;
+    if (super_tree->root) {
+        super_tree->getTaxaName(seq_names);
+    }
+    new_super_aln->init(&seq_names);
 
-    super_aln = new_super_aln;
-    //delete new_super_aln;
-//    super_tree->aln = new SuperAlignment(super_tree);
-    //super_tree->setAlignment(new_super_aln);
+    //for (PhyloSuperTree::reverse_iterator tit = super_tree->rbegin(); tit != super_tree->rend(); tit++)
+    //    delete (*tit);
+    super_tree->clear();
+    super_tree->insert(super_tree->end(), tree_vec.begin(), tree_vec.end());
+    super_tree->part_info = part_info;
+
+    delete super_tree->aln;
+    super_tree->setAlignment(new_super_aln);
 }
 
 /**
@@ -4304,11 +4316,12 @@ void PartitionFinder::getBestModelforPartitionsNoMPI(int nthreads, vector<pair<i
         } else {
             maic_tree = new PhyloSuperTree(cur_super_aln);
         }
-
+        /*
         if (params->start_tree == STT_PLL_PARSIMONY || params->start_tree == STT_RANDOM_TREE || params->pll) {
             // Initialized all data structure for PLL
             maic_tree->initializePLL(*params);
         }
+         */
         maic_tree->setParams(params);
         maic_tree->setLikelihoodKernel(params->SSE);
         maic_tree->optimize_by_newton = params->optimize_by_newton;
@@ -4469,28 +4482,39 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
             double cur_score_maic;
             PhyloSuperTree *maic_tree;
             ModelPair cur_pair;
+            StrVector model_names;
+
             cur_pair.part1 = it->second.part1;
             cur_pair.part2 = it->second.part2;
+            cur_pair.model_name = it->second.model_name;
             ASSERT(cur_pair.part1 < cur_pair.part2);
             cur_pair.merged_set.insert(gene_sets[cur_pair.part1].begin(), gene_sets[cur_pair.part1].end());
             cur_pair.merged_set.insert(gene_sets[cur_pair.part2].begin(), gene_sets[cur_pair.part2].end());
 
+
             cur_gene_sets = gene_sets;
+            model_names.resize(in_tree->size());
+            for (int i = 0; i < gene_sets.size(); i++) {
+                model_names[i] = in_tree->at(i)->aln->model_name;
+            }
             cur_gene_sets[cur_pair.part1] = cur_pair.merged_set;
+            model_names[cur_pair.part1] = cur_pair.model_name;
+
             cur_gene_sets.erase(cur_gene_sets.begin() + cur_pair.part2);
+            model_names.erase(model_names.begin() + cur_pair.part2);
 
             cur_super_aln = ((SuperAlignment *) in_tree->aln);
-            mergePartitionsAln(cur_super_aln, cur_gene_sets);
             if (params->partition_type != BRLEN_OPTIMIZE) {
                 maic_tree = new PhyloSuperTreePlen(cur_super_aln, params->partition_type);
             } else {
                 maic_tree = new PhyloSuperTree(cur_super_aln);
             }
-
+            /*
             if (params->start_tree == STT_PLL_PARSIMONY || params->start_tree == STT_RANDOM_TREE || params->pll) {
                 // Initialized all data structure for PLL
                 maic_tree->initializePLL(*params); //error place?
             }
+            */
             maic_tree->setParams(params);
             maic_tree->setLikelihoodKernel(params->SSE);
             maic_tree->optimize_by_newton = params->optimize_by_newton;
@@ -4501,6 +4525,16 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
 
             for (int j = 0; j < maic_tree->size(); j++) {
                 model_info->startStruct(maic_tree->at(j)->aln->name);
+                string aaa = maic_tree->at(j)->aln->name;
+                maic_tree->at(j)->restoreCheckpoint();
+                maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
+                model_info->endStruct();
+            }
+            mergePartitionsmAIC(maic_tree, cur_gene_sets, model_names);
+            int j = maic_tree->size();
+            for (int j = 0; j < maic_tree->size(); j++) {
+                model_info->startStruct(maic_tree->at(j)->aln->name);
+                string aaa = maic_tree->at(j)->aln->name;
                 maic_tree->at(j)->restoreCheckpoint();
                 maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
                 model_info->endStruct();
@@ -4508,7 +4542,6 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
                 string best_model_name = maic_tree->at(j)->aln->model_name;
                 cout << "********best_model" << best_model_name << endl;
             }
-
             lh_marginal = maic_tree->getModelFactory()->computeMarginalLh();
 
             cur_score_maic = computeInformationScore(lh_marginal, dfsum, ssize, params->model_test_criterion);
@@ -5029,7 +5062,6 @@ void PartitionFinder::test_PartitionModel() {
     inf_score = computeInformationScore(lhsum, dfsum, ssize, params->model_test_criterion);
     cout << "Full partition model " << criterionName(params->model_test_criterion)
          << " score: " << inf_score << " (LnL: " << lhsum << "  df:" << dfsum << ")" << endl;
-
     if (params->marginal_lh_aic)
         cout << "Full partition model mAIC score: " << inf_score_maic << " (Marginal LnL: " << lh_marginal <<  ")" << endl;
 
@@ -5238,7 +5270,7 @@ void PartitionFinder::test_PartitionModel() {
 
     int original_size = in_tree->size();
     if (gene_sets.size() < in_tree->size()) {
-        mergePartitions(in_tree, gene_sets, model_names);
+        mergePartitionsmAIC(in_tree, gene_sets, model_names);
         lhvec.resize(in_tree->size());
         dfvec.resize(in_tree->size());
         lenvec.resize(in_tree->size());
