@@ -1148,11 +1148,9 @@ Alignment *SuperAlignment::removeIdenticalSeq(string not_remove, bool keep_two, 
 	return aln;
 }
 
-int SuperAlignment::checkAbsentStates(string msg) {
-    int count = 0;
-    for (auto it = partitions.begin(); it != partitions.end(); ++it)
-        count += (*it)->checkAbsentStates("partition " + convertIntToString((it-partitions.begin())+1));
-    return count;
+void SuperAlignment::checkAbsentStates(string msg) {
+    for (vector<Alignment*>::iterator it = partitions.begin(); it != partitions.end(); ++it)
+        (*it)->checkAbsentStates("partition " + convertIntToString((it-partitions.begin())+1));
 }
 
 /*

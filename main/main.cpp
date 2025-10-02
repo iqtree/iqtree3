@@ -2844,16 +2844,20 @@ extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const 
 
 // Perform phylogenetic analysis on the input alignment (in string format)
 // With restriction to the input toplogy
+// blfix -- whether to fix the branch length as those on the given tree, default: false
 // num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
-extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, int rand_seed, int num_thres) {
+extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, bool blfix, int rand_seed, int num_thres) {
     StringResult output;
     output.errorStr = strdup("");
     
     try {
         input_options* in_options = NULL;
-        if (num_thres >= 0) {
+        if (num_thres >= 0 || blfix) {
             in_options = new input_options();
-            in_options->insert("-nt", convertIntToString(num_thres));
+            if (num_thres >= 0)
+                in_options->insert("-nt", convertIntToString(num_thres));
+            if (blfix)
+                in_options->insert("-blfix", "");
         }
         string prog = "fit_tree";
         output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options);
@@ -3153,6 +3157,207 @@ extern "C" StringResult version() {
             output.errorStr = new char[strlen(e.what())+1];
             strcpy(output.errorStr, e.what());
         }
+    }
+    return output;
+}
+
+// Execute AliSim Simulation
+// output: results in YAML format that contains the simulated alignment and the content of the log file
+// tree -- the NEWICK tree string
+// subst_model -- the substitution model name
+// seed -- the random seed
+// partition_info -- partition information
+// partition_type -- partition type is either ‘equal’, ‘proportion’, or ‘unlinked’
+// seq_length -- the length of sequences
+// insertion_rate -- the insertion rate
+// deletion_rate -- the deletion rate
+// root_seq -- the root sequence
+// num_threads -- the number of threads
+// insertion_size_distribution -- the insertion size distribution
+// deletion_size_distribution -- the deletion size distribution
+// population_size -- the population size
+extern "C" StringResult simulate_alignment(const char* tree, const char* subst_model, int seed, const char* partition_info, const char* partition_type, int seq_length, double insertion_rate, double deletion_rate, const char* root_seq, int num_threads, const char* insertion_size_distribution, const char* deletion_size_distribution, int population_size) {
+    
+    // verbose_mode
+    // extern VerboseMode verbose_mode;
+    /*progress_display::setProgressDisplay(false);
+    // verbose_mode = VB_MIN;
+    verbose_mode = VB_QUIET; // (quiet mode)*/
+    
+    StringResult output;
+    output.errorStr = strdup("");
+    randstream = nullptr;
+    
+    try {
+        Params& params = Params::getInstance();
+        params.setDefault();
+        
+        params.alisim_active = true;
+        params.multi_rstreams_used = true;
+        params.alisim_output_filename = "AliSimAlignment";
+        params.out_prefix = "AliSimTrees.nwk";
+        params.aln_output_format = IN_FASTA;
+        // set the population size, if specified
+        if (population_size != -1)
+        {
+            // validate the input
+            if (population_size <= 0)
+                outError("Population size must be positive!");
+            
+            // set the scaling factor
+            params.alisim_branch_scale = 0.5 / population_size;
+        }
+        params.ran_seed = seed;
+        init_random(params.ran_seed);
+        // initialize multiple random streams if needed
+        if (params.multi_rstreams_used)
+            init_multi_rstreams();
+        
+        // load distributions from built-in file
+        read_distributions();
+        
+        bool append_log = true;
+        _log_file = params.out_prefix;
+        _log_file += ".log";
+        startLogFile(append_log);
+        cout << "Start of the log file:" << endl; // This line seems to be vital...
+        
+        params.user_file = params.out_prefix;
+        ofstream trees_file(params.user_file);
+        if (!trees_file.is_open())
+            outError("Failed to create or open the trees file for writing.");
+        if (!tree || tree[0] == '\0')
+            outError("The input tree is null.");
+        trees_file << tree << endl;
+        trees_file.close();
+        
+        params.model_name = subst_model;
+        
+        if((partition_type == nullptr || strcmp(partition_type, "") == 0) && (partition_info && partition_info[0] != '\0'))
+            outError("When partition info is provided, partition type must be provided.");
+        else if(partition_type != nullptr && strcmp(partition_type, "") != 0) {
+            if(strcmp(partition_type, "equal") == 0) {
+                params.partition_type = BRLEN_FIX;
+                params.optimize_alg_gammai = "Brent";
+                params.opt_gammai = false;
+            }
+            else if(strcmp(partition_type, "proportion") == 0) {
+                params.partition_type = BRLEN_SCALE;
+                params.opt_gammai = false;
+            }
+            else if(strcmp(partition_type, "unlinked") != 0)
+                outError("Partition type can be equal, proportion, or unlinked.");
+            params.partition_file = "AliSimPartitionInfo.nex";
+            ofstream partition_info_file(params.partition_file);
+            if (!partition_info_file.is_open())
+                outError("Failed to create or open the partition info file for writing.");
+            partition_info_file << partition_info << std::endl;
+            partition_info_file.close();
+        }
+        
+        if (seq_length < 1)
+            outError("Positive sequence please.");
+        params.alisim_sequence_length = seq_length;
+        
+        if (insertion_rate < 0)
+            outError("Insertion rate must not be negative.");
+        params.alisim_insertion_ratio = insertion_rate;
+        if (deletion_rate < 0)
+            outError("Deletion rate must not be negative.");
+        params.alisim_deletion_ratio = deletion_rate;
+        
+        if(root_seq != nullptr && strcmp(root_seq, "") != 0) {
+            params.root_ref_seq_aln = "AliSimRootSequence.fasta";
+            ofstream root_seq_file(params.root_ref_seq_aln);
+            if (!root_seq_file.is_open())
+                outError("Failed to create or open the root sequence file for writing.");
+            root_seq_file << ">root" << endl;
+            root_seq_file << root_seq << endl;
+            root_seq_file.close();
+            params.root_ref_seq_name = "root";
+        }
+        
+        if (num_threads < 0)
+            outError("Number of threads must not be negative.");
+        params.num_threads = num_threads;
+        
+    #ifdef _OPENMP
+        if (params.num_threads >= 1) {
+            omp_set_num_threads(params.num_threads);
+            params.num_threads = omp_get_max_threads();
+        }
+    //    int max_threads = omp_get_max_threads();
+        int max_procs = countPhysicalCPUCores();
+        cout << " - ";
+        if (params.num_threads > 0)
+            cout << params.num_threads  << " threads";
+        else
+            cout << "auto-detect threads";
+        cout << " (" << max_procs << " CPU cores detected)";
+        if (params.num_threads  > max_procs) {
+            cout << endl;
+            outError("You have specified more threads than CPU cores available.");
+        }
+        // omp_set_nested(false); // don't allow nested OpenMP parallelism
+        omp_set_max_active_levels(1);
+    #else
+        if (params.num_threads != 1) {
+            cout << endl << endl;
+            outError("Number of threads must be 1 for sequential version.");
+        }
+    #endif
+        cout << endl;
+        
+        if(insertion_size_distribution != nullptr && strcmp(insertion_size_distribution, "") != 0)
+            params.alisim_insertion_distribution = parseIndelDis(insertion_size_distribution, "Insertion");
+        if(deletion_size_distribution != nullptr && strcmp(deletion_size_distribution, "") != 0)
+            params.alisim_deletion_distribution = parseIndelDis(deletion_size_distribution, "Deletion");
+        
+        IQTree* iqtree_ptr = nullptr;
+        executeSimulation(params, iqtree_ptr);
+                
+        ostringstream yamlss;
+        string line;
+        yamlss << "alignment: |" << endl;
+        ifstream in_alignment("AliSimAlignment.fa");
+        if (!in_alignment)
+            outError("Failed to open the alignment file.");
+        while (safeGetline(in_alignment, line))
+            yamlss << "  " << line << endl;
+        in_alignment.close();
+        yamlss << endl << "log: |" << endl;
+        ifstream in_log(_log_file);
+        if (!in_log)
+            outError("Failed to open the log file.");
+        while (safeGetline(in_log, line))
+            yamlss << "  " << line << endl;
+        in_log.close();
+        
+        string yamlstr = yamlss.str();
+        if (yamlstr.length() > 0) {
+            output.value = new char[yamlstr.length() + 1];
+            strcpy(output.value, yamlstr.c_str());
+        }
+        
+        finish_random();
+        // finish multiple random streams if used
+        if (params.multi_rstreams_used)
+            finish_multi_rstreams();
+        
+        funcExit();
+    } catch (const exception& e) {
+        if (strlen(e.what()) > 0) {
+            output.errorStr = new char[strlen(e.what()) + 1];
+            strcpy(output.errorStr, e.what());
+        }
+        
+        if (randstream != nullptr)
+            finish_random();
+        // finish multiple random streams if used
+        if (Params::getInstance().multi_rstreams_used)
+            finish_multi_rstreams();
+        
+        funcExit();
     }
     return output;
 }
@@ -3483,8 +3688,15 @@ void input_options::set_params(Params& params) {
             params.consensus_type = CT_CONSENSUS_TREE;
             params.stop_condition = SC_BOOTSTRAP_CORRELATION;
         }
-        else if (flags[0] == "-nt") {
+        else if (flags[i] == "-nt") {
             params.num_threads = atoi(values[i].c_str());
+        }
+        else if (flags[i] == "-blfix") {
+            params.fixed_branch_length = BRLEN_FIX;
+            params.optimize_alg_gammai = "Brent";
+            params.opt_gammai = false;
+            params.min_iterations = 0;
+            params.stop_condition = SC_FIXED_ITERATION;
         }
     }
 }

@@ -24,12 +24,14 @@ jobs:
           - gcc-version: 9
             cmake-version: 3.14.7
             upload: true
-            runtime-arg: 4
+            runtime-arg: Linux-gcc-9
+            memory-arg: Linux-gcc-9
           # Latest supported gcc and cmake versions
           - gcc-version: 12
             cmake-version: latest
             upload: false
-            runtime-arg: 5
+            runtime-arg: Linux-gcc-12
+            memory-arg: Linux-gcc-12
 
     steps:
       - name: Checkout
@@ -81,6 +83,11 @@ jobs:
           chmod +x test_scripts/verify_runtime.sh
           ./test_scripts/verify_runtime.sh "${{ matrix.runtime-arg }}"
 
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh "${{ matrix.memory-arg }}"
+
   build-linux-aarch64:
     name: Linux aarch64
     runs-on: ubuntu-22.04-arm
@@ -125,7 +132,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 6
+          ./test_scripts/verify_runtime.sh Linux-aarch64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh Linux-aarch64
 
   compile-linux-universal:
     name: Linux Universal
@@ -210,7 +222,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 7
+          ./test_scripts/verify_runtime.sh mac-os-x86-64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh mac-os-x86-64
 
   build-macos-arm:
     name: Mac OS ARM64
@@ -258,7 +275,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh 8
+          ./test_scripts/verify_runtime.sh mac-os-arm64
+
+      - name: Run verify_memory.sh
+        run: |
+          chmod +x test_scripts/verify_memory.sh
+          ./test_scripts/verify_memory.sh mac-os-arm64
 
   compile-mac-universal:
     name: Mac OS Universal
@@ -311,13 +333,12 @@ jobs:
         shell: cmd
         run: choco install llvm --version=14.0.6 --allow-downgrade
 
-      - name: Install Boost
-        uses: MarkusJx/install-boost@v2.4.5
-        id: install-boost
-        with:
-          boost_version: 1.84.0
-          platform_version: 2022
-          toolset: mingw
+      - name: Download and Extract Boost 1.84.0
+        shell: pwsh
+        run: |
+          curl -L -o boost.tar.gz https://github.com/MarkusJx/prebuilt-boost/releases/download/1.84.0/boost-1.84.0-windows-2022-mingw-static-x86.tar.gz
+          tar -xzf boost.tar.gz
+          mv boost C:/local/boost
 
       - name: Install Eigen3
         shell: cmd
@@ -334,14 +355,14 @@ jobs:
             -DCMAKE_C_FLAGS=--target=x86_64-pc-windows-gnu ^
             -DCMAKE_CXX_FLAGS=--target=x86_64-pc-windows-gnu ^
             -DCMAKE_MAKE_PROGRAM=mingw32-make ^
-            -DBoost_INCLUDE_DIR=${{steps.install-boost.outputs.BOOST_ROOT}}/include ^
-            -DBoost_LIBRARY_DIRS=${{steps.install-boost.outputs.BOOST_ROOT}}/lib ^
+            -DBoost_INCLUDE_DIR="C:/local/boost/include" ^
+            -DBoost_LIBRARY_DIRS="C:/local/boost/lib" ^
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
             -DIQTREE_FLAGS="static cpp14" ..
           make -j
           make package
         env:
-          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
+          BOOST_ROOT: "C:/local/boost"
 
       - name: Check File Arch
         shell: bash
@@ -371,3 +392,7 @@ jobs:
         shell: pwsh
         run: |
           ./test_scripts/verify_runtime.ps1
+
+      - name: Run verify_memory.ps1
+        run: |
+          ./test_scripts/verify_memory.ps1

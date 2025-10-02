@@ -1164,3 +1164,53 @@ void ModelProtein::computeTipLikelihood(PML::StateType state, double *state_lk) 
     state_lk[ambi_aa[cstate*2+1]] = 1.0;
 }
 
+void ModelProtein::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    RateHeterogeneity* rate = phylo_tree->getRate();
+    bool equal_freq = (freq_type == FREQ_EQUAL);
+
+    // Get MrBayes Model
+    auto aa_model_map = getIqTreeToMrBayesAAModels();
+    auto iter = aa_model_map.find(name);
+    string mapped_model = "gtr";
+
+    // If model is in map, set mappedModel to the value
+    if (iter != aa_model_map.end())
+        mapped_model = iter->second;
+
+    out << "using MrBayes model " << mapped_model;
+
+    if (equal_freq)
+        out << "+FQ";
+
+    // RHAS Specification
+    // Free Rate should be substituted by +G+I
+    bool has_gamma = rate->getGammaShape() != 0.0 || rate->isFreeRate();
+    bool has_invariable = rate->getPInvar() != 0.0 || rate->isFreeRate();
+    string rate_str = "equal";
+    if (has_gamma) {
+        if (has_invariable) {
+            rate_str = "invgamma";
+            out << "+G+I";
+        }
+        else {
+            rate_str = "gamma";
+            out << "+G";
+        }
+    } else if (has_invariable) {
+        rate_str = "propinv";
+        out << "+I";
+    }
+
+    out << "]" << endl;
+
+    // Lset Parameters
+    out << "  lset applyto=(" << partition << ") nucmodel=protein rates=" << rate_str << ";" << endl;
+
+    out << "  prset applyto=(" << partition << ")" << " aamodelpr=fixed(" << mapped_model << ")";
+	
+    if (equal_freq)
+        out << " statefreqpr=fixed(equal)";
+
+    out << ";" << endl;
+}
+

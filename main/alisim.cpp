@@ -483,6 +483,34 @@ void executeSimulation(Params& params, IQTree *&tree)
     else
         alisimulator = new AliSimulator(&params);
     
+    // validate the branch lengths, show a warning if users input a tree with very long branch lengths (maybe in generation unit instead of substitutions per site) and not scale or re-generate the branch lengths
+    if (!params.alisim_skip_bl_check && params.alisim_branch_scale >= 1.0 && !params.branch_distribution && alisimulator->tree)
+    {
+        // check a single tree
+        if (!(alisimulator->tree->isSuperTree() && params.partition_type == BRLEN_OPTIMIZE))
+        {
+            const double mean_bl = alisimulator->tree->treeLength() / alisimulator->tree->branchNum;
+            if (mean_bl >= 10.0)
+            {
+                outError("Extremely long mean branch length (" + convertDoubleToString(mean_bl) + ") detected. If your branch lengths are in generations rather than substitutions per site, please specify the population size using `-pop-size <NUM>` (or `population_size=<NUM> for the Python API). Otherwise, you can add `--skip-bl-check` to skip checking branch lengths.");
+            }
+        }
+        // check all trees in a super tree with unlinked branch lengths
+        else
+        {
+            PhyloSuperTree* super_tree = (PhyloSuperTree*) alisimulator->tree;
+            // loop over all partition trees
+            for (size_t i = 0; i < super_tree->size(); ++i)
+            {
+                const double mean_bl = super_tree->at(i)->treeLength() / alisimulator->tree->branchNum;
+                if (mean_bl >= 10.0)
+                {
+                    outError("Extremely long mean branch length (" + convertDoubleToString(mean_bl) + ") detected in partition tree " + convertIntToString(i + 1) + ". If your branch lengths are in generations rather than substitutions per site, please specify the population size using `-pop-size <NUM>` (or `population_size=<NUM> for the Python API). Otherwise, you can add `--skip-bl-check` to skip checking branch lengths.");
+                }
+            }
+        }
+    }
+    
     // only unroot tree and stop if the user just wants to do so
     if (alisimulator->params->alisim_only_unroot_tree)
     {
@@ -1119,6 +1147,14 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
                     break;
             }
         }
+        
+        // fix crashing issue because accessing to deallocated pointer
+        // delete first_insertion
+        if (super_alisimulator->first_insertion)
+        {
+            delete super_alisimulator->first_insertion;
+            super_alisimulator->first_insertion = nullptr;
+        }
     }
     
     // output full tree (with internal node names) if outputting internal sequences
@@ -1234,8 +1270,9 @@ void generatePartitionAlignmentFromSingleSimulator(AliSimulator *&alisimulator, 
         delete tmp_alisimulator;
 
         // bug fixes: avoid accessing to deallocated pointer
-        if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
-            alisimulator->first_insertion = nullptr;
+        // Update: we must keep first_insertion for partition model, this pointer will be deleted in a later step
+        /*if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
+            alisimulator->first_insertion = nullptr;*/
     }
 
 }

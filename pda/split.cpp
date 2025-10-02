@@ -179,6 +179,7 @@ bool Split::compatible(Split &sp)
 	for (iterator it = begin(), sit = sp.begin(); it != end(); it++, sit++)
 	{
 		int num_bits = (it+1 == end()) ? ntaxa % UINT_BITS : UINT_BITS;
+		if (num_bits == 0) num_bits = UINT_BITS; // ntaxa % UINT_BITS == 0
 		UINT it2 = (1 << (num_bits-1)) - 1 + (1 << (num_bits-1)) - (*it);
 		UINT sit2 = (1 << (num_bits-1)) - 1 + (1 << (num_bits-1)) - (*sit);
 

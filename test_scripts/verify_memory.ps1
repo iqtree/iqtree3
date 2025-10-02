@@ -3,7 +3,7 @@ param (
 )
 
 $WD = "test_scripts/test_data"
-$expectedFile = Join-Path $WD "expected_runtime.tsv"
+$expectedFile = Join-Path $WD "expected_memory.tsv"
 $reportedFile = "time_log.tsv"
 $selectedColumnsFile = Join-Path $WD "selected_columns.tsv"
 $reportedColumnFile = "$env:TEMP\reported_column.tsv"
@@ -31,7 +31,7 @@ $selectedColumns | Set-Content $selectedColumnsFile
 $reportedLines = Get-Content $reportedFile | Select-Object -Skip 1
 $reportedColumn = foreach ($line in $reportedLines) {
     $parts = $line -split "`t"
-    $parts[1]  # column 2 = runtime (0-based index)
+    $parts[2]  # column 3 = memory (0-based index)
 }
 $reportedColumn | Set-Content $reportedColumnFile
 
@@ -58,18 +58,18 @@ foreach ($line in $finalLines) {
 
     if ($reported -gt $allowed) {
         Write-Host "❌ $command exceeded the allowed usage."
-        Write-Host "Expected: $expected S, Threshold: $threshold S, Reported: $reported S"
+        Write-Host "Expected: $expected MB, Threshold: $threshold MB, Reported: $reported MB"
         $failCount++
     } else {
         Write-Host "✅ $command passed the check."
-        Write-Host "Expected: $expected S, Threshold: $threshold S, Reported: $reported S"
+        Write-Host "Expected: $expected MB, Threshold: $threshold MB, Reported: $reported MB"
     }
 }
 
 Write-Host ""
 
 if ($failCount -eq 0) {
-    Write-Host "✅ All runtime checks passed."
+    Write-Host "✅ All memory checks passed."
     exit 0
 } else {
     Write-Host "❌ $failCount checks failed."
