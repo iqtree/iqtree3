@@ -1895,8 +1895,8 @@ void mergePartitionsmAIC(PhyloSuperTree* super_tree, vector<set<int> > &gene_set
     }
     new_super_aln->init(&seq_names);
 
-    //for (PhyloSuperTree::reverse_iterator tit = super_tree->rbegin(); tit != super_tree->rend(); tit++)
-    //    delete (*tit);
+    for (PhyloSuperTree::reverse_iterator tit = super_tree->rbegin(); tit != super_tree->rend(); tit++)
+        delete (*tit);
     super_tree->clear();
     super_tree->insert(super_tree->end(), tree_vec.begin(), tree_vec.end());
     super_tree->part_info = part_info;
@@ -4316,12 +4316,19 @@ void PartitionFinder::getBestModelforPartitionsNoMPI(int nthreads, vector<pair<i
         } else {
             maic_tree = new PhyloSuperTree(cur_super_aln);
         }
+
+        maic_tree->setParams(params);
+        maic_tree->setLikelihoodKernel(params->SSE);
+        maic_tree->optimize_by_newton = params->optimize_by_newton;
+        maic_tree->setNumThreads(num_threads);
+
+        maic_tree->setPartInfo(in_tree);
+        maic_tree->initializeModel(*params, params->model_name, models_block);// create PartitionModel for the supertree
+        maic_tree->getModelFactory()->setCheckpoint(model_info);
+        ((PartitionModel*)maic_tree->getModelFactory())->PartitionModel::restoreCheckpoint();
+        maic_tree->setCheckpoint(model_info);
+        maic_tree->restoreCheckpoint();
         /*
-        if (params->start_tree == STT_PLL_PARSIMONY || params->start_tree == STT_RANDOM_TREE || params->pll) {
-            // Initialized all data structure for PLL
-            maic_tree->initializePLL(*params);
-        }
-         */
         maic_tree->setParams(params);
         maic_tree->setLikelihoodKernel(params->SSE);
         maic_tree->optimize_by_newton = params->optimize_by_newton;
@@ -4329,21 +4336,20 @@ void PartitionFinder::getBestModelforPartitionsNoMPI(int nthreads, vector<pair<i
         maic_tree->setCheckpoint(model_info);
         maic_tree->restoreCheckpoint();
         maic_tree->initializeModel(*params, params->model_name, models_block);
-
         for (int j = 0; j < maic_tree->size(); j++) {
-            string best_model_name = maic_tree->at(j)->aln->model_name;
-            cout << "********best_model" << best_model_name << endl;
+            //string best_model_name = maic_tree->at(j)->aln->model_name;
+            //cout << "********best_model" << best_model_name << endl;
 
             model_info->startStruct(maic_tree->at(j)->aln->name);
             maic_tree->at(j)->restoreCheckpoint();
             maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
             model_info->endStruct();
         }
-
+        */
         lh_marginal = maic_tree->getModelFactory()->computeMarginalLh();
 
         inf_score_maic = computeInformationScore(lh_marginal, dfsum, ssize, params->model_test_criterion);
-        cout << "********marginal_lh partition: " << lh_marginal << ", maic: " << inf_score_maic << endl;
+        //cout << "********marginal_lh partition: " << lh_marginal << ", maic: " << inf_score_maic << endl;
         //delete cur_super_aln;
         delete maic_tree;
     }
@@ -4470,9 +4476,10 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
     if (params->marginal_lh_aic) {
         better_pairs_maic.clear();
         set<int> part_ids;
+        // evaluate all pairs of partitions for merging
         for (auto it = sorted_pairs.begin(); it != sorted_pairs.end(); it++) {
             // check for compatibility
-            vector<int> overlap;
+            vector<int> overlap; // index of partitions in the merged pair
             set_intersection(part_ids.begin(), part_ids.end(),
                              it->second.merged_set.begin(), it->second.merged_set.end(),
                              std::back_inserter(overlap));
@@ -4491,7 +4498,7 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
             cur_pair.merged_set.insert(gene_sets[cur_pair.part1].begin(), gene_sets[cur_pair.part1].end());
             cur_pair.merged_set.insert(gene_sets[cur_pair.part2].begin(), gene_sets[cur_pair.part2].end());
 
-
+            // prepare partition IDs and model_names for subsets
             cur_gene_sets = gene_sets;
             model_names.resize(in_tree->size());
             for (int i = 0; i < gene_sets.size(); i++) {
@@ -4499,14 +4506,16 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
             }
             cur_gene_sets[cur_pair.part1] = cur_pair.merged_set;
             model_names[cur_pair.part1] = cur_pair.model_name;
-
             cur_gene_sets.erase(cur_gene_sets.begin() + cur_pair.part2);
             model_names.erase(model_names.begin() + cur_pair.part2);
 
+            // now create the supertree
             cur_super_aln = ((SuperAlignment *) in_tree->aln);
             if (params->partition_type != BRLEN_OPTIMIZE) {
+                // for edge-linked partition model
                 maic_tree = new PhyloSuperTreePlen(cur_super_aln, params->partition_type);
             } else {
+                // edge-unlinked partition model
                 maic_tree = new PhyloSuperTree(cur_super_aln);
             }
             /*
@@ -4515,23 +4524,31 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
                 maic_tree->initializePLL(*params); //error place?
             }
             */
+
             maic_tree->setParams(params);
             maic_tree->setLikelihoodKernel(params->SSE);
             maic_tree->optimize_by_newton = params->optimize_by_newton;
             maic_tree->setNumThreads(num_threads);
+
+            maic_tree->setPartInfo(in_tree);
+            // create PartitionModel for the supertree
+            maic_tree->initializeModel(*params, params->model_name, models_block);
+            maic_tree->getModelFactory()->setCheckpoint(model_info);
+            ((PartitionModel*)maic_tree->getModelFactory())->PartitionModel::restoreCheckpoint();
+
+            //maic_tree->PhyloTree::readTreeString()
             maic_tree->setCheckpoint(model_info);
             maic_tree->restoreCheckpoint();
-            maic_tree->initializeModel(*params, params->model_name, models_block);
 
+            /*
             for (int j = 0; j < maic_tree->size(); j++) {
                 model_info->startStruct(maic_tree->at(j)->aln->name);
                 string aaa = maic_tree->at(j)->aln->name;
                 maic_tree->at(j)->restoreCheckpoint();
                 maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
                 model_info->endStruct();
-            }
+            }*/
             mergePartitionsmAIC(maic_tree, cur_gene_sets, model_names);
-            int j = maic_tree->size();
             for (int j = 0; j < maic_tree->size(); j++) {
                 model_info->startStruct(maic_tree->at(j)->aln->name);
                 string aaa = maic_tree->at(j)->aln->name;
