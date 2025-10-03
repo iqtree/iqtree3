@@ -399,10 +399,10 @@ double PartitionModel::computeMarginalLh() {
         Alignment *tree1_aln = tree->at(j)->aln;
         int tree1_nsite = tree1_aln->getNSite();
         StrVector tree1_seqs = t_seqs_vec_array[j];
-        string modelpara = tree->at(j)->getModel()->getNameParams(true);
-        string ratepara = tree->at(j)->getRate()->getNameParams();
-        string treepara = tree->at(j)->getTreeString();
-        cout << "******[model para part " << j << "]: " << modelpara << ratepara << " " << treepara << endl;
+        //string modelpara = tree->at(j)->getModel()->getNameParams(true);
+        //string ratepara = tree->at(j)->getRate()->getNameParams();
+        //string treepara = tree->at(j)->getTreeString();
+        //cout << "******[model para part " << j << "]: " << modelpara << ratepara << " " << treepara << endl;
 
         // get the site-log-likelihood the the partition under each tree and the corresponding model
         double *lh_array = new double [ntrees*tree1_nsite];
