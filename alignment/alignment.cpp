@@ -3563,7 +3563,7 @@ void Alignment::printAlignment(InputType format, ostream &out, const char* file_
     }
 }
 
-void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa, IntVector *kept_partitions) {
+void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa, IntVector *kept_partitions, bool showMsg) {
     IntVector::iterator it;
     for (it = seq_id.begin(); it != seq_id.end(); it++) {
         ASSERT(*it >= 0 && *it < aln->getNSeq());
@@ -3616,7 +3616,7 @@ void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_t
         }
         ++siteMod;
     }
-    progress.done();
+    progress.done(showMsg);
     updatePatterns(oldPatternCount); //JB 27-Jul-2020 Parallelized
     site_pattern.resize(aln->getNSite() - removed_sites);
     verbose_mode = save_mode;

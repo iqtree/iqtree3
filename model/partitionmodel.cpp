@@ -446,7 +446,7 @@ double PartitionModel::computeMarginalLh() {
                 Alignment *sub_tree1_aln = NULL;
                 if (tree1_seqs.size() != inter_seqs.size()) {
                     sub_tree1_aln = new Alignment();
-                    sub_tree1_aln->extractSubAlignment(tree1_aln, inter_seqs_id, 0);
+                    sub_tree1_aln->extractSubAlignment(tree1_aln, inter_seqs_id, 0, 0, NULL, false);
                 } else {
                     sub_tree1_aln = tree1_aln;
                 }

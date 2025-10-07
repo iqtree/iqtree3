@@ -566,8 +566,9 @@ public:
             @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
             @param min_taxa only keep alignment that has >= min_taxa sequences
             @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+            @param showMsg show extracting information in log file
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL);
+    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL, bool showMsg = true);
 
     /**
             extract a sub-set of patterns
