@@ -4458,35 +4458,18 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
             maic_tree->getModelFactory()->setCheckpoint(model_info);
             
             // load partition trees and models
-            model_info->dump(true);
-            // compute degree of freedom
-            int merged_df = 0;
-            if (params->partition_type == BRLEN_FIX || params->partition_type == BRLEN_SCALE) {
-                merged_df = maic_tree->getNBranchParameters(BRLEN_OPTIMIZE);
-                if (params->partition_type == BRLEN_SCALE)
-                    merged_df -= 1;
-            }
+            //model_info->dump(true);
+
             for (int j = 0; j < maic_tree->size(); j++) {
                 model_info->startStruct(maic_tree->at(j)->aln->name);
                 maic_tree->at(j)->restoreCheckpoint();
                 maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
-                string val;
-                if (model_info->getString(model_names[j], val)) {
-                    stringstream str(val);
-                    double logl;
-                    int df;
-                    double tree_len;
-                    str >> logl >> df >> tree_len;
-                    merged_df += df;
-                } else {
-                    ASSERT(0);
-                }
                 model_info->endStruct();
 
                 //string best_model_name = maic_tree->at(j)->aln->model_name;
                 //cout << "********best_model" << best_model_name << endl;
             }
-            merged_df = dfsum - dfvec[cur_pair.part1] - dfvec[cur_pair.part2] + it->second.df;
+            int merged_df = dfsum - dfvec[cur_pair.part1] - dfvec[cur_pair.part2] + it->second.df;
             lh_marginal = maic_tree->getModelFactory()->computeMarginalLh();
             cur_score_maic = computeInformationScore(lh_marginal, merged_df, ssize, params->model_test_criterion);
 
@@ -5043,6 +5026,7 @@ void PartitionFinder::test_PartitionModel() {
                 if (compatible_pairs.size() > 1)
                     cout << compatible_pairs.size() << " compatible better partition pairs found" << endl;
             } else {
+                // compatible pairs have already been considered when computing mAIC
                 compatible_pairs = better_pairs;
             }
             // 2017-12-21: simultaneously merging better pairs
@@ -5055,10 +5039,9 @@ void PartitionFinder::test_PartitionModel() {
 
                 if (!params->marginal_lh_aic) {
                     ASSERT(inf_score <= opt_pair.score + 0.1);
-
+                    cout << "Merging " << opt_pair.set_name << " with " << criterionName(params->model_test_criterion)
+                         << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
                 }
-                cout << "Merging " << opt_pair.set_name << " with " << criterionName(params->model_test_criterion)
-                << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
                 // change entry opt_part1 to merged one
                 gene_sets[opt_pair.part1] = opt_pair.merged_set;
                 lhvec[opt_pair.part1] = opt_pair.logl;
@@ -5097,10 +5080,10 @@ void PartitionFinder::test_PartitionModel() {
                 model_info->transferSubCheckpoint(&mfchkpt, opt_pair.set_name + CKP_SEP + "RateInvar" + CKP_SEP + "p_invar");
 #endif
             }
-            // compute mAIC after merging
+            // save and output mAIC after merging all pairs
             if (params->marginal_lh_aic) {
                 if (compatible_pairs.size() > 1) {
-                    // compute mAIC after merging more than 1 pair
+                    // compute mAIC after merging when more than 1 pair
                     PhyloSuperTree *maic_tree;
 
                     maic_tree = mergePartitions(in_tree, gene_sets, model_names, false);
