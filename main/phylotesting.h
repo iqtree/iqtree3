@@ -489,6 +489,22 @@ private:
     void retreiveAnsFrChkpt(vector<pair<int,double> >& jobs, int job_type);
 
     /**
+     * compute marginal LnL and AIC for merge scheme
+     * gene_sets : vector all merged subsets, each containing the ID of original partitions
+     * model_names : model names of corresponding merged subsets
+     * df : degree of freedom for partition model
+     * merge : whether merge partitions with input gene sets
+     * @return : mAIC score
+     */
+    double getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge);
+
+    /**
+     * get compatible partition pairs that improve mAIC
+     * @return : a set of compatible better pairs
+     */
+    ModelPairSet getBetterPairsmAIC();
+
+    /**
      * compute and process the best model for partitions (without MPI)
      * nthreads : the number of threads available for these jobs
      */
