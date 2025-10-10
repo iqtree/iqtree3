@@ -230,10 +230,6 @@ double PhyloTree::computeLikelihoodFromBuffer() {
 	if (computeLikelihoodFromBufferPointer && optimize_by_newton)
 		return (this->*computeLikelihoodFromBufferPointer)();
 	else {
-        if (!model->useRevKernel()) {
-            current_it = (PhyloNeighbor*)root->neighbors[0];
-            current_it_back = (PhyloNeighbor*)current_it->node->findNeighbor(root);
-        }
 		return (this->*computeLikelihoodBranchPointer)(current_it, (PhyloNode*)current_it_back->node, true);
     }
 

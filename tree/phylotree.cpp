@@ -2727,22 +2727,9 @@ double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int m
         cout << "Optimizing branch lengths (max " << my_iterations << " loops)..." << endl;
     }
     NodeVector nodes, nodes2;
-    PhyloNeighbor* p_neighbor;
-    PhyloNode* p_node;
-    
     computeBestTraversal(nodes, nodes2);
     
-    if (model->useRevKernel()) {
-        p_neighbor = (PhyloNeighbor*)nodes[0]->findNeighbor(nodes2[0]);
-        p_node = (PhyloNode*)nodes[0];
-    } else {
-        current_it = (PhyloNeighbor*)root->neighbors[0];
-        current_it_back = (PhyloNeighbor*)current_it->node->findNeighbor(root);
-        p_neighbor = current_it;
-        p_node = (PhyloNode*) current_it_back->node;
-    }
-
-    double tree_lh = computeLikelihoodBranch(p_neighbor, p_node);
+    double tree_lh = computeLikelihoodBranch((PhyloNeighbor*)nodes[0]->findNeighbor(nodes2[0]), (PhyloNode*)nodes[0]);
     
     if (verbose_mode >= VB_MAX) {
         cout << "Initial tree log-likelihood: " << tree_lh << endl;
@@ -2765,7 +2752,7 @@ double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int m
         }
             
         double new_tree_lh = computeLikelihoodFromBuffer();
-        // cout<<"After opt  log-lh = "<<new_tree_lh<<endl;
+        //cout<<"After opt  log-lh = "<<new_tree_lh<<endl;
 
         if (verbose_mode >= VB_MAX) {
             hideProgress();

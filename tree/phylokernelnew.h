@@ -3759,7 +3759,8 @@ void PhyloTree::computePartialInfoBrModel(TraversalInfo &info, VectorClass* buff
             if (isRootLeaf(child->node)) {
                 for (c = 0; c < ncat_mix; c++) {
                     size_t m = c/denom;
-                    child_model->getStateFrequency(partial_lh_leaf + c*nstates, m);
+                    getRootFrequency(partial_lh_leaf + c*nstates);
+                    // child_model->getStateFrequency(partial_lh_leaf + c*nstates, m);
                 }
                 partial_lh_leaf += (aln->STATE_UNKNOWN+1)*block;
             } else if (child->node->isLeaf()) {
