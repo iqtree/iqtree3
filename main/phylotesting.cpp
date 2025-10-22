@@ -4224,10 +4224,13 @@ ModelPairSet PartitionFinder::getBetterPairsmAIC() {
     ModelPairSet cur_better_pairs;
     set<int> part_ids;
 
+    double cpu_time = getCPUTime();
+    double real_time = getRealTime();
+
     // evaluate all pairs of partitions for merging
     int index = 0;
     for (auto it = sorted_pairs.begin(); it != sorted_pairs.end(); it++, index++) {
-        // early stopping: if no better mAIC pairs until all pairs with cAIC < inf_score + 10 checked
+        // early stopping: if no better mAIC pairs until going through number pairs reach to number of current partitions
         if (cur_better_pairs.size() == 0 && index > gene_sets.size()) break;
 
         // check for compatibility
@@ -4270,6 +4273,13 @@ ModelPairSet PartitionFinder::getBetterPairsmAIC() {
 
 
     cout << cur_better_pairs.size() << " compatible better partition pairs found based on mAIC" << endl;
+
+    cpu_time = getCPUTime() - cpu_time;
+    real_time = getRealTime() - real_time;
+    cout << "CPU time for computing mAIC scores: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
+    cout << "Wall-clock time for computing mAIC scores: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
+    cout << endl;
+
     sorted_pairs.clear();
     return cur_better_pairs;
 }
@@ -5030,8 +5040,8 @@ void PartitionFinder::test_PartitionModel() {
                 better_pairs = getBetterPairsmAIC();
                 bool is_maic_pairs_empty = better_pairs.empty();
 
-                if (switch_to_caic) {
-                    if (is_maic_pairs_empty) {
+                if (is_maic_pairs_empty){
+                    if (switch_to_caic) {
                         cout << "No better pairs based on mAIC after one round of cAIC merging and finish merging with previous optimal mAIC" << endl;
                         //load back back up
                         lhsum = lhsum_bu;
@@ -5044,12 +5054,6 @@ void PartitionFinder::test_PartitionModel() {
                         greedy_model_trees = greedy_model_trees_bu;
                         break;
                     } else {
-                        cout << "Better pairs based on mAIC are found after one round of cAIC merging" << endl;
-                        switch_to_caic = false;
-                        compatible_pairs = better_pairs;
-                    }
-                } else {
-                    if (is_maic_pairs_empty) {
                         if (is_pairs_empty || gene_sets.size() == 2) {
                             cout << "No better pairs based on both mAIC and cAIC" << endl;
                             break;
@@ -5066,10 +5070,15 @@ void PartitionFinder::test_PartitionModel() {
                         lenvec_bu = lenvec;
                         model_names_bu = model_names;
                         greedy_model_trees_bu = greedy_model_trees;
-                    } else {
-                        compatible_pairs = better_pairs;
                     }
+                } else {
+                    if (switch_to_caic) {
+                        cout << "Better pairs based on mAIC are found after one round of cAIC merging" << endl;
+                        switch_to_caic = false;
+                    }
+                    compatible_pairs = better_pairs;
                 }
+
             }
             // 2017-12-21: simultaneously merging better pairs
             for (auto it_pair = compatible_pairs.begin(); it_pair != compatible_pairs.end(); it_pair++) {
@@ -5125,16 +5134,23 @@ void PartitionFinder::test_PartitionModel() {
             // save and output mAIC after merging all pairs
             if (params->marginal_lh_aic) {
                 if (!switch_to_caic) {
-                    inf_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, true);
-                    cout << "Current partition model mAIC score: " << inf_score_maic
-                         << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ")" << endl;
+                    double cur_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, true);
+                    if (cur_score_maic < inf_score_maic) {
+                        cout << "Current partition model mAIC score: " << cur_score_maic
+                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ")" << endl;
+                    } else {
+                        cout << "[Rare case] Current partition model mAIC score: " << cur_score_maic
+                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is worse than "
+                             << inf_score_maic << endl;
+                    }
+                    inf_score_maic = cur_score_maic;
                 } else {
                     double cur_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, true);
                     if (cur_score_maic < inf_score_maic) {
                         cout << "Current partition model mAIC score: " << cur_score_maic
                              << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is better than "
                              << inf_score_maic << ", back to merging with mAIC since next round" << endl;
-                        cur_score_maic = inf_score_maic;
+                        inf_score_maic = cur_score_maic;
                         switch_to_caic = false;
                     } else {
                         cout << "Current partition model mAIC score: " << cur_score_maic
@@ -5142,6 +5158,7 @@ void PartitionFinder::test_PartitionModel() {
                              << inf_score_maic << endl;
                     }
                 }
+                cout << endl;
             }
 
 
