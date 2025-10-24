@@ -588,6 +588,7 @@ public:
     int64_t num_model;
     vector<SubsetPair> closest_pairs;
     vector<set<int> > gene_sets; // vector all merged subsets, each containing the ID of original partitions
+    StrVector model_names;
     PhyloSuperTree* in_tree;
     size_t  ssize;
     Params *params;
