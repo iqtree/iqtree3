@@ -43,8 +43,10 @@
 #define PACKETS_PER_THREAD 2
 void PhyloTree::setNumThreads(int threadCount) {
     if (!isSuperTree() && aln!=nullptr && threadCount > 1 && threadCount > aln->getNPattern()/8) {
-        outWarning(convertIntToString(threadCount) + " threads for alignment length " +
-                   convertIntToString(aln->getNPattern()) + " will slow down analysis");
+        if (!params->marginal_lh_aic) {
+            outWarning(convertIntToString(threadCount) + " threads for alignment length " +
+                       convertIntToString(aln->getNPattern()) + " will slow down analysis");
+        }
         threadCount = max(aln->getNPattern()/8,(size_t)1);
     }
     this->num_threads = threadCount;

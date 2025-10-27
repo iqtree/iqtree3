@@ -510,7 +510,7 @@ double PartitionModel::computeMarginalLh() {
                 sub_tree2->optimize_by_newton = tree2->params->optimize_by_newton;
                 sub_tree2->setLikelihoodKernel(tree2->params->SSE);
                 sub_tree2->setNumThreads(tree2->num_threads);
-                sub_tree2->ensureNumberOfThreadsIsSet(nullptr);
+                //sub_tree2->ensureNumberOfThreadsIsSet(nullptr);
 
                 sub_tree2->initializeAllPartialLh();
 
