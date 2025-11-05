@@ -765,6 +765,11 @@ public:
 	 */
 	double initPS;
 
+    /**
+     * a switch to apply bias towards shorter branches during radom perturbation
+     */
+    bool weightedPerturbation;
+    
 	/**
 	 *  logl epsilon for model parameter optimization
 	 */
