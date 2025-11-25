@@ -79,6 +79,10 @@ const char* dna_model_names_nonrev[] = {"3.3b","4.5a","4.5b","5.6a","5.6b",
                                        "8.16","8.17","8.18","9.20a","9.20b","10.12",
                                        "10.34","12.12"};
 
+/* Additional names/alias for DNA models (provided by Robert McArthur)*/
+const char* dna_model_names_alias[] = {"JC69", "K2P", "HKY85", "TN93", "K3P", "STRSYM"};
+const char* dna_model_additional_lie_markov[] = {"2.2b", "3.3c", "3.4", "4.4b"};
+
 /* DNA models supported by PhyML/PartitionFinder */
 const char* dna_model_names_old[] ={"JC", "F81", "K80", "HKY", "TNe", "TN",
          "K81", "K81u", "TIMe", "TIM", "TVMe", "TVM", "SYM", "GTR"};
@@ -182,6 +186,9 @@ const char *aa_model_names_mitochondrial[] = {"mtREV", "mtART", "mtZOA", "mtMet"
 const char *aa_model_names_chloroplast[] = {"cpREV"};
 
 const char *aa_model_names_viral[] = {"HIVb", "HIVw", "FLU", "rtREV", "FLAVI"};
+
+/* Additional names/alias for Protein models (provided by Robert McArthur)*/
+const char *aa_model_names_additional[] = {"EAL", "ELM", "Poisson"};
 
 /* Protein frequency set */
 const char* aa_freq_names[] = {"", "+F"}; // default
@@ -561,6 +568,33 @@ int detectSeqType(const char *model_name, SeqType &seq_type) {
             if (std_genetic_code[i]) empirical_model = true;
             break;
         }
+    
+    // Consider other model alias
+    // Currently only apply when running AliSim to avoid causing bugs to other features
+    if (Params::getInstance().alisim_active)
+    {
+        copyCString(dna_model_names_alias, sizeof(dna_model_names_alias)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_DNA;
+                break;
+            }
+        
+        copyCString(dna_model_additional_lie_markov, sizeof(dna_model_additional_lie_markov)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_DNA;
+                break;
+            }
+        
+        copyCString(aa_model_names_additional, sizeof(aa_model_names_additional)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_PROTEIN;
+                break;
+            }
+        
+    }
 
     return (empirical_model) ? 2 : 1;
 }

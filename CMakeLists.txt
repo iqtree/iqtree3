@@ -154,7 +154,7 @@ endif()
 
 include_directories("${PROJECT_SOURCE_DIR}")
 include_directories("${PROJECT_SOURCE_DIR}/yaml-cpp/include")
-include_directories(after system "/usr/local/include")
+include_directories(AFTER SYSTEM "/usr/local/include")
 
 ##################################################################
 # onnxruntime

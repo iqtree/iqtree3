@@ -3207,6 +3207,8 @@ extern "C" StringResult simulate_alignment(const char* tree, const char* subst_m
             // set the scaling factor
             params.alisim_branch_scale = 0.5 / population_size;
         }
+        // make sure seed must be positive
+        seed = abs(seed);
         params.ran_seed = seed;
         init_random(params.ran_seed);
         // initialize multiple random streams if needed
@@ -3221,6 +3223,7 @@ extern "C" StringResult simulate_alignment(const char* tree, const char* subst_m
         _log_file += ".log";
         startLogFile(append_log);
         cout << "Start of the log file:" << endl; // This line seems to be vital...
+        cout << "Seed: " << params.ran_seed << endl;
         
         params.user_file = params.out_prefix;
         ofstream trees_file(params.user_file);
