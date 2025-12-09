@@ -141,4 +141,10 @@ extern "C" StringResult version();
  */
 extern "C" StringResult simulate_alignment(const char* tree, const char* subst_model, int seed, const char* partition_info = "", const char* partition_type = "", int seq_length = 1000, double insertion_rate = 0, double deletion_rate = 0, const char* root_seq = "", int num_threads = 1, const char* insertion_size_distribution = "", const char* deletion_size_distribution = "", int population_size = -1);
 
+
+/*
+ * free the pointer
+ */
+extern "C" void iqtree_free(void *p);
+
 #endif /* LIBIQTREE2_FUN */

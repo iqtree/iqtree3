@@ -3691,6 +3691,14 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
     }
 }
 
+/*
+ * free the pointer
+ */
+extern "C" void iqtree_free(void *p) {
+    if (p)
+        free(p);
+}
+
 // --------------------------------------------------
 // Handle the input options of PiQTREE
 // --------------------------------------------------
