@@ -2911,31 +2911,73 @@ double PhyloTree::computeFundiLikelihood() {
         current_it = (PhyloNeighbor*)central_branch.second;
         current_it_back = (PhyloNeighbor*)central_branch.second->node->findNeighbor(central_branch.first);
 
-        params->alisim_fundi_proportion = params->fundi_init_proportion;
-        if (params->fundi_init_branch_length > 0.0) {
-            current_it->length = params->fundi_init_branch_length;
-            current_it_back->length = params->fundi_init_branch_length;
-        }
-
-        cout << "Init rho = " << params->alisim_fundi_proportion
-            << " and init branch length = " << current_it->length << endl;
+        // 0. extract non-Fundi score
+        const double non_fundi_score = getCurScore();
         
-        variables[1] = params->alisim_fundi_proportion;
-        variables[2] = current_it->length;
-        lower_bound[1] = 0.0;
-        lower_bound[2] = params->min_branch_length;
-        upper_bound[1] = 1.0;
-        upper_bound[2] = params->max_branch_length;
-        bound_check[1] = true;
-        bound_check[2] = true;
-        minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, params->fundiEps);
-
-        best_length = variables[2];
-        best_score = -targetFunk(variables);
+        // 1. set starting_rho. Default: 0.5
+        // NHANLT: should we hard code here to always start at 0.5?
+        double starting_rho = params->fundi_init_proportion;
+        double starting_blength = current_it->length;
+        
+        // run a loop with up to 10 iterations
+        const int max_iterations = 10;
+        bool rho_converge = false;
+        for (auto i = 0; i < max_iterations; ++i)
+        {
+            
+            params->alisim_fundi_proportion = starting_rho;
+            current_it->length = starting_blength;
+            current_it_back->length = starting_blength;
+            
+            // 2. Optimise rho from starting_rho and cbl from current branch length (of non-fundi model) to obtain fundi log-likelihood.
+            if (params->fundi_init_branch_length > 0.0) {
+                current_it->length = params->fundi_init_branch_length;
+                current_it_back->length = params->fundi_init_branch_length;
+            }
+            
+            cout << "Init rho = " << params->alisim_fundi_proportion
+            << " and init branch length = " << current_it->length << endl;
+            
+            variables[1] = params->alisim_fundi_proportion;
+            variables[2] = current_it->length;
+            lower_bound[1] = 0.0;
+            lower_bound[2] = params->min_branch_length;
+            upper_bound[1] = 1.0;
+            upper_bound[2] = params->max_branch_length;
+            bound_check[1] = true;
+            bound_check[2] = true;
+            minimizeMultiDimen(variables, ndim, lower_bound, upper_bound, bound_check, params->fundiEps);
+            
+            best_length = variables[2];
+            best_score = -targetFunk(variables);
+            
+            // 3. If the resulting log-likelihood is not lower than non-fundi -> Stop.
+            if (best_score + 1e-6 >= non_fundi_score)
+            {
+                rho_converge = true;
+                break;
+            }
+            // 4. otherwise, reduce starting_rho by half and go back to step 2
+            else
+            {
+                starting_rho *= 0.5;
+            }
+        }
         delete [] bound_check;
         delete [] lower_bound;
         delete [] upper_bound;
         delete [] variables;
+        
+        // If it doesn’t converge after 10 steps, set rho at 0
+        if (!rho_converge)
+        {
+            params->alisim_fundi_proportion = 0;
+            // reset other parameters
+            best_score = non_fundi_score;
+            best_length = starting_blength;
+            current_it->length = starting_blength;
+            current_it_back->length = starting_blength;
+        }
 
         cout << "Best FunDi parameter rho: " << params->alisim_fundi_proportion << endl;
     }
