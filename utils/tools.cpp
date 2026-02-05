@@ -7575,7 +7575,7 @@ void Params::setDefault() {
     num_bootstrap_samples = 0;
     bootstrap_spec = NULL;
     transfer_bootstrap = 0;
-
+    
     aln_file = NULL;
     phylip_sequential_format = false;
     symtest = SYMTEST_NONE;
@@ -7600,7 +7600,7 @@ void Params::setDefault() {
     merge_models = "1";
     merge_rates = "1";
     partfinder_log_rate = true;
-
+    
     sequence_type = NULL;
     aln_output = NULL;
     aln_site_list = NULL;
@@ -7684,14 +7684,14 @@ void Params::setDefault() {
     optimize_from_given_params = false;
     optimize_alg_qmix = "BFGS";
     estimate_init_freq = 0;
-
+    
     // defaults for new options -JD
     optimize_linked_gtr = false;
     gtr20_model = "POISSON";
     guess_multiplier = 0.75; // change from 0.5
     // rates_file = false;
     reset_method = "random"; // change from const
-
+    
     optimize_params_use_hmm = false;
     optimize_params_use_hmm_sm = false;
     optimize_params_use_hmm_gm = false;
@@ -7699,7 +7699,7 @@ void Params::setDefault() {
     HMM_no_avg_brlen = false;
     HMM_min_stran = 0.0;
     treemix_optimize_methods = "mast"; // default is MAST
-
+    
     fixed_branch_length = BRLEN_OPTIMIZE;
     min_branch_length = 0.0; // this is now adjusted later based on alignment length
     // TODO DS: This seems inappropriate for PoMo.  It is handled in
@@ -7757,7 +7757,7 @@ void Params::setDefault() {
     ncbi_taxon_level = NULL;
     ncbi_names_file = NULL;
     ncbi_ignore_level = NULL;
-
+    
     eco_dag_file  = NULL;
     eco_type = NULL;
     eco_detail_file = NULL;
@@ -7767,11 +7767,11 @@ void Params::setDefault() {
     diet_step = 0;
     eco_weighted = false;
     eco_run = 0;
-
+    
     upper_bound = false;
     upper_bound_NNI = false;
     upper_bound_frac = 0.0;
-
+    
     gbo_replicates = 0;
     ufboot_epsilon = 0.5;
     check_gbo_sample_size = 0;
@@ -7797,7 +7797,7 @@ void Params::setDefault() {
     testNNI = false;
     approximate_nni = false;
     do_compression = false;
-
+    
     new_heuristic = true;
     iteration_multiple = 1;
     initPS = 0.5;
@@ -7859,7 +7859,7 @@ void Params::setDefault() {
     buffer_mem_save = false;
     start_tree = STT_PLL_PARSIMONY;
     start_tree_subtype_name = StartTree::Factory::getNameOfDefaultTreeBuilder();
-
+    
     modelfinder_ml_tree = true;
     final_model_opt = true;
     print_splits_file = false;
@@ -7895,12 +7895,12 @@ void Params::setDefault() {
     mcmc_clock = CORRELATED;
     mcmc_bds = "1,1,0.5";
     mcmc_iter = "20000, 100, 20000";
-
+    
     // added by TD
     use_nn_model = false;
     nn_path_model = "resnet_modelfinder.onnx";
     nn_path_rates = "lanfear_alpha_lstm.onnx";
-
+    
     // ------------ Terrace variables ------------
     terrace_check = false;
     terrace_analysis = false;
@@ -7918,7 +7918,7 @@ void Params::setDefault() {
     terrace_remove_m_leaves = 0;
     matrix_order = false;
     gen_all_NNI = false;
-
+    
     remove_empty_seq = true;
     terrace_aware = true;
 #ifdef IQTREE_TERRAPHAST
@@ -7926,17 +7926,17 @@ void Params::setDefault() {
 #else
     terrace_analysis_tphast = false;
 #endif
-
+    
     // --------------------------------------------
-
+    
     matrix_exp_technique = MET_EIGEN3LIB_DECOMPOSITION;
-
+    
     if (nni5) {
         nni_type = NNI5;
     } else {
         nni_type = NNI1;
     }
-
+    
     struct timeval tv;
     struct timezone tz;
     // initialize random seed based on current time
@@ -7945,11 +7945,12 @@ void Params::setDefault() {
     ran_seed = (tv.tv_usec);
     subsampling_seed = ran_seed;
     subsampling = 0;
+    seed_specified = false;
 
     suppress_list_of_sequences = false;
     suppress_zero_distance_warnings = false;
     suppress_duplicate_sequence_warnings = false;
-
+    
     original_params = "";
     alisim_active = false;
     multi_rstreams_used = false;

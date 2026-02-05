@@ -2712,7 +2712,7 @@ void convertToVectorStr(StringArray& names, StringArray& seqs, vector<string>& n
 }
 
 char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cmodel, const char* cintree,
-                          int rand_seed, string& prog, input_options* in_options);
+                          int rand_seed, string& prog, input_options* in_options, const char* other_options);
 
 // Calculates the robinson fould distance between two trees
 extern "C" IntegerResult robinson_fould(const char* ctree1, const char* ctree2) {
@@ -2813,7 +2813,7 @@ extern "C" StringResult random_tree(int num_taxa, const char* tree_gen_mode, int
 // Perform phylogenetic analysis on the input alignment (in string format)
 // With estimation of the best topology
 // num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
-extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const char* model, int rand_seed, int bootstrap_rep, int num_thres) {
+extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const char* model, int rand_seed, int bootstrap_rep, int num_thres, const char* other_options) {
     StringResult output;
     output.errorStr = strdup("");
     
@@ -2828,7 +2828,7 @@ extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const 
                 in_options->insert("-nt", convertIntToString(num_thres));
         }
         string prog = "build_tree";
-        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options);
+        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options, other_options);
         if (in_options != NULL)
             delete in_options;
     } catch (const exception& e) {
@@ -2844,19 +2844,23 @@ extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const 
 
 // Perform phylogenetic analysis on the input alignment (in string format)
 // With restriction to the input toplogy
+// blfix -- whether to fix the branch length as those on the given tree, default: false
 // num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
-extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, int rand_seed, int num_thres) {
+extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, bool blfix, int rand_seed, int num_thres, const char* other_options) {
     StringResult output;
     output.errorStr = strdup("");
     
     try {
         input_options* in_options = NULL;
-        if (num_thres >= 0) {
+        if (num_thres >= 0 || blfix) {
             in_options = new input_options();
-            in_options->insert("-nt", convertIntToString(num_thres));
+            if (num_thres >= 0)
+                in_options->insert("-nt", convertIntToString(num_thres));
+            if (blfix)
+                in_options->insert("-blfix", "");
         }
         string prog = "fit_tree";
-        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options);
+        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options, other_options);
         if (in_options != NULL)
             delete in_options;
     } catch (const exception& e) {
@@ -2876,7 +2880,7 @@ extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const ch
 // freq_set -- a set of frequency types
 // rate_set -- a set of RHAS models
 // num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
-extern "C" StringResult modelfinder(StringArray& names, StringArray& seqs, int rand_seed, const char* model_set, const char* freq_set, const char* rate_set, int num_thres) {
+extern "C" StringResult modelfinder(StringArray& names, StringArray& seqs, int rand_seed, const char* model_set, const char* freq_set, const char* rate_set, int num_thres, const char* other_options) {
     StringResult output;
     output.errorStr = strdup("");
     
@@ -2896,7 +2900,7 @@ extern "C" StringResult modelfinder(StringArray& names, StringArray& seqs, int r
         if (num_thres >= 0)
             in_options->insert("-nt", convertIntToString(num_thres));
         string prog = "modelfinder";
-        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options);
+        output.value = build_phylogenetic(names, seqs, model, intree, rand_seed, prog, in_options, other_options);
         
         delete in_options;
     } catch (const exception& e) {
@@ -3157,14 +3161,231 @@ extern "C" StringResult version() {
     return output;
 }
 
+// Execute AliSim Simulation
+// output: results in YAML format that contains the simulated alignment and the content of the log file
+// tree -- the NEWICK tree string
+// subst_model -- the substitution model name
+// seed -- the random seed
+// partition_info -- partition information
+// partition_type -- partition type is either ‘equal’, ‘proportion’, or ‘unlinked’
+// seq_length -- the length of sequences
+// insertion_rate -- the insertion rate
+// deletion_rate -- the deletion rate
+// root_seq -- the root sequence
+// num_threads -- the number of threads
+// insertion_size_distribution -- the insertion size distribution
+// deletion_size_distribution -- the deletion size distribution
+// population_size -- the population size
+extern "C" StringResult simulate_alignment(const char* tree, const char* subst_model, int seed, const char* partition_info, const char* partition_type, int seq_length, double insertion_rate, double deletion_rate, const char* root_seq, int num_threads, const char* insertion_size_distribution, const char* deletion_size_distribution, int population_size) {
+    
+    // verbose_mode
+    // extern VerboseMode verbose_mode;
+    /*progress_display::setProgressDisplay(false);
+    // verbose_mode = VB_MIN;
+    verbose_mode = VB_QUIET; // (quiet mode)*/
+    
+    StringResult output;
+    output.errorStr = strdup("");
+    randstream = nullptr;
+    
+    try {
+        Params& params = Params::getInstance();
+        params.setDefault();
+        
+        params.alisim_active = true;
+        params.multi_rstreams_used = true;
+        params.alisim_output_filename = (char*) "AliSimAlignment";
+        params.out_prefix = (char*) "AliSimTrees.nwk";
+        params.aln_output_format = IN_FASTA;
+        // set the population size, if specified
+        if (population_size != -1)
+        {
+            // validate the input
+            if (population_size <= 0)
+                outError("Population size must be positive!");
+            
+            // set the scaling factor
+            params.alisim_branch_scale = 0.5 / population_size;
+        }
+        // make sure seed must be positive
+        seed = abs(seed);
+        params.ran_seed = seed;
+        init_random(params.ran_seed);
+        // initialize multiple random streams if needed
+        if (params.multi_rstreams_used)
+            init_multi_rstreams();
+        
+        // load distributions from built-in file
+        read_distributions();
+        
+        bool append_log = true;
+        _log_file = params.out_prefix;
+        _log_file += ".log";
+        startLogFile(append_log);
+        cout << "Start of the log file:" << endl; // This line seems to be vital...
+        cout << "Seed: " << params.ran_seed << endl;
+        
+        params.user_file = params.out_prefix;
+        ofstream trees_file(params.user_file);
+        if (!trees_file.is_open())
+            outError("Failed to create or open the trees file for writing.");
+        if (!tree || tree[0] == '\0')
+            outError("The input tree is null.");
+        trees_file << tree << endl;
+        trees_file.close();
+        
+        params.model_name = subst_model;
+        
+        if((partition_type == nullptr || strcmp(partition_type, "") == 0) && (partition_info && partition_info[0] != '\0'))
+            outError("When partition info is provided, partition type must be provided.");
+        else if(partition_type != nullptr && strcmp(partition_type, "") != 0) {
+            if(strcmp(partition_type, "equal") == 0) {
+                params.partition_type = BRLEN_FIX;
+                params.optimize_alg_gammai = "Brent";
+                params.opt_gammai = false;
+            }
+            else if(strcmp(partition_type, "proportion") == 0) {
+                params.partition_type = BRLEN_SCALE;
+                params.opt_gammai = false;
+            }
+            else if(strcmp(partition_type, "unlinked") != 0)
+                outError("Partition type can be equal, proportion, or unlinked.");
+            params.partition_file = (char*) "AliSimPartitionInfo.nex";
+            ofstream partition_info_file(params.partition_file);
+            if (!partition_info_file.is_open())
+                outError("Failed to create or open the partition info file for writing.");
+            partition_info_file << partition_info << std::endl;
+            partition_info_file.close();
+        }
+        
+        if (seq_length < 1)
+            outError("Positive sequence please.");
+        params.alisim_sequence_length = seq_length;
+        
+        if (insertion_rate < 0)
+            outError("Insertion rate must not be negative.");
+        params.alisim_insertion_ratio = insertion_rate;
+        if (deletion_rate < 0)
+            outError("Deletion rate must not be negative.");
+        params.alisim_deletion_ratio = deletion_rate;
+        
+        if(root_seq != nullptr && strcmp(root_seq, "") != 0) {
+            params.root_ref_seq_aln = "AliSimRootSequence.fasta";
+            ofstream root_seq_file(params.root_ref_seq_aln);
+            if (!root_seq_file.is_open())
+                outError("Failed to create or open the root sequence file for writing.");
+            root_seq_file << ">root" << endl;
+            root_seq_file << root_seq << endl;
+            root_seq_file.close();
+            params.root_ref_seq_name = "root";
+        }
+        
+        if (num_threads < 0)
+            outError("Number of threads must not be negative.");
+        params.num_threads = num_threads;
+        
+    #ifdef _OPENMP
+        if (params.num_threads >= 1) {
+            omp_set_num_threads(params.num_threads);
+            params.num_threads = omp_get_max_threads();
+        }
+    //    int max_threads = omp_get_max_threads();
+        int max_procs = countPhysicalCPUCores();
+        cout << " - ";
+        if (params.num_threads > 0)
+            cout << params.num_threads  << " threads";
+        else
+            cout << "auto-detect threads";
+        cout << " (" << max_procs << " CPU cores detected)";
+        if (params.num_threads  > max_procs) {
+            cout << endl;
+            outError("You have specified more threads than CPU cores available.");
+        }
+        // omp_set_nested(false); // don't allow nested OpenMP parallelism
+        omp_set_max_active_levels(1);
+    #else
+        if (params.num_threads != 1) {
+            cout << endl << endl;
+            outError("Number of threads must be 1 for sequential version.");
+        }
+    #endif
+        cout << endl;
+        
+        if(insertion_size_distribution != nullptr && strcmp(insertion_size_distribution, "") != 0)
+            params.alisim_insertion_distribution = parseIndelDis(insertion_size_distribution, "Insertion");
+        if(deletion_size_distribution != nullptr && strcmp(deletion_size_distribution, "") != 0)
+            params.alisim_deletion_distribution = parseIndelDis(deletion_size_distribution, "Deletion");
+        
+        IQTree* iqtree_ptr = nullptr;
+        executeSimulation(params, iqtree_ptr);
+                
+        ostringstream yamlss;
+        string line;
+        yamlss << "alignment: |" << endl;
+        ifstream in_alignment("AliSimAlignment.fa");
+        if (!in_alignment)
+            outError("Failed to open the alignment file.");
+        while (safeGetline(in_alignment, line))
+            yamlss << "  " << line << endl;
+        in_alignment.close();
+        yamlss << endl << "log: |" << endl;
+        ifstream in_log(_log_file);
+        if (!in_log)
+            outError("Failed to open the log file.");
+        while (safeGetline(in_log, line))
+            yamlss << "  " << line << endl;
+        in_log.close();
+        
+        string yamlstr = yamlss.str();
+        if (yamlstr.length() > 0) {
+            output.value = new char[yamlstr.length() + 1];
+            strcpy(output.value, yamlstr.c_str());
+        }
+        
+        finish_random();
+        // finish multiple random streams if used
+        if (params.multi_rstreams_used)
+            finish_multi_rstreams();
+        
+        funcExit();
+    } catch (const exception& e) {
+        if (strlen(e.what()) > 0) {
+            output.errorStr = new char[strlen(e.what()) + 1];
+            strcpy(output.errorStr, e.what());
+        }
+        
+        if (randstream != nullptr)
+            finish_random();
+        // finish multiple random streams if used
+        if (Params::getInstance().multi_rstreams_used)
+            finish_multi_rstreams();
+        
+        funcExit();
+    }
+    return output;
+}
+
 // ----------------------------------------------
 // function for performing plylogenetic analysis
 // ----------------------------------------------
 
+// split the input string according to space
+void split(const char* s, vector<char*>& out) {
+    char* buf = strdup(s);
+    char* token;
+    
+    out.clear();
+    token = strtok(buf, " ");
+    while (token != nullptr) {
+        out.push_back(token);
+        token = strtok(nullptr, " ");
+    }
+}
+
 // Perform phylogenetic analysis on the input alignment (in string format)
 // if intree exists, then the topology will be restricted to the intree
 char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cmodel, const char* cintree,
-                          int rand_seed, string& prog, input_options* in_options) {
+                          int rand_seed, string& prog, input_options* in_options, const char* other_options) {
     // perform phylogenetic analysis on the input sequences
     // all sequences have to be the same length
 
@@ -3172,42 +3393,8 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
     
     vector<string> names, seqs;
     
-    convertToVectorStr(cnames, cseqs, names, seqs);
-    string model = string(cmodel);
-    string intree = string(cintree);
-    
-    // checking whether all seqs are in the same length
-    if (seqs.size() > 0) {
-        int slen = seqs[0].length();
-        for (int i=1; i<seqs.size(); i++) {
-            if (seqs[i].length() != slen) {
-                outError("The input sequences are not in the same length");
-            }
-        }
-    }
-
     extern VerboseMode verbose_mode;
     progress_display::setProgressDisplay(false);
-    // verbose_mode = VB_MIN;
-    verbose_mode = VB_QUIET; // (quiet mode)
-    Params::getInstance().setDefault();
-    Params::getInstance().num_threads = 1; // default
-    Params::getInstance().aln_file = (char*) "";
-    Params::getInstance().model_name = model;
-    Params::getInstance().ignore_identical_seqs = false; // keep the identical seqs
-    
-    if (intree != "") {
-        // tree exists, then the resulting phylogenetic tree will be restricted to the input topology
-        Params::getInstance().min_iterations = 0;
-        Params::getInstance().stop_condition = SC_FIXED_ITERATION;
-        Params::getInstance().start_tree = STT_USER_TREE;
-        Params::getInstance().intree_str = intree;
-    }
-
-    if (in_options != NULL) {
-        // assign the input options to Params
-        in_options->set_params(Params::getInstance());
-    }
 
     if (rand_seed == 0)
         rand_seed = make_new_seed();
@@ -3259,6 +3446,61 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
     _log_file = Params::getInstance().out_prefix;
     _log_file += ".log";
     startLogFile(append_log);
+    
+    char* oprefix = Params::getInstance().out_prefix;
+    
+    convertToVectorStr(cnames, cseqs, names, seqs);
+    string model = string(cmodel);
+    string intree = string(cintree);
+    
+    // checking whether all seqs are in the same length
+    if (seqs.size() > 0) {
+        int slen = seqs[0].length();
+        for (int i=1; i<seqs.size(); i++) {
+            if (seqs[i].length() != slen) {
+                outError("The input sequences are not in the same length");
+            }
+        }
+    }
+
+    if (other_options != NULL && strlen(other_options) > 0) {
+        vector<char*> tokens;
+        split(other_options, tokens);
+        if (tokens.size() > 0) {
+            char** arr = new char*[tokens.size()+3];
+            arr[0] = (char*) "";
+            arr[1] = (char*) "-s";
+            arr[2] = (char*)"dummy";
+            for (size_t i = 0; i < tokens.size(); i++) {
+                arr[i+3] = tokens[i];
+            }
+            parseArg(tokens.size()+3, arr, Params::getInstance());
+            delete[] arr;
+        }
+    } else {
+        Params::getInstance().setDefault();
+    }
+    verbose_mode = VB_QUIET; // (quiet mode)
+
+    Params::getInstance().aln_file = (char*) "";
+    Params::getInstance().model_name = model;
+    Params::getInstance().ignore_identical_seqs = false; // keep the identical seqs
+    
+    if (intree != "") {
+        // tree exists, then the resulting phylogenetic tree will be restricted to the input topology
+        Params::getInstance().min_iterations = 0;
+        Params::getInstance().stop_condition = SC_FIXED_ITERATION;
+        Params::getInstance().start_tree = STT_USER_TREE;
+        Params::getInstance().intree_str = intree;
+    }
+
+    if (in_options != NULL) {
+        // assign the input options to Params
+        in_options->set_params(Params::getInstance());
+    }
+    
+    Params::getInstance().out_prefix = oprefix;
+
     time_t start_time;
 
     if (append_log) {
@@ -3449,6 +3691,14 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
     }
 }
 
+/*
+ * free the pointer
+ */
+extern "C" void iqtree_free(void *p) {
+    if (p)
+        free(p);
+}
+
 // --------------------------------------------------
 // Handle the input options of PiQTREE
 // --------------------------------------------------
@@ -3459,11 +3709,9 @@ void input_options::set_params(Params& params) {
     for (int i = 0; i < n; i++) {
         if (flags[i] == "-keep-indent") {
             params.ignore_identical_seqs = false;
-            cout << "params.ignore_identical_seqs = " << params.ignore_identical_seqs << endl;
         }
         else if (flags[i] == "-mset") {
             params.model_set = values[i];
-            cout << "params.model_set = " << params.model_set << endl;
         }
         else if (flags[i] == "-mfreq") {
             int clen = values[i].length();
@@ -3474,7 +3722,6 @@ void input_options::set_params(Params& params) {
         }
         else if (flags[i] == "-mrate") {
             params.ratehet_set = values[i];
-            cout << "params.ratehet_set = " << params.ratehet_set << endl;
         }
         else if (flags[i] == "-bb") {
             params.gbo_replicates = atoi(values[i].c_str());
@@ -3483,8 +3730,15 @@ void input_options::set_params(Params& params) {
             params.consensus_type = CT_CONSENSUS_TREE;
             params.stop_condition = SC_BOOTSTRAP_CORRELATION;
         }
-        else if (flags[0] == "-nt") {
+        else if (flags[i] == "-nt") {
             params.num_threads = atoi(values[i].c_str());
+        }
+        else if (flags[i] == "-blfix") {
+            params.fixed_branch_length = BRLEN_FIX;
+            params.optimize_alg_gammai = "Brent";
+            params.opt_gammai = false;
+            params.min_iterations = 0;
+            params.stop_condition = SC_FIXED_ITERATION;
         }
     }
 }

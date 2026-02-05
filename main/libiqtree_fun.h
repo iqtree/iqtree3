@@ -10,6 +10,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <fstream>
 
 using namespace std;
 
@@ -69,15 +70,16 @@ extern "C" StringResult random_tree(int num_taxa, const char* tree_gen_mode, int
  * num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
  * output: results in YAML format with the tree and the details of parameters
  */
-extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const char* model, int rand_seed = 0, int bootstrap_rep = 0, int num_thres = 1);
+extern "C" StringResult build_tree(StringArray& names, StringArray& seqs, const char* model, int rand_seed = 0, int bootstrap_rep = 0, int num_thres = 1, const char* other_options = NULL);
 
 /*
  * Perform phylogenetic analysis on the input alignment
  * With restriction to the input toplogy
+ * blfix -- whether to fix the branch length as those on the given tree, default: false
  * num_thres -- number of cpu threads to be used, default: 1; 0 - auto detection of the optimal number of cpu threads
  * output: results in YAML format with the details of parameters
  */
-extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, int rand_seed = 0, int num_thres = 1);
+extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const char* model, const char* intree, bool blfix = false, int rand_seed = 0, int num_thres = 1, const char* other_options = NULL);
 
 /*
  * Perform phylogenetic analysis with ModelFinder
@@ -90,7 +92,7 @@ extern "C" StringResult fit_tree(StringArray& names, StringArray& seqs, const ch
  * output: modelfinder results in YAML format
  */
 extern "C" StringResult modelfinder(StringArray& names, StringArray& seqs, int rand_seed = 0,
-                   const char* model_set = "", const char* freq_set = "", const char* rate_set = "", int num_thres = 1);
+                   const char* model_set = "", const char* freq_set = "", const char* rate_set = "", int num_thres = 1, const char* other_options = NULL);
 
 /*
  * Build pairwise JC distance matrix
@@ -119,5 +121,30 @@ extern "C" StringResult consensus_tree(StringArray& trees, double minsup = 0.0);
  * verion number
  */
 extern "C" StringResult version();
+
+/*
+ * Execute AliSim Simulation
+ * output: results in YAML format that contains the simulated alignment and the content of the log file
+ * tree -- the NEWICK tree string
+ * subst_model -- the substitution model name
+ * seed -- the random seed
+ * partition_info -- partition information
+ * partition_type -- partition type is either ‘equal’, ‘proportion’, or ‘unlinked’
+ * seq_length -- the length of sequences
+ * insertion_rate -- the insertion rate
+ * deletion_rate -- the deletion rate
+ * root_seq -- the root sequence
+ * num_threads -- the number of threads
+ * insertion_size_distribution -- the insertion size distribution
+ * deletion_size_distribution -- the deletion size distribution
+ * population_size -- the population size
+ */
+extern "C" StringResult simulate_alignment(const char* tree, const char* subst_model, int seed, const char* partition_info = "", const char* partition_type = "", int seq_length = 1000, double insertion_rate = 0, double deletion_rate = 0, const char* root_seq = "", int num_threads = 1, const char* insertion_size_distribution = "", const char* deletion_size_distribution = "", int population_size = -1);
+
+
+/*
+ * free the pointer
+ */
+extern "C" void iqtree_free(void *p);
 
 #endif /* LIBIQTREE2_FUN */
