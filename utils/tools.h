@@ -2552,6 +2552,11 @@ public:
 
     /** neural network file that determines alpha rate (onnx format) */
     string nn_path_rates; // added by TD
+    
+    /**
+        user file used to specify site-specific weights
+    */
+    string site_weights_file;
 
     /**
     *  TRUE if multiple random streams are used

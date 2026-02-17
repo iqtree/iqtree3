@@ -1566,6 +1566,8 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.suppress_zero_distance_warnings = false;
     params.suppress_duplicate_sequence_warnings = false;
     
+    params.site_weights_file = "";
+    
     params.original_params = "";
     params.alisim_active = false;
     params.multi_rstreams_used = false;
@@ -3656,6 +3658,14 @@ void parseArg(int argc, char *argv[], Params &params) {
 
             if (strcmp(argv[cnt], "--inc-zero-freq") == 0) {
                 params.keep_zero_freq = false;
+                continue;
+            }
+            
+            if (strcmp(argv[cnt], "--site-weights") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --site-weights <site_weight_file>";
+                params.site_weights_file = argv[cnt];
                 continue;
             }
 

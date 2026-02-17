@@ -814,6 +814,13 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
     {
         outError("Alignment must have at least 3 sequences");
     }
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
+    }
+    
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {
@@ -849,6 +856,49 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
 
 }
 
+void Alignment::integrateSiteSpecWeights()
+{
+    const string& site_weights_file = Params::getInstance().site_weights_file;
+    ASSERT(site_weights_file != "");
+    
+    std::cout << "Read site-specific weights from file..." << std::endl;
+    
+    // read site-specific weights from file
+    std::ifstream in(site_weights_file);
+    if (!in)
+    {
+        throw std::runtime_error("Failed to open site-specific weight file: " + site_weights_file);
+    }
+    
+    // pre-allocate the memory
+    std::vector<int> site_weights;
+    site_weights.reserve(getNSite());
+    
+    // read the weights
+    int w;
+    while (in >> w)
+    {
+        // validate the weights
+        if (w <= 0)
+        {
+            throw std::runtime_error("Site weights must be positive integers");
+        }
+        site_weights.push_back(w);
+    }
+    
+    // Check the number of weights
+    if (site_weights.size() != getNSite())
+    {
+        throw std::runtime_error("The number of weights (" + convertIntToString(site_weights.size()) + ") differs from the number of sites (" + convertIntToString(getNSite()) + ")!");
+    }
+    
+    // integrate the site-specific weights into the pattern frequencies
+    for (size_t i = 0; i < site_weights.size(); ++i)
+    {
+        at(site_pattern[i]).frequency += (site_weights[i] - 1);
+    }
+}
+
 Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model) : vector<Pattern>() {
     name = "Noname";
     this->model_name = model;
@@ -870,6 +920,12 @@ Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model
 
     if (getNSeq() < 3)
         outError("Alignment must have at least 3 sequences");
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
+    }
     
     countConstSite();
     
@@ -926,6 +982,13 @@ Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, str
     {
         outError("Alignment must have at least 3 sequences");
     }
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
+    }
+    
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {

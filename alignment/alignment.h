@@ -1110,6 +1110,11 @@ private:
         Output a mutation into Maple file
      */
     void outputMutation(std::ofstream &out, char state_char, int32_t pos, int32_t length = -1);
+    
+    /**
+        Integrate site-specific weights
+     */
+    void integrateSiteSpecWeights();
 };
 
 
