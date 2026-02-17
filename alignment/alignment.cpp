@@ -876,6 +876,7 @@ void Alignment::integrateSiteSpecWeights()
     
     // read the weights
     int w;
+    int total_weight = 0;
     while (in >> w)
     {
         // validate the weights
@@ -884,6 +885,7 @@ void Alignment::integrateSiteSpecWeights()
             throw std::runtime_error("Site weights must be positive integers");
         }
         site_weights.push_back(w);
+        total_weight += w;
     }
     
     // Check the number of weights
@@ -892,10 +894,27 @@ void Alignment::integrateSiteSpecWeights()
         throw std::runtime_error("The number of weights (" + convertIntToString(site_weights.size()) + ") differs from the number of sites (" + convertIntToString(getNSite()) + ")!");
     }
     
+    // Show info
+    std::cout << "Total site weights: " << total_weight << std::endl;
+    
+    // expand the alignment (adding columns according to the site weights)
+    size_t expanding_site_id = site_pattern.size();
+    site_pattern.resize(total_weight);
+    
     // integrate the site-specific weights into the pattern frequencies
     for (size_t i = 0; i < site_weights.size(); ++i)
     {
-        at(site_pattern[i]).frequency += (site_weights[i] - 1);
+        // extract the pattern id of the current site
+        const int site_pattern_id = site_pattern[i];
+        
+        // update the freq of the pattern according to the site weight
+        at(site_pattern_id).frequency += (site_weights[i] - 1);
+        
+        // set the pattern id to expanded sites
+        for (int j = 0; j < site_weights[i] - 1; ++j)
+        {
+            site_pattern[expanding_site_id++] = site_pattern_id;
+        }
     }
 }
 
