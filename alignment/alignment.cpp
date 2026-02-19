@@ -861,7 +861,7 @@ void Alignment::integrateSiteSpecWeights()
     const string& site_weights_file = Params::getInstance().site_weights_file;
     ASSERT(site_weights_file != "");
     
-    std::cout << "Read site-specific weights from file..." << std::endl;
+    std::cout << "Reading site-specific weights from file " << site_weights_file << "..." << std::endl;
     
     // read site-specific weights from file
     std::ifstream in(site_weights_file);
@@ -875,23 +875,38 @@ void Alignment::integrateSiteSpecWeights()
     site_weights.reserve(getNSite());
     
     // read the weights
-    int w;
+    std::string token;
     int total_weight = 0;
-    while (in >> w)
+    while (in >> token)
     {
-        // validate the weights
-        if (w <= 0)
+        // Check that the token consists of digits only
+        if (token.empty() ||
+            !std::all_of(token.begin(), token.end(),
+                         [](unsigned char c) { return std::isdigit(c); }))
         {
-            throw std::runtime_error("Site weights must be positive integers");
+            throw std::runtime_error(
+                "Invalid site weight '" + token +
+                "': weights must be positive integers");
         }
-        site_weights.push_back(w);
-        total_weight += w;
+        
+        // validate the weights
+        int weight = convert_int(token.c_str());
+        if (weight <= 0)
+        {
+            throw std::runtime_error(
+                "Site weights must be positive integers (found " + token + ")");
+        }
+        site_weights.push_back(weight);
+        total_weight += weight;
     }
     
     // Check the number of weights
     if (site_weights.size() != getNSite())
     {
-        throw std::runtime_error("The number of weights (" + convertIntToString(site_weights.size()) + ") differs from the number of sites (" + convertIntToString(getNSite()) + ")!");
+        throw std::runtime_error("The number of weights ("
+            + convertIntToString(site_weights.size())
+            + ") differs from the number of sites ("
+            + convertIntToString(getNSite()) + ")!");
     }
     
     // Show info
