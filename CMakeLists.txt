@@ -460,16 +460,35 @@ if (USE_CUDA)
     enable_language(CUDA)
     add_definitions(-DUSE_CUDA)
     set(CMAKE_CUDA_STANDARD 14)
+
+    # Set CUDA architectures if not already specified
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+    endif()
+
+    # Manual CUDA runtime detection — avoids FindCUDAToolkit's Threads dependency
+    # enable_language(CUDA) already found nvcc and set CMAKE_CUDA_* variables.
+    find_library(CUDART_LIBRARY cudart
+        HINTS ${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}
+              ENV CUDA_HOME
+              ENV CUDA_PATH
+              ENV CUDAToolkit_ROOT
+        PATH_SUFFIXES lib64 lib lib/x86_64-linux-gnu)
+    if (CUDART_LIBRARY)
+        message(STATUS "Found cudart: ${CUDART_LIBRARY}")
+    else()
+        message(FATAL_ERROR "Could not find cudart library. Set CUDA_HOME or pass -DCMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES=<cuda>/lib64")
+    endif()
+
     if (NVHPC)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_CUDA")
-        if (CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
-            include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
-        endif()
-        if (CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES)
-            link_directories(${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES})
-        endif()
-    else()
-        message(FATAL_ERROR "CUDA requires NVHPC compiler support")
+    endif()
+
+    if (CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
+        include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    endif()
+    if (CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES)
+        link_directories(${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES})
     endif()
 else ()
     message("CUDA : No")
@@ -1029,6 +1048,11 @@ endif()
 # basic linking librararies
 target_link_libraries(iqtree3 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
     gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
+
+# CUDA libraries
+if (USE_CUDA)
+    target_link_libraries(iqtree3 ${CUDART_LIBRARY})
+endif()
 
 LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/pll/libpll.a" "${PROJECT_BINARY_DIR}/ncl/libncl.a" "${PROJECT_BINARY_DIR}/nclextra/libnclextra.a" "${PROJECT_BINARY_DIR}/utils/libutils.a" "${PROJECT_BINARY_DIR}/pda/libpda.a" "${PROJECT_BINARY_DIR}/lbfgsb/liblbfgsb.a" "${PROJECT_BINARY_DIR}/whtest/libwhtest.a" "${PROJECT_BINARY_DIR}/sprng/libsprng.a" "${PROJECT_BINARY_DIR}/vectorclass/libvectorclass.a" "${PROJECT_BINARY_DIR}/model/libmodel.a" "${PROJECT_BINARY_DIR}/gsl/libgsl.a" "${PROJECT_BINARY_DIR}/alignment/libalignment.a" "${PROJECT_BINARY_DIR}/tree/libtree.a" "${PROJECT_BINARY_DIR}/simulator/libsimulator.a" "${PROJECT_BINARY_DIR}/terrace/libterrace.a" "${PROJECT_BINARY_DIR}/yaml-cpp/libyaml-cpp.a" "${PROJECT_BINARY_DIR}/phylo-yaml/libphyloYAML.a" "${PROJECT_BINARY_DIR}/main/libmain.a")
 
