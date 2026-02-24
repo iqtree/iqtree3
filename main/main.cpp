@@ -57,6 +57,10 @@
 #include "tree/ncbitree.h"
 #include "pda/ecopd.h"
 #include "tree/upperbounds.h"
+
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
 #include "terraceanalysis.h"
 #include "pda/ecopdmtreeset.h"
 #include "pda/gurobiwrapper.h"
@@ -2391,6 +2395,25 @@ int main(int argc, char *argv[]) {
 //#else
 //    cout << (int)(((getMemorySize()/1000.0)/1000)/1000) << " GB RAM)" << endl;
 //#endif
+
+#ifdef USE_CUDA
+    {
+        int gpu_count = 0;
+        cudaError_t err = cudaGetDeviceCount(&gpu_count);
+        if (err != cudaSuccess || gpu_count == 0) {
+            cout << "GPU:     None detected (CUDA error: " << cudaGetErrorString(err) << ")" << endl;
+        } else {
+            int device_id = 0;
+            cudaGetDevice(&device_id);
+            cudaDeviceProp prop;
+            cudaGetDeviceProperties(&prop, device_id);
+            cout << "GPU:     " << prop.name
+                 << " (compute " << prop.major << "." << prop.minor
+                 << ", " << (prop.totalGlobalMem / (1024*1024)) << " MB"
+                 << ", " << prop.multiProcessorCount << " SMs)" << endl;
+        }
+    }
+#endif
 
     cout << "Command:";
     int i;
