@@ -514,6 +514,31 @@ void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixt
 	/* compute P(t) */
 	double evol_time = time / total_num_subst;
 
+#ifdef USE_OPENACC
+    // TODO: add openACC and remove eigenspace for openACC flow
+    {
+        double exptime[num_states];
+        int i, j, k;
+
+        for (i = 0; i < num_states; i++)
+            exptime[i] = exp(evol_time * eigenvalues[i]);
+
+        for (i = 0; i < num_states; i++) {
+            for (j = 0; j < num_states; j++) {
+                double val = 0.0;
+                for (k = 0; k < num_states; k++) {
+                    val += eigenvectors[i * num_states + k]
+                         * inv_eigenvectors[k * num_states + j]
+                         * exptime[k];
+                }
+                trans_matrix[i * num_states + j] = (val < 0.0) ? 0.0 : val;
+            }
+        }
+
+        return;
+    }
+#else // !USE_OPENACC
+
 #if !defined(__ARM_NEON)
     if (Params::getInstance().experimental) {
         double eval_exp[num_states];
