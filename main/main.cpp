@@ -61,6 +61,9 @@
 #ifdef USE_CUDA
 #include <cuda_runtime.h>
 #endif
+#ifdef USE_OPENACC
+#include <openacc.h>
+#endif
 #include "terraceanalysis.h"
 #include "pda/ecopdmtreeset.h"
 #include "pda/gurobiwrapper.h"
@@ -2411,6 +2414,31 @@ int main(int argc, char *argv[]) {
                  << " (compute " << prop.major << "." << prop.minor
                  << ", " << (prop.totalGlobalMem / (1024*1024)) << " MB"
                  << ", " << prop.multiProcessorCount << " SMs)" << endl;
+        }
+    }
+#endif
+#ifdef USE_OPENACC
+    {
+        int acc_count = acc_get_num_devices(acc_device_nvidia);
+        if (acc_count == 0) {
+            cout << "GPU:     None detected (OpenACC)" << endl;
+        } else {
+            int device_id = 0;
+            acc_device_t device_type = acc_device_nvidia;
+            acc_set_device_type(device_type);
+            acc_set_device_num(device_id, device_type);
+            cout << "GPU:     Device " << device_id
+                 << " (OpenACC, " << acc_count << " device(s) available";
+#if _OPENACC >= 201711
+            // OpenACC 2.7+: use acc_get_property to query device name and memory
+            size_t gpu_mem = acc_get_property(device_id, device_type, acc_property_memory);
+            const char *dev_name = acc_get_property_string(device_id, device_type, acc_property_name);
+            if (dev_name && dev_name[0] != '\0')
+                cout << ", " << dev_name;
+            if (gpu_mem > 0)
+                cout << ", " << (gpu_mem / (1024*1024)) << " MB";
+#endif
+            cout << ")" << endl;
         }
     }
 #endif
