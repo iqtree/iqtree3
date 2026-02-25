@@ -588,7 +588,9 @@ void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixt
 			sum += trans_row[j];
 		trans_row[i] = 1.0 - sum; // update diagonal entry
 	}
-#endif
+#endif // !defined(__ARM_NEON)
+
+#endif // USE_OPENACC
 //	delete [] exptime;
 }
 
