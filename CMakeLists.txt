@@ -125,6 +125,7 @@ set (iqtree_VERSION_PATCH ".1")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 option(USE_CUDA "Enable CUDA support" OFF)
+option(USE_OPENACC "Enable OpenACC support" OFF)
 
 if (CMAKE_C_COMPILER MATCHES "mpic")
     set(IQTREE_FLAGS "${IQTREE_FLAGS} mpi")
@@ -492,6 +493,18 @@ if (USE_CUDA)
     endif()
 else ()
     message("CUDA : No")
+endif()
+
+if (USE_OPENACC STREQUAL "ON")
+    message("OpenACC       : Yes")
+    add_definitions(-DUSE_OPENACC)
+    if (GCC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenacc")
+    elseif (NVHPC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -acc")
+    endif()
+    else()
+    message("OpenACC       : NONE")
 endif()
 
 
