@@ -930,6 +930,12 @@ public:
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
     void computeNonrevPartialLikelihoodSIMD(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
+#ifdef USE_OPENACC
+    /** OpenACC: scalar (plain C) partial likelihood kernel for non-reversible models.
+        No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
+    void computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+#endif
+
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
     void computePartialLikelihoodSIMD(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
@@ -982,6 +988,13 @@ public:
     double computeNonrevLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
     template<class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
     double computeNonrevLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+#ifdef USE_OPENACC
+    /** OpenACC: scalar (plain C) branch likelihood kernel for non-reversible models.
+        Signature matches ComputeLikelihoodBranchType (includes save_log_value param).
+        No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
+    double computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+#endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
     double computeLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);

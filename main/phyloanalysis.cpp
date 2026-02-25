@@ -25,6 +25,9 @@
 #endif
 #include <iqtree_config.h>
 #include "tree/phylotree.h"
+#ifdef USE_OPENACC
+#include "tree/phylokernel_openacc_test.h"
+#endif
 #include "tree/phylosupertree.h"
 #include "tree/phylosupertreeplen.h"
 #include "tree/phylosupertreeunlinked.h"
@@ -3690,6 +3693,12 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         // Optimize model parameters and branch lengths using ML for the initial tree
         iqtree->clearAllPartialLH();
         initTree = iqtree->ensureModelParametersAreSet(initEpsilon);
+
+#ifdef USE_OPENACC
+        // Step 3 verification: test the OpenACC scalar likelihood kernels
+        testLikelihoodKernel(iqtree);
+        testPrecomputedMatrices(iqtree);
+#endif
 
         if (params.lmap_num_quartets >= 0) {
             cout << endl << "Performing likelihood mapping with ";

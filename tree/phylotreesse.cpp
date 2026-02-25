@@ -142,14 +142,27 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 #endif
         return;
     }
+
+#ifdef USE_OPENACC
+    // OpenACC: use scalar (plain C) non-rev kernels — no SIMD, no Eigen.
+    // This bypasses all SIMD kernel selection below.
+    // These kernels are ready for future GPU offloading via OpenACC pragmas.
+    computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihoodOpenACC;
+    computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranchOpenACC;
+    computeLikelihoodDervPointer = NULL;  // not needed for -blfix (fixed branch lengths)
+    computeLikelihoodDervMixlenPointer = NULL;
+    computeLikelihoodFromBufferPointer = NULL;
+    return;
+#endif
+
 //    if (model_factory && !model_factory->model->isReversible()) {
 //        // if nonreversible model
 //        computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranch;
 //        computeLikelihoodDervPointer = &PhyloTree::computeNonrevLikelihoodDerv;
 //        computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihood;
 //        computeLikelihoodFromBufferPointer = NULL;
-//        return;        
-//    }    
+//        return;
+//    }
 
     //--- SIMD kernel ---
     if (lk >= LK_SSE2) {

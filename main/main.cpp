@@ -63,6 +63,7 @@
 #endif
 #ifdef USE_OPENACC
 #include <openacc.h>
+#include "tree/phylokernel_openacc_test.h"
 #endif
 #include "terraceanalysis.h"
 #include "pda/ecopdmtreeset.h"
@@ -2441,6 +2442,8 @@ int main(int argc, char *argv[]) {
             cout << ")" << endl;
         }
     }
+    // Run OpenACC JC transition matrix self-test (Step 2 verification)
+    testJCTransMatrix();
 #endif
 
     cout << "Command:";
