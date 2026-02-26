@@ -135,6 +135,10 @@ public:
 	return partial_lh_computed;
 	}
 
+	UBYTE* get_scale_num(){
+	return scale_num;
+	}
+
 	/**
 	 * true if this Neighbor is directed towards the root
 	 */

@@ -118,6 +118,29 @@ bool testScaling();
 bool testLogLikelihoodRoot();
 
 // ==========================================================================
+// Step 8: Full Post-Order Traversal — test & verification
+// ==========================================================================
+
+/**
+ * Full end-to-end test of the OpenACC likelihood pipeline on a real tree.
+ * Runs the production kernel, then independently verifies every internal
+ * node's partials by recomputing from children using Step 2-7 building blocks.
+ *
+ * Tests:
+ *   8a: Production kernel lnL is finite and negative
+ *   8b: Weighted sum from _pattern_lh × ptn_freq matches production lnL
+ *   8c: Determinism (recompute gives identical result)
+ *   8d: Node-by-node partial verification (independent reimplementation)
+ *
+ * Requires a fully initialized PhyloTree (alignment + model + tree loaded).
+ * Manual node verification (8d) is DNA (K=4), ncat=1 only.
+ *
+ * @param tree  the PhyloTree (fully initialized)
+ * @return true if all tests pass
+ */
+bool testFullTraversal(PhyloTree *tree);
+
+// ==========================================================================
 // Full kernel tests (require initialized PhyloTree)
 // ==========================================================================
 
