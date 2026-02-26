@@ -47,6 +47,29 @@ bool testTipOneHot();
 bool testTipTipInternal();
 
 // ==========================================================================
+// Step 5: TIP-INTERNAL + INTERNAL-INTERNAL — test & verification
+// ==========================================================================
+
+/**
+ * Standalone test of TIP-INTERNAL and INTERNAL-INTERNAL computation
+ * (no IQ-TREE tree required). Exercises:
+ *   - 3-taxon tree: TIP-TIP at cherry → TIP-INTERNAL at root
+ *   - 4-taxon tree: TIP-TIP at two cherries → INTERNAL-INTERNAL at root
+ *
+ * Tests:
+ *   5a: Reference 3-taxon ((A:0.1,B:0.2):0.05,C:0.15) → lnL = -6.465999
+ *   5b: Intermediate partial likelihood verification against plan values
+ *   5c: 4-taxon INTERNAL-INTERNAL with swap symmetry check
+ *   5d: Multi-pattern 3-taxon alignment → weighted total lnL
+ *
+ * Loop structure matches production kernels (OpenACC-ready):
+ *   for s (output state): for x (inner dot product): vleft += P[s*K+x]*L[x]
+ *
+ * @return true if all tests pass
+ */
+bool testTipInternalInternal();
+
+// ==========================================================================
 // Full kernel tests (require initialized PhyloTree)
 // ==========================================================================
 

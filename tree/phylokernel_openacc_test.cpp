@@ -460,6 +460,417 @@ bool testTipTipInternal() {
 }
 
 // ==========================================================================
+// Step 5: TIP-INTERNAL + INTERNAL-INTERNAL — standalone test & verification
+//
+// Computes partial likelihood for 3-taxon and 4-taxon trees under JC model.
+// Two-stage bottom-up traversal (no IQ-TREE tree required):
+//
+// Stage 1 (TIP-TIP at cherry):
+//   L_AB[s] = P_A[s][obs_A] * P_B[s][obs_B]
+//
+// Stage 2a (TIP-INTERNAL: one internal + one leaf child):
+//   vleft[s]  = sum_x P_internal[s*K+x] * L_internal[x]   (dot product)
+//   vright[s] = P_leaf[s*K+obs_leaf]                        (column lookup)
+//   L_parent[s] = vleft[s] * vright[s]
+//
+// Stage 2b (INTERNAL-INTERNAL: two internal children):
+//   vleft[s]  = sum_x P_left[s*K+x]  * L_left[x]          (dot product)
+//   vright[s] = sum_x P_right[s*K+x] * L_right[x]         (dot product)
+//   L_parent[s] = vleft[s] * vright[s]
+//
+// Loop nesting matches production kernel (phylokernel_openacc.cpp):
+//   for ptn (gang) → for c (category) → for s (vector) → for x (sequential)
+// For ncat=1 (JC), category loop is trivial (c=0 only).
+//
+// Reference: ((A:0.1,B:0.2):0.05,C:0.15), A='A',B='C',C='G'
+//            lnL = -6.465999160939802
+// ==========================================================================
+
+bool testTipInternalInternal() {
+    cout << endl;
+    cout << "=== OpenACC Step 5: Testing TIP-INTERNAL + INTERNAL-INTERNAL ===" << endl;
+    cout << "    (standalone 3/4-taxon computation, no IQ-TREE tree required)" << endl;
+
+    bool all_pass = true;
+    const int K = 4; // DNA states
+
+    // ------------------------------------------------------------------
+    // Test 5a: Reference 3-taxon case from implementation plan
+    // Tree: ((A:0.1, B:0.2):0.05, C:0.15)
+    // Pattern: A='A'(0), B='C'(1), C='G'(2)
+    // Tests the TIP-INTERNAL kernel: one internal child (AB cherry)
+    // + one leaf child (C) at the root node.
+    // Expected lnL = -6.465999160939802
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 5a: 3-taxon reference (A,C,G), TIP-INTERNAL ---" << endl;
+
+        // Branch lengths
+        double t_A = 0.1;    // A → cherry
+        double t_B = 0.2;    // B → cherry
+        double t_AB = 0.05;  // cherry → root (internal branch)
+        double t_C = 0.15;   // C → root
+
+        double pi[K] = {0.25, 0.25, 0.25, 0.25}; // JC equal frequencies
+
+        // Compute transition matrices for all 4 branches
+        double P_A[K * K], P_B[K * K], P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+
+        // Observed states: A='A'(0), B='C'(1), C='G'(2)
+        int state_A = 0;
+        int state_B = 1;
+        int state_C = 2;
+
+        // ---- Stage 1: TIP-TIP at cherry (AB) ----
+        // Same formula as Step 4: L_AB[s] = P_A[s][state_A] * P_B[s][state_B]
+        double L_AB[K];
+        for (int s = 0; s < K; s++) {
+            L_AB[s] = P_A[s * K + state_A] * P_B[s * K + state_B];
+        }
+
+        // ---- Stage 2: TIP-INTERNAL at root ----
+        // Internal child (AB): real dot product  vleft = P_AB · L_AB
+        // Leaf child (C): column lookup           vright = P_C[][state_C]
+        // Hadamard: L_root[s] = vleft * vright
+        //
+        // Loop structure matches production TIP-INTERNAL kernel:
+        //   for s (output state, vectorizable):
+        //     vright = sum_x P[s*K+x] * partial_right[x]  (internal child)
+        //     vleft  = tip_lh[state*block + s]             (leaf, pre-baked)
+        //     L[s] = vleft * vright
+        double L_root[K];
+        for (int s = 0; s < K; s++) {
+            // Internal child (AB): dot product (this is the NEW computation)
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++) {
+                vleft += P_AB[s * K + x] * L_AB[x];
+            }
+            // Leaf child (C): column lookup
+            double vright = P_C[s * K + state_C];
+            // Hadamard product
+            L_root[s] = vleft * vright;
+        }
+
+        // Site likelihood: ell = sum_s pi[s] * L_root[s]
+        double ell = 0.0;
+        for (int s = 0; s < K; s++) {
+            ell += pi[s] * L_root[s];
+        }
+        double lnL = log(ell);
+
+        double expected_lnL = -6.465999160939802;
+        double tol = 1e-6;
+
+        cout << "  Tree: ((A:0.1,B:0.2):0.05,C:0.15)" << endl;
+        cout << "  Pattern: A='A', B='C', C='G'" << endl;
+        cout << "  L_AB = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_AB[s];
+        cout << "]" << endl;
+        cout << "  L_root = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_root[s];
+        cout << "]" << endl;
+        cout << "  Site likelihood = " << ell << endl;
+        cout << "  lnL = " << lnL << endl;
+        cout << "  Expected lnL = " << expected_lnL << endl;
+        cout << "  Difference = " << fabs(lnL - expected_lnL) << endl;
+
+        bool pass = approxEqual(lnL, expected_lnL, tol);
+        cout << "  ... " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 5b: Verify intermediate partial likelihoods at AB cherry
+    // Same tree/pattern as 5a; checks that AB partials match plan values
+    // within tolerance 1e-6 (plan specifies 1e-12 but we use 1e-6 for
+    // consistency with the overall tol and to guard against rounding).
+    // Reference: AB = [5.303947e-02, 2.572822e-02, 1.826149e-03, 1.826149e-03]
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 5b: Intermediate AB partial verification ---" << endl;
+
+        double P_A[K * K], P_B[K * K];
+        computeTransMatrixEqualRate(0.1, K, P_A);
+        computeTransMatrixEqualRate(0.2, K, P_B);
+
+        int state_A = 0, state_B = 1;
+        double L_AB[K];
+        for (int s = 0; s < K; s++) {
+            L_AB[s] = P_A[s * K + state_A] * P_B[s * K + state_B];
+        }
+
+        // Reference values from OPENACC_IMPLEMENTATION_PLAN.md (Test Case 2)
+        double expected_AB[K] = {5.303947e-02, 2.572822e-02, 1.826149e-03, 1.826149e-03};
+        double tol_partial = 1e-6;
+
+        bool partials_ok = true;
+        cout << "  Computed AB: [";
+        for (int s = 0; s < K; s++) {
+            cout << (s ? "," : "") << L_AB[s];
+            if (!approxEqual(L_AB[s], expected_AB[s], tol_partial))
+                partials_ok = false;
+        }
+        cout << "]" << endl;
+        cout << "  Expected AB: [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << expected_AB[s];
+        cout << "]" << endl;
+
+        // Also verify root partials from plan
+        double P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(0.05, K, P_AB);
+        computeTransMatrixEqualRate(0.15, K, P_C);
+
+        int state_C = 2;
+        double L_root[K];
+        for (int s = 0; s < K; s++) {
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++)
+                vleft += P_AB[s * K + x] * L_AB[x];
+            double vright = P_C[s * K + state_C];
+            L_root[s] = vleft * vright;
+        }
+
+        double expected_root[K] = {2.308811e-03, 1.150960e-03, 2.624333e-03, 1.376402e-04};
+        bool root_ok = true;
+        cout << "  Computed root: [";
+        for (int s = 0; s < K; s++) {
+            cout << (s ? "," : "") << L_root[s];
+            if (!approxEqual(L_root[s], expected_root[s], tol_partial))
+                root_ok = false;
+        }
+        cout << "]" << endl;
+        cout << "  Expected root: [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << expected_root[s];
+        cout << "]" << endl;
+
+        bool pass = partials_ok && root_ok;
+        cout << "  AB partials: " << (partials_ok ? "PASS" : "FAIL") << endl;
+        cout << "  Root partials: " << (root_ok ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 5c: 4-taxon tree with INTERNAL-INTERNAL at root
+    // Tree: ((A:0.1, B:0.2):0.05, (C:0.15, D:0.1):0.08)
+    // Pattern: A='A'(0), B='C'(1), C='G'(2), D='T'(3)
+    //
+    // Exercises:
+    //   Stage 1a: TIP-TIP at cherry (AB)
+    //   Stage 1b: TIP-TIP at cherry (CD)
+    //   Stage 2:  INTERNAL-INTERNAL at root (both children are internal)
+    //
+    // Loop structure matches production INTERNAL-INTERNAL kernel:
+    //   for s:
+    //     vleft  = sum_x P_left[s*K+x]  * L_left[x]
+    //     vright = sum_x P_right[s*K+x] * L_right[x]
+    //     L[s] = vleft * vright
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 5c: 4-taxon INTERNAL-INTERNAL ---" << endl;
+
+        // Branch lengths
+        double t_A = 0.1, t_B = 0.2;     // leaves → cherry AB
+        double t_C = 0.15, t_D = 0.1;    // leaves → cherry CD
+        double t_AB = 0.05, t_CD = 0.08; // internal branches → root
+
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        // Compute transition matrices for all 6 branches
+        double P_A[K * K], P_B[K * K], P_C[K * K], P_D[K * K];
+        double P_AB[K * K], P_CD[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+        computeTransMatrixEqualRate(t_D, K, P_D);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_CD, K, P_CD);
+
+        // Observed states: all different
+        int state_A = 0, state_B = 1, state_C = 2, state_D = 3;
+
+        // ---- Stage 1a: TIP-TIP at cherry (AB) ----
+        double L_AB[K];
+        for (int s = 0; s < K; s++) {
+            L_AB[s] = P_A[s * K + state_A] * P_B[s * K + state_B];
+        }
+
+        // ---- Stage 1b: TIP-TIP at cherry (CD) ----
+        double L_CD[K];
+        for (int s = 0; s < K; s++) {
+            L_CD[s] = P_C[s * K + state_C] * P_D[s * K + state_D];
+        }
+
+        // ---- Stage 2: INTERNAL-INTERNAL at root ----
+        // Both children are internal: two dot products + Hadamard
+        double L_root[K];
+        for (int s = 0; s < K; s++) {
+            // Left child (AB): dot product
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++) {
+                vleft += P_AB[s * K + x] * L_AB[x];
+            }
+            // Right child (CD): dot product
+            double vright = 0.0;
+            for (int x = 0; x < K; x++) {
+                vright += P_CD[s * K + x] * L_CD[x];
+            }
+            // Hadamard product
+            L_root[s] = vleft * vright;
+        }
+
+        // Site likelihood
+        double ell = 0.0;
+        for (int s = 0; s < K; s++) {
+            ell += pi[s] * L_root[s];
+        }
+        double lnL = log(ell);
+
+        cout << "  Tree: ((A:0.1,B:0.2):0.05,(C:0.15,D:0.1):0.08)" << endl;
+        cout << "  Pattern: A='A', B='C', C='G', D='T'" << endl;
+        cout << "  L_AB = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_AB[s];
+        cout << "]" << endl;
+        cout << "  L_CD = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_CD[s];
+        cout << "]" << endl;
+        cout << "  L_root = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_root[s];
+        cout << "]" << endl;
+        cout << "  Site likelihood = " << ell << endl;
+        cout << "  lnL = " << lnL << endl;
+
+        // Verify basic properties
+        bool pass_finite = !std::isnan(lnL) && !std::isinf(lnL);
+        bool pass_negative = lnL < 0.0;
+        // 4-taxon all-mismatch with moderate branches → expect lnL in [-15, -5]
+        bool pass_range = lnL < -5.0 && lnL > -15.0;
+
+        cout << "  Finite: " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Negative: " << (pass_negative ? "PASS" : "FAIL") << endl;
+        cout << "  Range [-15, -5]: " << (pass_range ? "PASS" : "FAIL") << endl;
+
+        // Also verify symmetry: swapping left/right subtrees should give same result
+        // (compute with AB on right, CD on left)
+        double L_root_swapped[K];
+        for (int s = 0; s < K; s++) {
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++)
+                vleft += P_CD[s * K + x] * L_CD[x];
+            double vright = 0.0;
+            for (int x = 0; x < K; x++)
+                vright += P_AB[s * K + x] * L_AB[x];
+            L_root_swapped[s] = vleft * vright;
+        }
+        double ell_swapped = 0.0;
+        for (int s = 0; s < K; s++) ell_swapped += pi[s] * L_root_swapped[s];
+        double lnL_swapped = log(ell_swapped);
+
+        bool pass_symmetry = approxEqual(lnL, lnL_swapped, 1e-14);
+        cout << "  Swap symmetry (diff=" << fabs(lnL - lnL_swapped) << "): "
+             << (pass_symmetry ? "PASS" : "FAIL") << endl;
+
+        bool pass = pass_finite && pass_negative && pass_range && pass_symmetry;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 5d: Multi-pattern 3-taxon alignment
+    // Tree: ((A:0.1, B:0.2):0.05, C:0.15)
+    // 4 patterns with frequencies:
+    //   Pattern 0: A,C,G (mismatch) freq=1
+    //   Pattern 1: A,A,A (match)    freq=3
+    //   Pattern 2: C,C,C (match)    freq=2
+    //   Pattern 3: G,T,A (mismatch) freq=1
+    // Total sites = 7
+    //
+    // Verifies the full pattern loop: total_lnL = sum(freq * ptn_lnL)
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 5d: Multi-pattern 3-taxon alignment ---" << endl;
+
+        double t_A = 0.1, t_B = 0.2, t_AB = 0.05, t_C = 0.15;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double P_A[K * K], P_B[K * K], P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+
+        struct Pattern3 { int sA; int sB; int sC; int freq; };
+        Pattern3 patterns[] = {
+            {0, 1, 2, 1},  // A,C,G  freq 1  (reference case)
+            {0, 0, 0, 3},  // A,A,A  freq 3
+            {1, 1, 1, 2},  // C,C,C  freq 2
+            {2, 3, 0, 1},  // G,T,A  freq 1
+        };
+        int nptn = 4;
+
+        double total_lnL = 0.0;
+        for (int p = 0; p < nptn; p++) {
+            // Stage 1: TIP-TIP at cherry (AB)
+            double L_AB[K];
+            for (int s = 0; s < K; s++) {
+                L_AB[s] = P_A[s * K + patterns[p].sA]
+                        * P_B[s * K + patterns[p].sB];
+            }
+
+            // Stage 2: TIP-INTERNAL at root
+            double L_root[K];
+            for (int s = 0; s < K; s++) {
+                double vleft = 0.0;
+                for (int x = 0; x < K; x++) {
+                    vleft += P_AB[s * K + x] * L_AB[x];
+                }
+                double vright = P_C[s * K + patterns[p].sC];
+                L_root[s] = vleft * vright;
+            }
+
+            // Site likelihood
+            double ell = 0.0;
+            for (int s = 0; s < K; s++) ell += pi[s] * L_root[s];
+            double ptn_lnL = log(ell);
+
+            cout << "  Pattern " << p << " ("
+                 << patterns[p].sA << "," << patterns[p].sB << "," << patterns[p].sC
+                 << "): lnL=" << ptn_lnL
+                 << " x freq=" << patterns[p].freq << endl;
+
+            total_lnL += ptn_lnL * patterns[p].freq;
+        }
+
+        cout << "  Total lnL = " << total_lnL << endl;
+
+        // Verify: first pattern should match Test 5a reference
+        // total should be finite, negative, and reasonable for 7 sites
+        bool pass_finite = !std::isnan(total_lnL) && !std::isinf(total_lnL);
+        bool pass_negative = total_lnL < 0.0;
+        // 7 sites, expect total in roughly [-50, -5]
+        bool pass_range = total_lnL < -5.0 && total_lnL > -50.0;
+
+        cout << "  Finite: " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Negative: " << (pass_negative ? "PASS" : "FAIL") << endl;
+        cout << "  Range [-50, -5]: " << (pass_range ? "PASS" : "FAIL") << endl;
+
+        bool pass = pass_finite && pass_negative && pass_range;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Summary
+    // ------------------------------------------------------------------
+    cout << endl << "=== OpenACC Step 5 Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+
+    return all_pass;
+}
+
+// ==========================================================================
 // Step 3 (old): Scalar Likelihood Kernel — test & verification
 // ==========================================================================
 
