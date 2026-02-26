@@ -1183,6 +1183,409 @@ bool testScaling() {
 }
 
 // ==========================================================================
+// Step 7: Log-Likelihood at Root — test & verification
+// ==========================================================================
+//
+// Computes the final tree log-likelihood from root partials:
+//   site_lh_j  = pi^T . L_root_j                     (Eq 3)
+//   lnL_j      = log(site_lh_j) + n_j * LOG_SCALING   (Eq 7)
+//   total_lnL  = sum_j  w_j * lnL_j                   (Eq 4)
+//
+// Loop structure mirrors the PoC reduction kernel (OpenACC-ready):
+//   #pragma acc parallel loop reduction(+:logL)
+//   for j in patterns:
+//       site_lh = sum_s pi[s] * root_plh[j*K + s]
+//       logL += freq[j] * (log(site_lh) + scale[j] * LOG_SCALING_THRESHOLD)
+//
+// This is the LAST CPU math building block before Step 8 (full traversal).
+// ==========================================================================
+
+bool testLogLikelihoodRoot() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== OpenACC Step 7: Log-Likelihood at Root (CPU)         ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;  // DNA states
+
+    // ------------------------------------------------------------------
+    // Test 7a: Single-pattern pi^T . L_root dot product (Eq 3)
+    // Uses 3-taxon reference: ((A:0.1,B:0.2):0.05,C:0.15), pattern A,C,G
+    // Root partials from Step 5a: [2.309e-3, 1.151e-3, 2.624e-3, 1.376e-4]
+    // site_lh = 0.25 * sum = 1.555e-3
+    // lnL = log(1.555e-3) = -6.465999  (no scaling)
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 7a: Single-pattern pi^T . L_root (Eq 3) ---" << endl;
+
+        // Recompute the root partials from scratch (same as Step 5a)
+        double t_A = 0.1, t_B = 0.2, t_AB = 0.05, t_C = 0.15;
+        double P_A[K * K], P_B[K * K], P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+
+        int state_A = 0, state_B = 1, state_C = 2;  // A, C, G
+
+        // Stage 1: TIP-TIP at cherry (AB)
+        double L_AB[K];
+        for (int s = 0; s < K; s++) {
+            L_AB[s] = P_A[s * K + state_A] * P_B[s * K + state_B];
+        }
+
+        // Stage 2: TIP-INTERNAL at root
+        double L_root[K];
+        for (int s = 0; s < K; s++) {
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++) {
+                vleft += P_AB[s * K + x] * L_AB[x];
+            }
+            double vright = P_C[s * K + state_C];
+            L_root[s] = vleft * vright;
+        }
+
+        // === THIS IS THE NEW STEP 7 CODE ===
+        // Compute site likelihood: pi^T . L_root  (Eq 3)
+        // For JC model: pi = [0.25, 0.25, 0.25, 0.25]
+        //
+        // GPU-ready structure: this becomes a simple reduction over K states.
+        // In the PoC, this is done via baseFreq * rootL matrix multiply (1xK * KxP).
+        // Here we write it as an explicit dot product per pattern, which maps to:
+        //   #pragma acc parallel loop          (over patterns)
+        //   #pragma acc loop vector reduction   (over states)
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double site_lh = 0.0;
+        for (int s = 0; s < K; s++) {
+            site_lh += pi[s] * L_root[s];
+        }
+
+        // Log-likelihood (no scaling for this test)
+        UBYTE scale_num = 0;
+        double lnL = log(site_lh) + scale_num * LOG_SCALING_THRESHOLD;
+
+        double expected_lnL = -6.465999160939802;
+        double diff = fabs(lnL - expected_lnL);
+        bool pass_value = diff < 1e-8;
+
+        cout << "  L_root = [";
+        for (int s = 0; s < K; s++) cout << (s ? ", " : "") << L_root[s];
+        cout << "]" << endl;
+        cout << "  site_lh = pi^T . L_root = " << site_lh << endl;
+        cout << "  lnL = log(site_lh) = " << lnL << endl;
+        cout << "  Expected:             " << expected_lnL << endl;
+        cout << "  Diff:                 " << diff << endl;
+        cout << "  Value match (tol 1e-8): " << (pass_value ? "PASS" : "FAIL") << endl;
+
+        if (!pass_value) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 7b: Log-likelihood with scaling correction (Eq 7)
+    // Artificially scale root partials down, then verify correction recovers
+    // the true lnL.
+    // lnL_corrected = log(site_lh_stored) + n * LOG_SCALING_THRESHOLD
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 7b: Scaling correction in log-lh (Eq 7) ---" << endl;
+
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        // Use known root partials from Test 7a
+        double t_A = 0.1, t_B = 0.2, t_AB = 0.05, t_C = 0.15;
+        double P_A[K * K], P_B[K * K], P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+
+        int state_A = 0, state_B = 1, state_C = 2;
+
+        double L_AB[K];
+        for (int s = 0; s < K; s++)
+            L_AB[s] = P_A[s * K + state_A] * P_B[s * K + state_B];
+
+        double L_root_true[K];
+        for (int s = 0; s < K; s++) {
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++)
+                vleft += P_AB[s * K + x] * L_AB[x];
+            double vright = P_C[s * K + state_C];
+            L_root_true[s] = vleft * vright;
+        }
+
+        // True (unscaled) lnL
+        double site_lh_true = 0.0;
+        for (int s = 0; s < K; s++) site_lh_true += pi[s] * L_root_true[s];
+        double lnL_true = log(site_lh_true);
+
+        // Simulate n=2 scaling events: partials were multiplied by (2^256)^2
+        // This is what happens when both children of an INTERNAL-INTERNAL node
+        // each trigger one scaling event.
+        UBYTE scale_num = 2;
+        double L_root_scaled[K];
+        for (int s = 0; s < K; s++)
+            L_root_scaled[s] = ldexp(ldexp(L_root_true[s], SCALING_THRESHOLD_EXP), SCALING_THRESHOLD_EXP);
+
+        // Compute site_lh from scaled partials
+        double site_lh_scaled = 0.0;
+        for (int s = 0; s < K; s++) site_lh_scaled += pi[s] * L_root_scaled[s];
+
+        // Apply Eq 7 correction:
+        // lnL_corrected = log(site_lh_scaled) + scale_num * LOG_SCALING_THRESHOLD
+        //               = log(site_lh_true * 2^(256*2)) + 2 * LOG_SCALING_THRESHOLD
+        //               = log(site_lh_true) + 2*256*log(2) + 2*(-256*log(2))
+        //               = log(site_lh_true)  ← exact cancellation
+        double lnL_corrected = log(site_lh_scaled) + scale_num * LOG_SCALING_THRESHOLD;
+
+        double diff = fabs(lnL_corrected - lnL_true);
+        bool pass_roundtrip = diff < 1e-10;
+
+        cout << "  True lnL:      " << lnL_true << endl;
+        cout << "  Scaled site_lh: " << site_lh_scaled << " (2x scaled up)" << endl;
+        cout << "  Corrected lnL: " << lnL_corrected << endl;
+        cout << "  Diff:          " << diff << endl;
+        cout << "  Roundtrip (tol 1e-10): " << (pass_roundtrip ? "PASS" : "FAIL") << endl;
+
+        if (!pass_roundtrip) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 7c: Pattern-weighted sum on 7-site alignment (Eq 4)
+    // 3-taxon tree: ((A:0.1,B:0.2):0.05,C:0.15)
+    // 4 patterns with frequencies = 7 total sites
+    //
+    // This is the COMPLETE log-likelihood reduction, GPU-ready:
+    //   total_lnL = sum_j freq[j] * (log(pi^T . L_root_j) + scale[j]*LOG_SCALE)
+    //
+    // Loop structure mirrors PoC's OpenACC reduction:
+    //   double logL = 0.0;
+    //   #pragma acc parallel loop reduction(+:logL)
+    //                present(root_plh, freq, scale_num, pi)
+    //   for (int j = 0; j < nptn; j++) { ... }
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 7c: Pattern-weighted total lnL (Eq 4) ---" << endl;
+
+        double t_A = 0.1, t_B = 0.2, t_AB = 0.05, t_C = 0.15;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double P_A[K * K], P_B[K * K], P_AB[K * K], P_C[K * K];
+        computeTransMatrixEqualRate(t_A, K, P_A);
+        computeTransMatrixEqualRate(t_B, K, P_B);
+        computeTransMatrixEqualRate(t_AB, K, P_AB);
+        computeTransMatrixEqualRate(t_C, K, P_C);
+
+        struct Pattern3 { int sA; int sB; int sC; int freq; };
+        Pattern3 patterns[] = {
+            {0, 1, 2, 1},  // A,C,G  freq 1
+            {0, 0, 0, 3},  // A,A,A  freq 3
+            {1, 1, 1, 2},  // C,C,C  freq 2
+            {2, 3, 0, 1},  // G,T,A  freq 1
+        };
+        int nptn = 4;
+
+        // === PRE-COMPUTE ALL ROOT PARTIALS (post-order traversal) ===
+        // In full GPU pipeline, these would already be on device from Steps 9-10.
+        double root_plh[4 * K];   // nptn * K  (flat array, GPU-friendly)
+        UBYTE  scale_num[4];      // no scaling for these values
+        int    freq[4];
+
+        for (int j = 0; j < nptn; j++) {
+            scale_num[j] = 0;
+            freq[j] = patterns[j].freq;
+
+            // TIP-TIP at cherry
+            double L_AB[K];
+            for (int s = 0; s < K; s++) {
+                L_AB[s] = P_A[s * K + patterns[j].sA]
+                        * P_B[s * K + patterns[j].sB];
+            }
+
+            // TIP-INTERNAL at root
+            for (int s = 0; s < K; s++) {
+                double vleft = 0.0;
+                for (int x = 0; x < K; x++)
+                    vleft += P_AB[s * K + x] * L_AB[x];
+                double vright = P_C[s * K + patterns[j].sC];
+                root_plh[j * K + s] = vleft * vright;
+            }
+        }
+
+        // === LOG-LIKELIHOOD REDUCTION (Step 7 / Step 11 target) ===
+        // This loop is the exact structure that will become an OpenACC kernel.
+        // Compare with PoC: LikelihoodCalculator::computeSiteLikelihoodFromRoot()
+        //
+        // Future OpenACC (Step 11):
+        //   #pragma acc parallel loop reduction(+:total_lnL) \
+        //       present(root_plh[0:nptn*K], freq[0:nptn], scale_num[0:nptn])
+        //
+        double total_lnL = 0.0;
+        for (int j = 0; j < nptn; j++) {
+            // pi^T . L_root_j  (Eq 3)
+            double site_lh = 0.0;
+            for (int s = 0; s < K; s++) {
+                site_lh += pi[s] * root_plh[j * K + s];
+            }
+
+            // log + scaling correction  (Eq 7)
+            // Guard: clamp to avoid log(0) — matches PoC's kMinSiteLikelihood
+            if (site_lh < 1e-300) site_lh = 1e-300;
+
+            double ptn_lnL = log(site_lh) + scale_num[j] * LOG_SCALING_THRESHOLD;
+
+            // Weighted accumulation  (Eq 4)
+            total_lnL += freq[j] * ptn_lnL;
+        }
+
+        // Print per-pattern breakdown
+        for (int j = 0; j < nptn; j++) {
+            double site_lh = 0.0;
+            for (int s = 0; s < K; s++)
+                site_lh += pi[s] * root_plh[j * K + s];
+            double ptn_lnL = log(site_lh) + scale_num[j] * LOG_SCALING_THRESHOLD;
+            cout << "  Pattern " << j << " ("
+                 << patterns[j].sA << "," << patterns[j].sB << "," << patterns[j].sC
+                 << "): site_lh=" << site_lh
+                 << " lnL=" << ptn_lnL
+                 << " x freq=" << freq[j] << endl;
+        }
+        cout << "  Total lnL = " << total_lnL << " (7 sites)" << endl;
+
+        // Verify against plan reference
+        // Plan says: total lnL = -8.962730 for this alignment
+        // But the plan's Test Case 3 uses a 2-taxon 4-site alignment (AA,AC,CC)
+        // Our 7-site 3-taxon alignment is different. Verify internally:
+        //   - Must be finite, negative
+        //   - First pattern (A,C,G) lnL must match Step 5a: -6.465999
+        //   - Cross-check: recompute from Step 5d values
+
+        // Verify first pattern matches Step 5a
+        double site_lh_0 = 0.0;
+        for (int s = 0; s < K; s++) site_lh_0 += pi[s] * root_plh[0 * K + s];
+        double ptn0_lnL = log(site_lh_0);
+        double expected_ptn0 = -6.465999160939802;
+        bool pass_ptn0 = fabs(ptn0_lnL - expected_ptn0) < 1e-8;
+
+        bool pass_finite = !std::isnan(total_lnL) && !std::isinf(total_lnL);
+        bool pass_negative = total_lnL < 0.0;
+        // 7 sites, all lnL negative → expect roughly [-50, -5]
+        bool pass_range = total_lnL > -50.0 && total_lnL < -5.0;
+
+        cout << "  Pattern 0 lnL match (tol 1e-8): " << (pass_ptn0 ? "PASS" : "FAIL") << endl;
+        cout << "  Finite: " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Negative: " << (pass_negative ? "PASS" : "FAIL") << endl;
+        cout << "  Range [-50, -5]: " << (pass_range ? "PASS" : "FAIL") << endl;
+
+        if (!pass_ptn0 || !pass_finite || !pass_negative || !pass_range) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 7d: 2-taxon 4-site reference from plan (total lnL = -8.962730)
+    // Tree: (A:0.1,B:0.1)  — rooted cherry, equal branches
+    // Patterns: AA(freq=2), AC(freq=1), CC(freq=1) → 4 sites total
+    //
+    // Per-pattern expected (from plan):
+    //   AA: lnL = -1.579337686675270
+    //   AC: lnL = -4.224716686443124
+    //   CC: lnL = -1.579337686675270
+    //
+    // Total: 2*(-1.579338) + 1*(-4.224717) + 1*(-1.579338) = -8.962730
+    //
+    // This is the plan's golden reference value.
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 7d: 2-taxon plan reference (lnL = -8.962730) ---" << endl;
+
+        double t = 0.1;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+        double P[K * K];
+        computeTransMatrixEqualRate(t, K, P);
+
+        // Patterns: {state_A, state_B, frequency}
+        struct Pattern2 { int sA; int sB; int freq; };
+        Pattern2 patterns[] = {
+            {0, 0, 2},  // A,A  freq 2
+            {0, 1, 1},  // A,C  freq 1
+            {1, 1, 1},  // C,C  freq 1
+        };
+        int nptn = 3;
+
+        // Pre-compute root partials (TIP-TIP cherry, both branches = t)
+        double root_plh[3 * K];
+        UBYTE  scale_num[3];
+        int    freq[3];
+
+        for (int j = 0; j < nptn; j++) {
+            scale_num[j] = 0;
+            freq[j] = patterns[j].freq;
+
+            // TIP-TIP: L_root[s] = P[s,sA] * P[s,sB]
+            for (int s = 0; s < K; s++) {
+                root_plh[j * K + s] = P[s * K + patterns[j].sA]
+                                    * P[s * K + patterns[j].sB];
+            }
+        }
+
+        // === LOG-LIKELIHOOD REDUCTION (GPU-ready loop) ===
+        // Future OpenACC:
+        //   #pragma acc parallel loop reduction(+:total_lnL) \
+        //       present(root_plh[0:nptn*K], freq[0:nptn], scale_num[0:nptn])
+        double total_lnL = 0.0;
+        double per_ptn_lnL[3];
+
+        for (int j = 0; j < nptn; j++) {
+            double site_lh = 0.0;
+            for (int s = 0; s < K; s++) {
+                site_lh += pi[s] * root_plh[j * K + s];
+            }
+            if (site_lh < 1e-300) site_lh = 1e-300;
+
+            per_ptn_lnL[j] = log(site_lh) + scale_num[j] * LOG_SCALING_THRESHOLD;
+            total_lnL += freq[j] * per_ptn_lnL[j];
+        }
+
+        // Expected per-pattern values from plan
+        double expected_AA = -1.579337686675270;
+        double expected_AC = -4.224716686443124;
+        double expected_CC = -1.579337686675270;
+        double expected_total = -8.962729746468934;
+
+        cout << "  AA (freq=2): lnL=" << per_ptn_lnL[0]
+             << " expected=" << expected_AA << endl;
+        cout << "  AC (freq=1): lnL=" << per_ptn_lnL[1]
+             << " expected=" << expected_AC << endl;
+        cout << "  CC (freq=1): lnL=" << per_ptn_lnL[2]
+             << " expected=" << expected_CC << endl;
+        cout << "  Total lnL = " << total_lnL
+             << " expected=" << expected_total << endl;
+
+        bool pass_AA = fabs(per_ptn_lnL[0] - expected_AA) < 1e-8;
+        bool pass_AC = fabs(per_ptn_lnL[1] - expected_AC) < 1e-8;
+        bool pass_CC = fabs(per_ptn_lnL[2] - expected_CC) < 1e-8;
+        bool pass_total = fabs(total_lnL - expected_total) < 1e-8;
+
+        cout << "  AA match (tol 1e-8): " << (pass_AA ? "PASS" : "FAIL") << endl;
+        cout << "  AC match (tol 1e-8): " << (pass_AC ? "PASS" : "FAIL") << endl;
+        cout << "  CC match (tol 1e-8): " << (pass_CC ? "PASS" : "FAIL") << endl;
+        cout << "  Total match (tol 1e-8): " << (pass_total ? "PASS" : "FAIL") << endl;
+
+        if (!pass_AA || !pass_AC || !pass_CC || !pass_total) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Summary
+    // ------------------------------------------------------------------
+    cout << endl << "=== OpenACC Step 7 Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+
+    return all_pass;
+}
+
+// ==========================================================================
 // Step 3 (old): Scalar Likelihood Kernel — test & verification
 // ==========================================================================
 

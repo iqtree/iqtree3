@@ -93,6 +93,31 @@ bool testTipInternalInternal();
 bool testScaling();
 
 // ==========================================================================
+// Step 7: Log-Likelihood at Root — test & verification
+// ==========================================================================
+
+/**
+ * Standalone test of the final log-likelihood reduction at the root.
+ * Computes total tree log-likelihood from root partial likelihoods using:
+ *   site_lh = pi^T . L_root          (Eq 3)
+ *   lnL = log(site_lh) + n*LOG_SCALE (Eq 7)
+ *   total = sum(freq * lnL)           (Eq 4)
+ *
+ * Tests:
+ *   7a: Single-pattern pi^T . L_root dot product → lnL = -6.465999
+ *   7b: Scaling correction roundtrip (n=2 events cancel exactly)
+ *   7c: Multi-pattern 3-taxon alignment (7 sites) → weighted total
+ *   7d: 2-taxon plan golden reference → total lnL = -8.962730
+ *
+ * Loop structure mirrors PoC's OpenACC reduction kernel:
+ *   #pragma acc parallel loop reduction(+:logL) present(root_plh, freq, scale)
+ *   for (j = 0; j < nptn; j++) { site_lh = pi^T . root_plh[j]; ... }
+ *
+ * @return true if all tests pass
+ */
+bool testLogLikelihoodRoot();
+
+// ==========================================================================
 // Full kernel tests (require initialized PhyloTree)
 // ==========================================================================
 
