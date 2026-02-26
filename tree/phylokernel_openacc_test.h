@@ -70,6 +70,29 @@ bool testTipTipInternal();
 bool testTipInternalInternal();
 
 // ==========================================================================
+// Step 6: Underflow Scaling — test & verification
+// ==========================================================================
+
+/**
+ * Standalone test of the dynamic underflow scaling mechanism.
+ * Verifies that partial likelihoods below SCALING_THRESHOLD (2^-256)
+ * are scaled up correctly and the log-likelihood correction recovers
+ * the true value.
+ *
+ * Tests:
+ *   6a: Scaling triggers on tiny partials (< 8.636e-78)
+ *   6b: Scaling does NOT trigger on normal values (> 1e-3)
+ *   6c: Log-likelihood correction roundtrip (n=1 and n=3)
+ *   6d: Scale_num propagation through 4-taxon tree
+ *
+ * Uses IQ-TREE constants: SCALING_THRESHOLD, SCALING_THRESHOLD_EXP,
+ * LOG_SCALING_THRESHOLD (from phylotree.h).
+ *
+ * @return true if all tests pass
+ */
+bool testScaling();
+
+// ==========================================================================
 // Full kernel tests (require initialized PhyloTree)
 // ==========================================================================
 

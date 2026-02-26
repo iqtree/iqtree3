@@ -2442,11 +2442,12 @@ int main(int argc, char *argv[]) {
             cout << ")" << endl;
         }
     }
-    // Run OpenACC self-tests (Steps 2-5 verification)
+    // Run OpenACC self-tests (Steps 2-6 verification)
     testJCTransMatrix();          // Step 2: JC P(t) matrix
     testTipOneHot();              // Step 3: Tip one-hot vectors
     testTipTipInternal();         // Step 4: TIP-TIP cherry node
     testTipInternalInternal();    // Step 5: TIP-INTERNAL + INTERNAL-INTERNAL
+    testScaling();                // Step 6: Underflow scaling
 #endif
 
     cout << "Command:";

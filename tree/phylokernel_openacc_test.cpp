@@ -871,6 +871,318 @@ bool testTipInternalInternal() {
 }
 
 // ==========================================================================
+// Step 6: Underflow Scaling — standalone test & verification
+//
+// Tests the dynamic scaling mechanism that prevents underflow when
+// partial likelihoods become extremely small (deep trees, many taxa).
+//
+// IQ-TREE scaling constants (from phylotree.h):
+//   SCALING_THRESHOLD     = 2^(-256) ≈ 8.636e-78
+//   SCALING_THRESHOLD_EXP = 256
+//   LOG_SCALING_THRESHOLD = ln(2^(-256)) ≈ -177.4457
+//
+// Scaling logic (applied after computing each internal node):
+//   if max(L_parent) < SCALING_THRESHOLD:
+//     L_parent[s] *= 2^256   (via ldexp)
+//     scale_num[ptn] += 1
+//
+// Log-likelihood correction at root:
+//   lnL = log(site_lh_stored) + total_scale_num * LOG_SCALING_THRESHOLD
+//
+// Scale_num propagation:
+//   TIP-TIP:           scale_num = 0 + (new_scaling ? 1 : 0)
+//   TIP-INTERNAL:      scale_num = child_scale + (new ? 1 : 0)
+//   INTERNAL-INTERNAL:  scale_num = left_scale + right_scale + (new ? 1 : 0)
+// ==========================================================================
+
+bool testScaling() {
+    cout << endl;
+    cout << "=== OpenACC Step 6: Testing Underflow Scaling ===" << endl;
+    cout << "    (standalone scaling verification, no IQ-TREE tree required)" << endl;
+
+    bool all_pass = true;
+    const int K = 4; // DNA states
+
+    // ------------------------------------------------------------------
+    // Test 6a: Scaling triggers on tiny partial likelihoods
+    // Values below SCALING_THRESHOLD (≈ 8.636e-78) must be scaled up
+    // by 2^256 and scale_num incremented by 1.
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 6a: Scaling triggers on tiny partials ---" << endl;
+
+        // Partial likelihoods well below SCALING_THRESHOLD
+        double L[K] = {1e-80, 2e-80, 5e-81, 1.5e-80};
+        UBYTE scale_num = 0;
+
+        // Save originals for verification
+        double L_orig[K];
+        for (int s = 0; s < K; s++) L_orig[s] = L[s];
+
+        // Find max (same logic as production kernel)
+        double lh_max = 0.0;
+        for (int s = 0; s < K; s++)
+            if (L[s] > lh_max) lh_max = L[s];
+
+        cout << "  Before: max=" << lh_max
+             << "  threshold=" << SCALING_THRESHOLD << endl;
+        cout << "  Below threshold: " << (lh_max < SCALING_THRESHOLD ? "YES" : "NO") << endl;
+
+        // Apply scaling (identical to production kernel)
+        if (lh_max < SCALING_THRESHOLD) {
+            for (int s = 0; s < K; s++)
+                L[s] = ldexp(L[s], SCALING_THRESHOLD_EXP);
+            scale_num += 1;
+        }
+
+        cout << "  After:  L = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L[s];
+        cout << "]" << endl;
+        cout << "  scale_num = " << (int)scale_num << endl;
+
+        // Verify scaling triggered
+        bool pass_triggered = (scale_num == 1);
+
+        // Verify scaled values = original * 2^256
+        bool pass_values = true;
+        for (int s = 0; s < K; s++) {
+            double expected = ldexp(L_orig[s], SCALING_THRESHOLD_EXP);
+            if (!approxEqual(L[s], expected, fabs(expected) * 1e-14))
+                pass_values = false;
+        }
+
+        // Verify scaled values are now in reasonable range (not tiny anymore)
+        bool pass_range = true;
+        for (int s = 0; s < K; s++) {
+            if (L[s] < 1e-10 || L[s] > 1e10) pass_range = false;
+        }
+
+        cout << "  Triggered: " << (pass_triggered ? "PASS" : "FAIL") << endl;
+        cout << "  Values = orig*2^256: " << (pass_values ? "PASS" : "FAIL") << endl;
+        cout << "  In reasonable range: " << (pass_range ? "PASS" : "FAIL") << endl;
+
+        if (!pass_triggered || !pass_values || !pass_range) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 6b: Scaling does NOT trigger on normal-sized partials
+    // Reuses Step 5's AB cherry partials (all > 1e-3), which are far
+    // above the 8.636e-78 threshold.
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 6b: No scaling on normal partials ---" << endl;
+
+        // Compute Step 5's AB partials: P(0.1)[s][0] * P(0.2)[s][1]
+        double P_A[K * K], P_B[K * K];
+        computeTransMatrixEqualRate(0.1, K, P_A);
+        computeTransMatrixEqualRate(0.2, K, P_B);
+
+        double L[K];
+        for (int s = 0; s < K; s++)
+            L[s] = P_A[s * K + 0] * P_B[s * K + 1]; // A vs C
+
+        UBYTE scale_num = 0;
+        double lh_max = 0.0;
+        for (int s = 0; s < K; s++)
+            if (L[s] > lh_max) lh_max = L[s];
+
+        // Apply same logic — should NOT trigger
+        if (lh_max < SCALING_THRESHOLD) {
+            for (int s = 0; s < K; s++)
+                L[s] = ldexp(L[s], SCALING_THRESHOLD_EXP);
+            scale_num += 1;
+        }
+
+        cout << "  max=" << lh_max << "  threshold=" << SCALING_THRESHOLD << endl;
+        cout << "  scale_num = " << (int)scale_num << endl;
+
+        bool pass = (scale_num == 0);
+        cout << "  Not triggered: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 6c: Log-likelihood correction roundtrip
+    // Take Step 5a's known root partials, simulate a scaling event by
+    // storing them as (true_value * 2^256) with scale_num=1, then
+    // verify that the correction formula recovers the true lnL.
+    //
+    // lnL = log(stored_site_lh) + scale_num * LOG_SCALING_THRESHOLD
+    //     = log(true_site_lh * 2^256) + 1 * (-256*ln2)
+    //     = log(true_site_lh) + 256*ln2 - 256*ln2
+    //     = log(true_site_lh)   ← exact cancellation
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 6c: lnL correction roundtrip ---" << endl;
+
+        // True root partials from Step 5a (plan reference)
+        double L_root_true[K] = {2.308811e-03, 1.150960e-03, 2.624333e-03, 1.376402e-04};
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        // True lnL (no scaling)
+        double site_lh_true = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_true += pi[s] * L_root_true[s];
+        double lnL_true = log(site_lh_true);
+
+        // Simulate scaling: stored = true * 2^256, scale_num = 1
+        double L_root_stored[K];
+        for (int s = 0; s < K; s++)
+            L_root_stored[s] = ldexp(L_root_true[s], SCALING_THRESHOLD_EXP);
+        UBYTE scale_num = 1;
+
+        // Compute corrected lnL (same formula as production kernel)
+        double site_lh_stored = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_stored += pi[s] * L_root_stored[s];
+        double lnL_corrected = log(site_lh_stored) + scale_num * LOG_SCALING_THRESHOLD;
+
+        // Also test with scale_num = 3 (triple scaling)
+        double L_root_triple[K];
+        for (int s = 0; s < K; s++)
+            L_root_triple[s] = ldexp(L_root_true[s], 3 * SCALING_THRESHOLD_EXP);
+        UBYTE scale_num_3 = 3;
+        double site_lh_triple = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_triple += pi[s] * L_root_triple[s];
+        double lnL_triple = log(site_lh_triple) + scale_num_3 * LOG_SCALING_THRESHOLD;
+
+        double expected_lnL = -6.465999160939802;
+
+        cout << "  True lnL        = " << lnL_true << endl;
+        cout << "  Corrected (n=1) = " << lnL_corrected << endl;
+        cout << "  Corrected (n=3) = " << lnL_triple << endl;
+        cout << "  Expected        = " << expected_lnL << endl;
+        cout << "  Diff (n=1) = " << fabs(lnL_corrected - lnL_true) << endl;
+        cout << "  Diff (n=3) = " << fabs(lnL_triple - lnL_true) << endl;
+
+        bool pass_true = approxEqual(lnL_true, expected_lnL, 1e-6);
+        bool pass_n1 = approxEqual(lnL_corrected, lnL_true, 1e-10);
+        bool pass_n3 = approxEqual(lnL_triple, lnL_true, 1e-8);
+
+        cout << "  True matches ref: " << (pass_true ? "PASS" : "FAIL") << endl;
+        cout << "  n=1 correction:   " << (pass_n1 ? "PASS" : "FAIL") << endl;
+        cout << "  n=3 correction:   " << (pass_n3 ? "PASS" : "FAIL") << endl;
+
+        if (!pass_true || !pass_n1 || !pass_n3) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 6d: Scale_num propagation through a 4-taxon tree
+    // Tree: ((A,B):t_AB, (C,D):t_CD)
+    //
+    // Inject tiny artificial partials at both cherries:
+    //   L_AB below threshold → scale_AB = 1
+    //   L_CD below threshold → scale_CD = 1
+    // Then compute INTERNAL-INTERNAL at root:
+    //   scale_root = scale_AB + scale_CD + (root_scaling ? 1 : 0)
+    //
+    // After scaling cherries, their values are ~1e-3, so the root
+    // product ~1e-6 is above threshold → no additional root scaling.
+    // Expected: scale_root = 2.
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 6d: Scale_num propagation through tree ---" << endl;
+
+        // Artificial tiny partials for both cherries (below 8.636e-78)
+        double L_AB[K] = {1e-80, 2e-81, 5e-81, 1e-81};
+        double L_CD[K] = {3e-81, 1e-80, 1e-81, 2e-81};
+        UBYTE scale_AB = 0, scale_CD = 0;
+
+        // Scale cherry AB if needed
+        double max_AB = 0.0;
+        for (int s = 0; s < K; s++)
+            if (L_AB[s] > max_AB) max_AB = L_AB[s];
+        if (max_AB < SCALING_THRESHOLD) {
+            for (int s = 0; s < K; s++)
+                L_AB[s] = ldexp(L_AB[s], SCALING_THRESHOLD_EXP);
+            scale_AB += 1;
+        }
+
+        // Scale cherry CD if needed
+        double max_CD = 0.0;
+        for (int s = 0; s < K; s++)
+            if (L_CD[s] > max_CD) max_CD = L_CD[s];
+        if (max_CD < SCALING_THRESHOLD) {
+            for (int s = 0; s < K; s++)
+                L_CD[s] = ldexp(L_CD[s], SCALING_THRESHOLD_EXP);
+            scale_CD += 1;
+        }
+
+        cout << "  Cherry AB: scale_num=" << (int)scale_AB
+             << " max_before=" << max_AB << endl;
+        cout << "  Cherry CD: scale_num=" << (int)scale_CD
+             << " max_before=" << max_CD << endl;
+
+        // INTERNAL-INTERNAL at root
+        double P_AB[K * K], P_CD[K * K];
+        computeTransMatrixEqualRate(0.05, K, P_AB);
+        computeTransMatrixEqualRate(0.08, K, P_CD);
+
+        double L_root[K];
+        for (int s = 0; s < K; s++) {
+            double vleft = 0.0;
+            for (int x = 0; x < K; x++)
+                vleft += P_AB[s * K + x] * L_AB[x];
+            double vright = 0.0;
+            for (int x = 0; x < K; x++)
+                vright += P_CD[s * K + x] * L_CD[x];
+            L_root[s] = vleft * vright;
+        }
+
+        // Propagate scale_num from children
+        UBYTE scale_root = scale_AB + scale_CD;
+
+        // Check if root also needs scaling
+        double lh_max = 0.0;
+        for (int s = 0; s < K; s++)
+            if (L_root[s] > lh_max) lh_max = L_root[s];
+
+        cout << "  Root: max_before_scaling=" << lh_max << endl;
+
+        if (lh_max == 0.0) {
+            scale_root += 4;
+        } else if (lh_max < SCALING_THRESHOLD) {
+            for (int s = 0; s < K; s++)
+                L_root[s] = ldexp(L_root[s], SCALING_THRESHOLD_EXP);
+            scale_root += 1;
+        }
+
+        cout << "  Root: scale_num=" << (int)scale_root << endl;
+
+        // Verify children were scaled
+        bool pass_children = (scale_AB == 1 && scale_CD == 1);
+        // Root should be sum of children (no additional scaling for these values)
+        bool pass_propagation = (scale_root == 2);
+
+        // Verify corrected lnL is finite and negative
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+        double site_lh = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh += pi[s] * L_root[s];
+        double lnL = log(site_lh) + scale_root * LOG_SCALING_THRESHOLD;
+
+        bool pass_finite = !std::isnan(lnL) && !std::isinf(lnL) && lnL < 0.0;
+
+        cout << "  Corrected lnL = " << lnL << endl;
+        cout << "  Children scaled: " << (pass_children ? "PASS" : "FAIL") << endl;
+        cout << "  Propagation (expect 2): " << (pass_propagation ? "PASS" : "FAIL") << endl;
+        cout << "  lnL finite & negative: " << (pass_finite ? "PASS" : "FAIL") << endl;
+
+        if (!pass_children || !pass_propagation || !pass_finite) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Summary
+    // ------------------------------------------------------------------
+    cout << endl << "=== OpenACC Step 6 Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+
+    return all_pass;
+}
+
+// ==========================================================================
 // Step 3 (old): Scalar Likelihood Kernel — test & verification
 // ==========================================================================
 
