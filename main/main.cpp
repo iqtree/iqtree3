@@ -2442,8 +2442,10 @@ int main(int argc, char *argv[]) {
             cout << ")" << endl;
         }
     }
-    // Run OpenACC JC transition matrix self-test (Step 2 verification)
-    testJCTransMatrix();
+    // Run OpenACC self-tests (Steps 2-4 verification)
+    testJCTransMatrix();    // Step 2: JC P(t) matrix
+    testTipOneHot();        // Step 3: Tip one-hot vectors
+    testTipTipInternal();   // Step 4: TIP-TIP cherry node
 #endif
 
     cout << "Command:";

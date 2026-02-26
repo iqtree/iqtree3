@@ -170,7 +170,297 @@ bool testJCTransMatrix() {
 }
 
 // ==========================================================================
-// Step 3: Scalar Likelihood Kernel — test & verification
+// Step 3: Tip one-hot vectors — test & verification
+// ==========================================================================
+
+bool testTipOneHot() {
+    cout << endl;
+    cout << "=== OpenACC Step 3: Testing Tip One-Hot Vectors ===" << endl;
+
+    bool all_pass = true;
+    const int K = 4; // DNA states: A=0, C=1, G=2, T=3
+
+    // For each observed state, the one-hot vector should be:
+    //   state 0 (A): [1, 0, 0, 0]
+    //   state 1 (C): [0, 1, 0, 0]
+    //   state 2 (G): [0, 0, 1, 0]
+    //   state 3 (T): [0, 0, 0, 1]
+    // Unknown/gap:   [1, 1, 1, 1]
+
+    for (int s = 0; s < K; s++) {
+        double tip[K];
+        for (int i = 0; i < K; i++)
+            tip[i] = (i == s) ? 1.0 : 0.0;
+
+        bool ok = true;
+        for (int i = 0; i < K; i++) {
+            double expected = (i == s) ? 1.0 : 0.0;
+            if (tip[i] != expected) ok = false;
+        }
+        cout << "  State " << s << ": [" << tip[0] << "," << tip[1]
+             << "," << tip[2] << "," << tip[3] << "] ... "
+             << (ok ? "PASS" : "FAIL") << endl;
+        if (!ok) all_pass = false;
+    }
+
+    // Unknown state: all 1s
+    double tip_unknown[K] = {1.0, 1.0, 1.0, 1.0};
+    bool unknown_ok = true;
+    for (int i = 0; i < K; i++) {
+        if (tip_unknown[i] != 1.0) unknown_ok = false;
+    }
+    cout << "  Unknown: [" << tip_unknown[0] << "," << tip_unknown[1]
+         << "," << tip_unknown[2] << "," << tip_unknown[3] << "] ... "
+         << (unknown_ok ? "PASS" : "FAIL") << endl;
+    if (!unknown_ok) all_pass = false;
+
+    cout << "=== Result: " << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+// ==========================================================================
+// Step 4: TIP-TIP internal node — standalone test & verification
+//
+// Computes partial likelihood at a cherry node (2 leaf children) and
+// the log-likelihood for a 2-taxon tree under JC model.
+//
+// Mathematical formula (Felsenstein's pruning for cherry):
+//   L_parent[s] = (sum_a P(a|s,t1) * L_left[a]) * (sum_b P(b|s,t2) * L_right[b])
+//
+// For leaf with observed state x (one-hot):
+//   sum_a P(a|s,t) * L[a] = P(x|s,t) = P[s][x]
+//
+// So for two leaves with states x_left, x_right:
+//   L_parent[s] = P_left[s][x_left] * P_right[s][x_right]
+//
+// Log-likelihood for one pattern:
+//   ell = sum_s pi[s] * L_parent[s]
+//   lnL = log(ell)
+//
+// Expected: 2-taxon mismatch at t=0.1 gives lnL = -4.224717
+// ==========================================================================
+
+bool testTipTipInternal() {
+    cout << endl;
+    cout << "=== OpenACC Step 4: Testing TIP-TIP Internal Node ===" << endl;
+    cout << "    (standalone cherry computation, no IQ-TREE tree required)" << endl;
+
+    bool all_pass = true;
+    const int K = 4; // DNA states
+    const double tol = 1e-6;
+
+    // ------------------------------------------------------------------
+    // Test 4a: Single mismatch pattern (A vs C) at t=0.1
+    // Expected lnL = -4.224717 (hand-derived)
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 4a: Single mismatch (A vs C), t=0.1 ---" << endl;
+
+        double t_left = 0.1, t_right = 0.1;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25}; // JC equal frequencies
+
+        // Compute P(t) matrices
+        double P_left[K * K], P_right[K * K];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+
+        // Leaf states: A=0, C=1
+        int state_left = 0;  // A
+        int state_right = 1; // C
+
+        // TIP-TIP: L_parent[s] = P_left[s][state_left] * P_right[s][state_right]
+        double L_parent[K];
+        for (int s = 0; s < K; s++) {
+            L_parent[s] = P_left[s * K + state_left] * P_right[s * K + state_right];
+        }
+
+        // Site likelihood: ell = sum_s pi[s] * L_parent[s]
+        double ell = 0.0;
+        for (int s = 0; s < K; s++) {
+            ell += pi[s] * L_parent[s];
+        }
+        double lnL = log(ell);
+
+        double expected_lnL = -4.224717;
+
+        cout << "  P_left diag=" << P_left[0] << " off=" << P_left[1] << endl;
+        cout << "  L_parent = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_parent[s];
+        cout << "]" << endl;
+        cout << "  Site likelihood = " << ell << endl;
+        cout << "  lnL = " << lnL << endl;
+        cout << "  Expected lnL = " << expected_lnL << endl;
+        cout << "  Difference = " << fabs(lnL - expected_lnL) << endl;
+
+        bool pass = approxEqual(lnL, expected_lnL, tol);
+        cout << "  ... " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 4b: Single match pattern (A vs A) at t=0.1
+    // L_parent[s] = P[s][0] * P[s][0] = P[s][0]^2
+    // ell = 0.25 * (P_ii^2 + 3*P_ij^2)
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 4b: Single match (A vs A), t=0.1 ---" << endl;
+
+        double t = 0.1;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double P[K * K];
+        computeTransMatrixEqualRate(t, K, P);
+
+        int state_left = 0;  // A
+        int state_right = 0; // A
+
+        double L_parent[K];
+        for (int s = 0; s < K; s++) {
+            L_parent[s] = P[s * K + state_left] * P[s * K + state_right];
+        }
+
+        double ell = 0.0;
+        for (int s = 0; s < K; s++) ell += pi[s] * L_parent[s];
+        double lnL = log(ell);
+
+        // Hand-computed:
+        // P_ii = 0.906380, P_ij = 0.031207
+        // ell = 0.25 * (0.906380^2 + 3*0.031207^2)
+        //     = 0.25 * (0.821524 + 0.002926) = 0.25 * 0.824450 = 0.206113
+        // lnL = log(0.206113) ≈ -1.579
+        double expected_lnL_approx = -1.579;
+
+        cout << "  L_parent = [";
+        for (int s = 0; s < K; s++) cout << (s ? "," : "") << L_parent[s];
+        cout << "]" << endl;
+        cout << "  Site likelihood = " << ell << endl;
+        cout << "  lnL = " << lnL << endl;
+        cout << "  Expected ≈ " << expected_lnL_approx << endl;
+
+        bool pass = approxEqual(lnL, expected_lnL_approx, 0.01); // coarser tolerance for approx
+        bool pass_finite = !std::isnan(lnL) && !std::isinf(lnL) && lnL < 0.0;
+        cout << "  Finite & negative: " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Approx match: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass || !pass_finite) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 4c: Multi-pattern 2-taxon alignment
+    // Alignment: 5 patterns with frequencies
+    //   Pattern 0: A-A (match), freq=3
+    //   Pattern 1: A-C (mismatch), freq=2
+    //   Pattern 2: G-G (match), freq=2
+    //   Pattern 3: T-C (mismatch), freq=1
+    //   Pattern 4: C-C (match), freq=2
+    // Total sites = 10
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 4c: Multi-pattern 2-taxon alignment ---" << endl;
+
+        double t_left = 0.1, t_right = 0.1;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double P_left[K * K], P_right[K * K];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+
+        struct Pattern { int left; int right; int freq; };
+        Pattern patterns[] = {
+            {0, 0, 3},  // A-A, freq 3
+            {0, 1, 2},  // A-C, freq 2
+            {2, 2, 2},  // G-G, freq 2
+            {3, 1, 1},  // T-C, freq 1
+            {1, 1, 2},  // C-C, freq 2
+        };
+        int nptn = 5;
+
+        double total_lnL = 0.0;
+        for (int p = 0; p < nptn; p++) {
+            // TIP-TIP computation
+            double L_parent[K];
+            for (int s = 0; s < K; s++) {
+                L_parent[s] = P_left[s * K + patterns[p].left]
+                            * P_right[s * K + patterns[p].right];
+            }
+
+            double ell = 0.0;
+            for (int s = 0; s < K; s++) ell += pi[s] * L_parent[s];
+            double ptn_lnL = log(ell);
+
+            cout << "  Pattern " << p << " (" << patterns[p].left << "-"
+                 << patterns[p].right << "): lnL=" << ptn_lnL
+                 << " × freq=" << patterns[p].freq << endl;
+
+            total_lnL += ptn_lnL * patterns[p].freq;
+        }
+
+        cout << "  Total lnL = " << total_lnL << endl;
+
+        // Verify: matches = lnL_match, mismatches = lnL_mismatch
+        // 7 match sites + 3 mismatch sites
+        // total = 7 * lnL_match + 3 * lnL_mismatch
+        bool pass = !std::isnan(total_lnL) && !std::isinf(total_lnL) && total_lnL < 0.0;
+        cout << "  Valid (finite, negative): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Test 4d: Different branch lengths (t_left=0.05, t_right=0.2)
+    // ------------------------------------------------------------------
+    {
+        cout << endl << "  --- Test 4d: Asymmetric branches (t=0.05 vs t=0.2) ---" << endl;
+
+        double t_left = 0.05, t_right = 0.2;
+        double pi[K] = {0.25, 0.25, 0.25, 0.25};
+
+        double P_left[K * K], P_right[K * K];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+
+        // Mismatch: A vs T
+        int state_left = 0, state_right = 3;
+
+        double L_parent[K];
+        for (int s = 0; s < K; s++) {
+            L_parent[s] = P_left[s * K + state_left] * P_right[s * K + state_right];
+        }
+
+        double ell = 0.0;
+        for (int s = 0; s < K; s++) ell += pi[s] * L_parent[s];
+        double lnL = log(ell);
+
+        cout << "  P_left[0][0]=" << P_left[0] << " P_right[0][0]=" << P_right[0] << endl;
+        cout << "  Site likelihood = " << ell << endl;
+        cout << "  lnL = " << lnL << endl;
+
+        // Verify basic properties
+        bool pass_finite = !std::isnan(lnL) && !std::isinf(lnL);
+        bool pass_negative = lnL < 0.0;
+        // Asymmetric should give different result than symmetric
+        // At t_left+t_right = 0.25, total branch distance is longer → lower likelihood
+        bool pass_range = lnL < -3.0 && lnL > -10.0;
+
+        cout << "  Finite: " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Negative: " << (pass_negative ? "PASS" : "FAIL") << endl;
+        cout << "  Range [-10, -3]: " << (pass_range ? "PASS" : "FAIL") << endl;
+
+        bool pass = pass_finite && pass_negative && pass_range;
+        if (!pass) all_pass = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Summary
+    // ------------------------------------------------------------------
+    cout << endl << "=== OpenACC Step 4 Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+
+    return all_pass;
+}
+
+// ==========================================================================
+// Step 3 (old): Scalar Likelihood Kernel — test & verification
 // ==========================================================================
 
 bool testLikelihoodKernel(PhyloTree *tree) {

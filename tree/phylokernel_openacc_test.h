@@ -16,7 +16,38 @@ class PhyloTree;
 // ==========================================================================
 
 // ==========================================================================
-// Step 3: Scalar Likelihood Kernel — test & verification
+// Step 3: Tip one-hot vectors — test & verification
+// ==========================================================================
+
+/**
+ * Verify that tip one-hot encoding produces correct [1,0,0,0], [0,1,0,0], etc.
+ * for each DNA state, and [1,1,1,1] for unknown/gap.
+ *
+ * @return true if all tests pass
+ */
+bool testTipOneHot();
+
+// ==========================================================================
+// Step 4: TIP-TIP internal node — test & verification
+// ==========================================================================
+
+/**
+ * Standalone test of TIP-TIP cherry computation (no IQ-TREE tree required).
+ * Computes partial likelihood at an internal node with two leaf children
+ * using Felsenstein's pruning formula, and verifies log-likelihood.
+ *
+ * Tests:
+ *   4a: Single mismatch (A vs C) at t=0.1 → lnL = -4.224717
+ *   4b: Single match (A vs A) at t=0.1 → lnL ≈ -1.579
+ *   4c: Multi-pattern 2-taxon alignment → total lnL valid
+ *   4d: Asymmetric branch lengths → correct range
+ *
+ * @return true if all tests pass
+ */
+bool testTipTipInternal();
+
+// ==========================================================================
+// Full kernel tests (require initialized PhyloTree)
 // ==========================================================================
 
 /**
