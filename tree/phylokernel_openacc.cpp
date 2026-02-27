@@ -59,11 +59,28 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
     size_t block = nstates * ncat;
 
     // internal node
+    // left, right: PhyloNeighbor* pointers to the two child branches.
+    // These hold partial_lh (child partial likelihoods), scale_num,
+    // branch length, and node identity.
     PhyloNeighbor *left = NULL, *right = NULL;
     FOR_NEIGHBOR_IT(node, dad, it) {
         if (!left) left = (PhyloNeighbor*)(*it); else right = (PhyloNeighbor*)(*it);
     }
 
+    // echildren: flat array of precomputed transition probability matrices P(t).
+    // Filled by IQ-TREE's model machinery (via eigendecomposition of the rate
+    // matrix) BEFORE this kernel is called.  By the time we access it here,
+    // it is just a plain double array — no Eigen library calls at runtime.
+    //
+    // eleft / eright: pointers into echildren for the left and right branch
+    // P matrices respectively.  Each is a K×K block (16 doubles for DNA).
+    //   eleft[s*block + x] = P(x → s | t_left)
+    //
+    // NOTE: The "e" prefix is IQ-TREE convention (historical, from "eigen").
+    // Our OpenACC JC kernels use computeTransMatrixEqualRate() (Step 2) which
+    // computes P(t) via the direct JC closed-form formula — no eigendecomposition.
+    // However, we keep the same variable names for consistency with the rest of
+    // the IQ-TREE codebase since the data layout is identical.
     double *echildren = info.echildren;
     double *partial_lh_leaves = info.partial_lh_leaves;
 
@@ -235,17 +252,18 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
     } else if (left->node->isLeaf() && !right->node->isLeaf()) {
 
         /*--------------------- TIP-INTERNAL NODE case ------------------*/
+        // Step 10: Offloaded to GPU via OpenACC
+        // Left child is a leaf (tip lookup), right child has partial likelihoods.
+        // For each pattern: dad[s] = tip_lh_left[state][s] * (P_right × right_plh)[s]
+        // Parallelism: gang over patterns, vector over output states,
+        //              sequential inner dot product (matches PoC compositehadamard)
 
         // A1: Extract raw pointers
         double *right_partial_lh = right->partial_lh;
         UBYTE  *right_scale_num  = right->scale_num;
         double *tip_lh_left = partial_lh_leaves;
 
-        // A4: replace memcpy with plain loop for scale_num copy
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++)
-            dad_scale_num[ptn] = right_scale_num[ptn];
-
-        // A3: Precompute per-pattern tip states
+        // A3: Precompute per-pattern tip states (CPU side, before GPU region)
         size_t nptn_range = ptn_upper - ptn_lower;
         int *states_left = new int[nptn_range];
         bool left_is_root = (left->node == root);
@@ -259,39 +277,83 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
                 states_left[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[left_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][left_node_id];
         }
 
-        // Main kernel loop — A2: explicit indexing
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-            size_t idx = ptn - ptn_lower;
-            int state_left = states_left[idx];
-            double lh_max = 0.0;
+        // Data sizes for OpenACC transfers
+        {
+            size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
+            size_t eright_size = block * nstates;            // K×K P matrix (ncat=1)
+            size_t plh_offset  = ptn_lower * block;
+            size_t plh_count   = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset  = ptn_lower;
+            size_t scl_count   = ptn_upper - ptn_lower;
+            size_t tip_unknown_size = (aln->STATE_UNKNOWN + 1) * nstates;
+            size_t nstatesqr_local = nstates * nstates;
+            // Capture host-side class members into locals for GPU access.
+            // Class member pointers (this->tip_partial_lh, this->aln, etc.)
+            // cannot be dereferenced on GPU — the compiler would try to map
+            // 'this' to the device, causing a PRESENT clause failure.
+            size_t state_unknown = aln->STATE_UNKNOWN;
+            double *local_tip_plh = tip_partial_lh;
 
-            for (c = 0; c < ncat; c++) {
-                for (x = 0; x < nstates; x++) {
-                    // Right child: dot product with transition matrix
-                    double vright = 0.0;
-                    for (i = 0; i < nstates; i++) {
-                        vright += eright[c*nstatesqr + x*nstates + i] * right_partial_lh[ptn*block + c*nstates + i];
+            #pragma acc data \
+                copyin(states_left[0:nptn_range], \
+                       tip_lh_left[0:tip_lh_size], \
+                       eright[0:eright_size], \
+                       right_partial_lh[plh_offset:plh_count], \
+                       right_scale_num[scl_offset:scl_count], \
+                       local_tip_plh[0:tip_unknown_size]) \
+                copyout(dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                // Kernel 1: Compute partial likelihoods
+                // gang over patterns, vector over output states, sequential dot product
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    size_t idx = p - ptn_lower;
+                    int state_left = states_left[idx];
+
+                    // Copy scale_num from right child
+                    dad_scale_num[p] = right_scale_num[p];
+
+                    #pragma acc loop vector
+                    for (size_t s = 0; s < block; s++) {
+                        size_t cx = s;  // for ncat=1, c*nstates+x == s
+                        // Right child: dot product P_right × right_partial_lh
+                        double vright = 0.0;
+                        for (size_t k = 0; k < nstates; k++) {
+                            vright += eright[(cx / nstates) * nstatesqr_local + (cx % nstates) * nstates + k]
+                                    * right_partial_lh[p * block + (cx / nstates) * nstates + k];
+                        }
+                        // Left child: precomputed tip lookup (no matrix multiply)
+                        double vleft_val = tip_lh_left[state_left * block + s];
+                        dad_partial_lh[p * block + s] = vleft_val * vright;
                     }
-                    // Left child: precomputed tip lookup
-                    double vleft_val = tip_lh_left[state_left*block + c*nstates + x];
-                    double val = vleft_val * vright;
-                    dad_partial_lh[ptn*block + c*nstates + x] = val;
-                    if (val > lh_max) lh_max = val;
                 }
-            }
 
-            // A4: replace memcpy with plain loop, A5: remove ASSERT
-            if (lh_max == 0.0) {
-                for (c = 0; c < ncat; c++)
-                    for (i = 0; i < nstates; i++)
-                        dad_partial_lh[ptn*block + c*nstates + i] = tip_partial_lh[aln->STATE_UNKNOWN*nstates + i];
-                dad_scale_num[ptn] += 4;
-            } else if (lh_max < SCALING_THRESHOLD) {
-                for (i = 0; i < block; i++) {
-                    dad_partial_lh[ptn*block + i] = ldexp(dad_partial_lh[ptn*block + i], SCALING_THRESHOLD_EXP);
+                // Kernel 2: Scaling check (separate pass, matches PoC pattern)
+                // Uses gang+vector with reduction(max:) per pattern
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    double lh_max = 0.0;
+                    #pragma acc loop vector reduction(max:lh_max)
+                    for (size_t s = 0; s < block; s++) {
+                        double v = dad_partial_lh[p * block + s];
+                        if (v > lh_max) lh_max = v;
+                    }
+                    if (lh_max == 0.0) {
+                        // All-zero: replace with unknown-state partial
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p * block + s] = local_tip_plh[state_unknown * nstates + (s % nstates)];
+                        dad_scale_num[p] += 4;
+                    } else if (lh_max < SCALING_THRESHOLD) {
+                        // Underflow: scale up by 2^256
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p * block + s] = ldexp(dad_partial_lh[p * block + s], SCALING_THRESHOLD_EXP);
+                        dad_scale_num[p] += 1;
+                    }
                 }
-                dad_scale_num[ptn] += 1;
-            }
+            } // end acc data
         }
 
         delete [] states_left;
@@ -299,8 +361,12 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
     } else {
 
         /*--------------------- INTERNAL-INTERNAL NODE case ------------------*/
-        // This is the HOT PATH — matches PoC compositehadamard parallelism:
+        // Step 10: Offloaded to GPU via OpenACC
+        // HOT PATH — both children are internal nodes with partial likelihoods.
+        // For each pattern: dad[s] = (P_left × left_plh)[s] * (P_right × right_plh)[s]
+        // Matches PoC compositehadamard parallelism exactly:
         //   gang over patterns, vector over states, sequential dot product
+        // Scaling done in a separate kernel pass (matches PoC pattern).
 
         // A1: Extract raw pointers
         double *left_partial_lh  = left->partial_lh;
@@ -308,37 +374,79 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
         UBYTE  *left_scale_num   = left->scale_num;
         UBYTE  *right_scale_num  = right->scale_num;
 
-        // Main kernel loop — A2: fully explicit indexing (no running pointers)
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-            dad_scale_num[ptn] = left_scale_num[ptn] + right_scale_num[ptn];
-            double lh_max = 0.0;
+        // Data sizes for OpenACC transfers
+        {
+            size_t eleft_size  = block * nstates;            // K×K P matrix
+            size_t eright_size = block * nstates;
+            size_t plh_offset  = ptn_lower * block;
+            size_t plh_count   = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset  = ptn_lower;
+            size_t scl_count   = ptn_upper - ptn_lower;
+            size_t tip_unknown_size = (aln->STATE_UNKNOWN + 1) * nstates;
+            size_t nstatesqr_local = nstates * nstates;
+            // Capture host-side class members into locals for GPU access.
+            // Class member pointers (this->tip_partial_lh, this->aln, etc.)
+            // cannot be dereferenced on GPU — the compiler would try to map
+            // 'this' to the device, causing a PRESENT clause failure.
+            size_t state_unknown = aln->STATE_UNKNOWN;
+            double *local_tip_plh = tip_partial_lh;
 
-            for (c = 0; c < ncat; c++) {
-                for (x = 0; x < nstates; x++) {
-                    double vleft = 0.0, vright = 0.0;
-                    for (i = 0; i < nstates; i++) {
-                        vleft  += eleft[c*nstatesqr + x*nstates + i]  * left_partial_lh[ptn*block + c*nstates + i];
-                        vright += eright[c*nstatesqr + x*nstates + i] * right_partial_lh[ptn*block + c*nstates + i];
+            #pragma acc data \
+                copyin(eleft[0:eleft_size], eright[0:eright_size], \
+                       left_partial_lh[plh_offset:plh_count], \
+                       right_partial_lh[plh_offset:plh_count], \
+                       left_scale_num[scl_offset:scl_count], \
+                       right_scale_num[scl_offset:scl_count], \
+                       local_tip_plh[0:tip_unknown_size]) \
+                copyout(dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                // Kernel 1: Compute partial likelihoods (two matrix-vector products + Hadamard)
+                // gang over patterns, vector over output states, sequential dot product
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    // Propagate scale counts from both children
+                    dad_scale_num[p] = left_scale_num[p] + right_scale_num[p];
+
+                    #pragma acc loop vector
+                    for (size_t s = 0; s < block; s++) {
+                        size_t cx = s;  // for ncat=1, c*nstates+x == s
+                        double vleft = 0.0, vright = 0.0;
+                        for (size_t k = 0; k < nstates; k++) {
+                            vleft  += eleft[(cx / nstates) * nstatesqr_local + (cx % nstates) * nstates + k]
+                                    * left_partial_lh[p * block + (cx / nstates) * nstates + k];
+                            vright += eright[(cx / nstates) * nstatesqr_local + (cx % nstates) * nstates + k]
+                                    * right_partial_lh[p * block + (cx / nstates) * nstates + k];
+                        }
+                        dad_partial_lh[p * block + s] = vleft * vright;
                     }
-                    double val = vleft * vright;
-                    dad_partial_lh[ptn*block + c*nstates + x] = val;
-                    if (val > lh_max) lh_max = val;
                 }
-            }
 
-            // A4: replace memcpy with plain loop, A5: remove ASSERT from kernel region
-            if (lh_max == 0.0) {
-                for (c = 0; c < ncat; c++)
-                    for (i = 0; i < nstates; i++)
-                        dad_partial_lh[ptn*block + c*nstates + i] = tip_partial_lh[aln->STATE_UNKNOWN*nstates + i];
-                dad_scale_num[ptn] += 4;
-            } else if (lh_max < SCALING_THRESHOLD) {
-                for (i = 0; i < block; i++) {
-                    dad_partial_lh[ptn*block + i] = ldexp(dad_partial_lh[ptn*block + i], SCALING_THRESHOLD_EXP);
+                // Kernel 2: Scaling check (separate pass, matches PoC pattern)
+                // Uses gang+vector with reduction(max:) per pattern
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    double lh_max = 0.0;
+                    #pragma acc loop vector reduction(max:lh_max)
+                    for (size_t s = 0; s < block; s++) {
+                        double v = dad_partial_lh[p * block + s];
+                        if (v > lh_max) lh_max = v;
+                    }
+                    if (lh_max == 0.0) {
+                        // All-zero: replace with unknown-state partial
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p * block + s] = local_tip_plh[state_unknown * nstates + (s % nstates)];
+                        dad_scale_num[p] += 4;
+                    } else if (lh_max < SCALING_THRESHOLD) {
+                        // Underflow: scale up by 2^256
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p * block + s] = ldexp(dad_partial_lh[p * block + s], SCALING_THRESHOLD_EXP);
+                        dad_scale_num[p] += 1;
+                    }
                 }
-                dad_scale_num[ptn] += 1;
-            }
-
+            } // end acc data
         }
 
     }
