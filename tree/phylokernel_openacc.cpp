@@ -2,7 +2,11 @@
  *   OpenACC GPU Likelihood Computation for IQ-TREE                       *
  *   Step 4: GPU-ready kernels with explicit indexing                     *
  *   Phase A: Refactored for OpenACC (no pragmas yet — CPU verifiable)    *
- *   Phase B: OpenACC pragmas + GPU data management (TODO)                *
+ *   Phase B: OpenACC pragmas + GPU data management                       *
+ *     Step 9:  TIP-TIP kernel offloaded to GPU                          *
+ *     Step 10: TIP-INTERNAL + INTERNAL-INTERNAL (TODO)                   *
+ *     Step 11: Log-likelihood reduction (TODO)                           *
+ *     Step 12: Persistent GPU data (TODO)                                *
  ***************************************************************************/
 
 #ifdef USE_OPENACC
@@ -171,7 +175,7 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
             tip_lh_right = etmp;
         }
 
-        // A3: Precompute per-pattern tip states into flat arrays
+        // A3: Precompute per-pattern tip states into flat arrays (CPU side)
         size_t nptn_range = ptn_upper - ptn_lower;
         int *states_left  = new int[nptn_range];
         int *states_right = new int[nptn_range];
@@ -188,18 +192,41 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
             states_right[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[right_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][right_node_id];
         }
 
-        // A4: replace memset with plain loop
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++)
-            dad_scale_num[ptn] = 0;
+        // Step 9: TIP-TIP kernel offloaded to GPU via OpenACC
+        // Data flow: copyin states + tip lookup tables, copyout partials + scale_num
+        // Parallelism: gang over patterns, vector over states (matches PoC)
+        // Note: copyout (not copy) — TIP-TIP only writes, never reads old values
+        {
+            size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
+            size_t plh_offset = ptn_lower * block;
+            size_t plh_count  = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset = ptn_lower;
+            size_t scl_count  = ptn_upper - ptn_lower;
 
-        // Main kernel loop — GPU-ready structure
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-            size_t idx = ptn - ptn_lower;
-            int state_left  = states_left[idx];
-            int state_right = states_right[idx];
-            for (i = 0; i < block; i++) {
-                dad_partial_lh[ptn*block + i] = tip_lh_left[state_left*block + i] * tip_lh_right[state_right*block + i];
-            }
+            #pragma acc data \
+                copyin(states_left[0:nptn_range], states_right[0:nptn_range], \
+                       tip_lh_left[0:tip_lh_size], tip_lh_right[0:tip_lh_size]) \
+                copyout(dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                // Zero scale_num for TIP-TIP (no scaling at cherry nodes)
+                #pragma acc parallel loop gang vector
+                for (size_t p = ptn_lower; p < ptn_upper; p++)
+                    dad_scale_num[p] = 0;
+
+                // Main TIP-TIP kernel: element-wise product of precomputed tip lookups
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    size_t idx = p - ptn_lower;
+                    int sl = states_left[idx];
+                    int sr = states_right[idx];
+                    #pragma acc loop vector
+                    for (size_t s = 0; s < block; s++) {
+                        dad_partial_lh[p * block + s] =
+                            tip_lh_left[sl * block + s] * tip_lh_right[sr * block + s];
+                    }
+                 }
+            } // end acc data
         }
 
         delete [] states_left;
