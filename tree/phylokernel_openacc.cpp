@@ -533,8 +533,9 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
             }
         } else {
             // precompute information from one tip — A2: explicit indexing
+            double *local_tip_plh = tip_partial_lh;
             for (int state = 0; state <= aln->STATE_UNKNOWN; state++) {
-                double *lh_tip = tip_partial_lh + state*nstates;
+                double *lh_tip = local_tip_plh + state*nstates;
                 for (c = 0; c < ncat; c++) {
                     for (i = 0; i < nstates; i++) {
                         double val = 0.0;
@@ -547,17 +548,14 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
         }
 
         // now do the real computation
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+: tree_lh, prob_const) private(ptn, i, c) schedule(static,1) num_threads(num_threads)
-#endif
         for (int packet_id = 0; packet_id < num_packets; packet_id++) {
             size_t ptn_lower = limits[packet_id];
             size_t ptn_upper = limits[packet_id+1];
-            // first compute partial_lh
+            // first compute partial_lh (on GPU via Steps 9-10)
             for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
                 computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
 
-            // A3: Precompute per-pattern dad states
+            // A3: Precompute per-pattern dad states (CPU side, before GPU region)
             size_t nptn_range = ptn_upper - ptn_lower;
             int *states_dad = new int[nptn_range];
             bool dad_is_root = (dad == root);
@@ -570,35 +568,63 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
                     states_dad[idx] = (ptn < orig_nptn) ? (aln->at(ptn))[dad_node_id] : model_factory->unobserved_ptns[ptn-orig_nptn][dad_node_id];
             }
 
-            // A4: replace memset with plain loop
-            for (ptn = ptn_lower; ptn < ptn_upper; ptn++)
-                for (c = 0; c < ncat; c++)
-                    _pattern_lh_cat[ptn*ncat + c] = 0.0;
+            // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
+            // TIP-INTERNAL case: dad is a leaf, node is internal.
+            // partial_lh_node[state*block+s] is precomputed (trans_mat × tip_lh).
+            // Reduction: gang over patterns, reduction(+:) for total lnL.
+            {
+                size_t plh_node_size = (aln->STATE_UNKNOWN + 1) * block;
+                size_t plh_offset = ptn_lower * block;
+                size_t plh_count  = (ptn_upper - ptn_lower) * block;
+                size_t scl_offset = ptn_lower;
+                size_t scl_count  = ptn_upper - ptn_lower;
+                // Capture class members into locals (avoid this-> on GPU)
+                double *local_pattern_lh = _pattern_lh;
+                double *local_pattern_lh_cat = _pattern_lh_cat;
+                double *local_ptn_invar = ptn_invar;
+                double *local_ptn_freq = ptn_freq;
 
-            // Reduction loop — A2: explicit indexing
-            for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-                double lh_ptn = ptn_invar[ptn];
-                size_t idx = ptn - ptn_lower;
-                int state_dad = states_dad[idx];
-                for (c = 0; c < ncat; c++) {
-                    double lh_cat = 0.0;
-                    for (i = 0; i < nstates; i++) {
-                        lh_cat += partial_lh_node[state_dad*block + c*nstates + i] * dad_partial_lh_base[ptn*block + c*nstates + i];
-                    }
-                    _pattern_lh_cat[ptn*ncat + c] = lh_cat;
-                    lh_ptn += lh_cat;
-                }
-                // A5: ASSERT removed from kernel region
-                if (ptn < orig_nptn) {
-                    lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[ptn] * LOG_SCALING_THRESHOLD;
-                    _pattern_lh[ptn] = lh_ptn;
-                    tree_lh += lh_ptn * ptn_freq[ptn];
-                } else {
-                    if (dad_scale_num_base[ptn] >= 1)
-                        lh_ptn *= SCALING_THRESHOLD;
-                    prob_const += lh_ptn;
-                }
-            } // FOR ptn
+                #pragma acc data \
+                    copyin(states_dad[0:nptn_range], \
+                           partial_lh_node[0:plh_node_size], \
+                           dad_partial_lh_base[plh_offset:plh_count], \
+                           dad_scale_num_base[scl_offset:scl_count], \
+                           local_ptn_invar[ptn_lower:scl_count], \
+                           local_ptn_freq[ptn_lower:scl_count]) \
+                    copyout(local_pattern_lh[ptn_lower:scl_count], \
+                            local_pattern_lh_cat[ptn_lower:scl_count])
+                {
+                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
+                    for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                        size_t idx = p - ptn_lower;
+                        int state_dad = states_dad[idx];
+                        double lh_ptn = local_ptn_invar[p];
+
+                        // Dot product: partial_lh_node[state] · dad_partial_lh[p]
+                        // For ncat=1: single category, block == nstates
+                        for (size_t cc = 0; cc < ncat; cc++) {
+                            double lh_cat = 0.0;
+                            for (size_t ii = 0; ii < nstates; ii++) {
+                                lh_cat += partial_lh_node[state_dad*block + cc*nstates + ii]
+                                        * dad_partial_lh_base[p*block + cc*nstates + ii];
+                            }
+                            local_pattern_lh_cat[p*ncat + cc] = lh_cat;
+                            lh_ptn += lh_cat;
+                        }
+
+                        // Log-likelihood + scaling correction
+                        if (p < orig_nptn) {
+                            lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
+                            local_pattern_lh[p] = lh_ptn;
+                            tree_lh += lh_ptn * local_ptn_freq[p];
+                        } else {
+                            if (dad_scale_num_base[p] >= 1)
+                                lh_ptn *= SCALING_THRESHOLD;
+                            prob_const += lh_ptn;
+                        }
+                    } // FOR p
+                } // end acc data
+            }
 
             delete [] states_dad;
         } // FOR packet_id
@@ -610,47 +636,72 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
         double *node_partial_lh_base = node_branch->partial_lh;
         UBYTE  *node_scale_num_base  = node_branch->scale_num;
 
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+: tree_lh, prob_const) private(ptn, i, c, x) schedule(static,1) num_threads(num_threads)
-#endif
         for (int packet_id = 0; packet_id < num_packets; packet_id++) {
             size_t ptn_lower = limits[packet_id];
             size_t ptn_upper = limits[packet_id+1];
-            // first compute partial_lh
+            // first compute partial_lh (on GPU via Steps 9-10)
             for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
                 computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
 
-            // A4: replace memset with plain loop
-            for (ptn = ptn_lower; ptn < ptn_upper; ptn++)
-                for (c = 0; c < ncat; c++)
-                    _pattern_lh_cat[ptn*ncat + c] = 0.0;
+            // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
+            // INTERNAL-INTERNAL case: both dad and node are internal nodes.
+            // For each pattern: compute trans_mat × node_partial_lh, dot with
+            // dad_partial_lh, take log + scaling correction, accumulate weighted sum.
+            // Matches PoC: gang over patterns, reduction(+:logLikelihood).
+            {
+                size_t trans_mat_size = block * nstates;
+                size_t plh_offset = ptn_lower * block;
+                size_t plh_count  = (ptn_upper - ptn_lower) * block;
+                size_t scl_offset = ptn_lower;
+                size_t scl_count  = ptn_upper - ptn_lower;
+                // Capture class members into locals (avoid this-> on GPU)
+                double *local_pattern_lh = _pattern_lh;
+                double *local_pattern_lh_cat = _pattern_lh_cat;
+                double *local_ptn_invar = ptn_invar;
+                double *local_ptn_freq = ptn_freq;
 
-            // Reduction loop — A2: explicit indexing
-            for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-                double lh_ptn = ptn_invar[ptn];
-                for (c = 0; c < ncat; c++) {
-                    double lh_cat = 0.0;
-                    for (i = 0; i < nstates; i++) {
-                        double lh_state = 0.0;
-                        for (x = 0; x < nstates; x++)
-                            lh_state += trans_mat[c*nstatesqr + i*nstates + x] * node_partial_lh_base[ptn*block + c*nstates + x];
-                        lh_cat += dad_partial_lh_base[ptn*block + c*nstates + i] * lh_state;
-                    }
-                    _pattern_lh_cat[ptn*ncat + c] = lh_cat;
-                    lh_ptn += lh_cat;
-                }
+                #pragma acc data \
+                    copyin(trans_mat[0:trans_mat_size], \
+                           dad_partial_lh_base[plh_offset:plh_count], \
+                           node_partial_lh_base[plh_offset:plh_count], \
+                           dad_scale_num_base[scl_offset:scl_count], \
+                           node_scale_num_base[scl_offset:scl_count], \
+                           local_ptn_invar[ptn_lower:scl_count], \
+                           local_ptn_freq[ptn_lower:scl_count]) \
+                    copyout(local_pattern_lh[ptn_lower:scl_count], \
+                            local_pattern_lh_cat[ptn_lower:scl_count])
+                {
+                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
+                    for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                        double lh_ptn = local_ptn_invar[p];
 
-                // A5: ASSERT removed from kernel region
-                if (ptn < orig_nptn) {
-                    lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[ptn] + node_scale_num_base[ptn])*LOG_SCALING_THRESHOLD;
-                    _pattern_lh[ptn] = lh_ptn;
-                    tree_lh += lh_ptn * ptn_freq[ptn];
-                } else {
-                    if (dad_scale_num_base[ptn] + node_scale_num_base[ptn] >= 1)
-                        lh_ptn *= SCALING_THRESHOLD;
-                    prob_const += lh_ptn;
-                }
-            } // FOR ptn
+                        for (size_t cc = 0; cc < ncat; cc++) {
+                            double lh_cat = 0.0;
+                            for (size_t ii = 0; ii < nstates; ii++) {
+                                // Matrix-vector product: trans_mat × node_partial_lh
+                                double lh_state = 0.0;
+                                for (size_t xx = 0; xx < nstates; xx++)
+                                    lh_state += trans_mat[cc*nstatesqr + ii*nstates + xx]
+                                              * node_partial_lh_base[p*block + cc*nstates + xx];
+                                lh_cat += dad_partial_lh_base[p*block + cc*nstates + ii] * lh_state;
+                            }
+                            local_pattern_lh_cat[p*ncat + cc] = lh_cat;
+                            lh_ptn += lh_cat;
+                        }
+
+                        // Log-likelihood + scaling correction
+                        if (p < orig_nptn) {
+                            lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
+                            local_pattern_lh[p] = lh_ptn;
+                            tree_lh += lh_ptn * local_ptn_freq[p];
+                        } else {
+                            if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
+                                lh_ptn *= SCALING_THRESHOLD;
+                            prob_const += lh_ptn;
+                        }
+                    } // FOR p
+                } // end acc data
+            }
         } // FOR packet_id
     }
 
