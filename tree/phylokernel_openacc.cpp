@@ -4,9 +4,9 @@
  *   Phase A: Refactored for OpenACC (no pragmas yet — CPU verifiable)    *
  *   Phase B: OpenACC pragmas + GPU data management                       *
  *     Step 9:  TIP-TIP kernel offloaded to GPU                          *
- *     Step 10: TIP-INTERNAL + INTERNAL-INTERNAL (TODO)                   *
- *     Step 11: Log-likelihood reduction (TODO)                           *
- *     Step 12: Persistent GPU data (TODO)                                *
+ *     Step 10: TIP-INTERNAL + INTERNAL-INTERNAL                          *
+ *     Step 11: Log-likelihood reduction                                  *
+ *     Step 12: Persistent GPU data                                       *
  ***************************************************************************/
 
 #ifdef USE_OPENACC
@@ -20,6 +20,7 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <openacc.h>            // Step 12: acc_is_present (future dynamic checks)
 
 using namespace std;
 
@@ -210,9 +211,9 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
         }
 
         // Step 9: TIP-TIP kernel offloaded to GPU via OpenACC
-        // Data flow: copyin states + tip lookup tables, copyout partials + scale_num
+        // Data flow: copyin states + tip lookup tables; partial_lh and
+        // scale_num are persistent on GPU (Step 12: present instead of copyout).
         // Parallelism: gang over patterns, vector over states (matches PoC)
-        // Note: copyout (not copy) — TIP-TIP only writes, never reads old values
         {
             size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
             size_t plh_offset = ptn_lower * block;
@@ -223,7 +224,7 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
             #pragma acc data \
                 copyin(states_left[0:nptn_range], states_right[0:nptn_range], \
                        tip_lh_left[0:tip_lh_size], tip_lh_right[0:tip_lh_size]) \
-                copyout(dad_partial_lh[plh_offset:plh_count], \
+                present(dad_partial_lh[plh_offset:plh_count], \
                         dad_scale_num[scl_offset:scl_count])
             {
                 // Zero scale_num for TIP-TIP (no scaling at cherry nodes)
@@ -294,14 +295,15 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
             size_t state_unknown = aln->STATE_UNKNOWN;
             double *local_tip_plh = tip_partial_lh;
 
+            // Step 12: persistent data uses present(); per-node data uses copyin.
             #pragma acc data \
                 copyin(states_left[0:nptn_range], \
                        tip_lh_left[0:tip_lh_size], \
-                       eright[0:eright_size], \
-                       right_partial_lh[plh_offset:plh_count], \
-                       right_scale_num[scl_offset:scl_count], \
-                       local_tip_plh[0:tip_unknown_size]) \
-                copyout(dad_partial_lh[plh_offset:plh_count], \
+                       eright[0:eright_size]) \
+                present(right_partial_lh[plh_offset:plh_count], \
+                        right_scale_num[scl_offset:scl_count], \
+                        local_tip_plh[0:tip_unknown_size], \
+                        dad_partial_lh[plh_offset:plh_count], \
                         dad_scale_num[scl_offset:scl_count])
             {
                 // Kernel 1: Compute partial likelihoods
@@ -391,14 +393,15 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
             size_t state_unknown = aln->STATE_UNKNOWN;
             double *local_tip_plh = tip_partial_lh;
 
+            // Step 12: persistent data uses present(); per-node data uses copyin.
             #pragma acc data \
-                copyin(eleft[0:eleft_size], eright[0:eright_size], \
-                       left_partial_lh[plh_offset:plh_count], \
-                       right_partial_lh[plh_offset:plh_count], \
-                       left_scale_num[scl_offset:scl_count], \
-                       right_scale_num[scl_offset:scl_count], \
-                       local_tip_plh[0:tip_unknown_size]) \
-                copyout(dad_partial_lh[plh_offset:plh_count], \
+                copyin(eleft[0:eleft_size], eright[0:eright_size]) \
+                present(left_partial_lh[plh_offset:plh_count], \
+                        right_partial_lh[plh_offset:plh_count], \
+                        left_scale_num[scl_offset:scl_count], \
+                        right_scale_num[scl_offset:scl_count], \
+                        local_tip_plh[0:tip_unknown_size], \
+                        dad_partial_lh[plh_offset:plh_count], \
                         dad_scale_num[scl_offset:scl_count])
             {
                 // Kernel 1: Compute partial likelihoods (two matrix-vector products + Hadamard)
@@ -514,6 +517,47 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
             this_trans_mat[i] *= prop;
     }
 
+    // ====== Step 12: Upload persistent GPU data ======
+    // Upload all partial_lh and scale_num buffers (via central_partial_lh and
+    // central_scale_num) to GPU ONCE before the traversal loop.
+    // Also upload read-only arrays (ptn_freq, ptn_invar) and create output
+    // arrays (_pattern_lh, _pattern_lh_cat).
+    // Kernels use present() instead of per-call copyin/copyout, eliminating
+    // redundant PCIe transfers across traversal nodes.
+    //
+    // Size computation replicates initializeAllPartialLh() allocation logic:
+    //   central_partial_lh: max_lh_slots * lh_block + 4 + tip_alloc_size
+    //   central_scale_num:  max_lh_slots * scale_block
+    size_t nptn_safe = get_safe_upper_limit(aln->size())
+        + max(get_safe_upper_limit(nstates),
+              get_safe_upper_limit(model_factory->unobserved_ptns.size()));
+    size_t nmix = (model_factory->fused_mix_rate) ? (size_t)1 : (size_t)model->getNMixtures();
+    size_t scale_block_total = nptn_safe * ncat * nmix;
+    size_t lh_block_total = scale_block_total * nstates;
+    size_t tip_alloc_size = get_safe_upper_limit(
+        nstates * (aln->STATE_UNKNOWN + 1) * model->getNMixtures());
+    size_t total_lh_entries = (size_t)max_lh_slots * lh_block_total + 4 + tip_alloc_size;
+    size_t total_scale_entries = (size_t)max_lh_slots * scale_block_total;
+    size_t nptn_ncat = nptn * ncat;  // for _pattern_lh_cat
+
+    // Capture class member pointers for OpenACC directives.
+    // enter data is host-side but we capture to locals for consistency with
+    // present() usage inside kernels and the exit data at the end.
+    double *local_central_plh = central_partial_lh;
+    UBYTE  *local_central_scl = central_scale_num;
+    double *local_ptn_freq = ptn_freq;
+    double *local_ptn_invar = ptn_invar;
+    double *local_pattern_lh = _pattern_lh;
+    double *local_pattern_lh_cat = _pattern_lh_cat;
+
+    #pragma acc enter data \
+        copyin(local_central_plh[0:total_lh_entries], \
+               local_central_scl[0:total_scale_entries], \
+               local_ptn_freq[0:nptn], \
+               local_ptn_invar[0:nptn]) \
+        create(local_pattern_lh[0:nptn], \
+               local_pattern_lh_cat[0:nptn_ncat])
+
     double prob_const = 0.0;
 
     // A1: Extract raw pointers for the branch
@@ -578,20 +622,17 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
                 size_t plh_count  = (ptn_upper - ptn_lower) * block;
                 size_t scl_offset = ptn_lower;
                 size_t scl_count  = ptn_upper - ptn_lower;
-                // Capture class members into locals (avoid this-> on GPU)
-                double *local_pattern_lh = _pattern_lh;
-                double *local_pattern_lh_cat = _pattern_lh_cat;
-                double *local_ptn_invar = ptn_invar;
-                double *local_ptn_freq = ptn_freq;
+                // Step 12: class member pointers captured in outer scope for
+                // enter data; persistent data uses present() instead of copyin/copyout.
 
                 #pragma acc data \
                     copyin(states_dad[0:nptn_range], \
-                           partial_lh_node[0:plh_node_size], \
-                           dad_partial_lh_base[plh_offset:plh_count], \
-                           dad_scale_num_base[scl_offset:scl_count], \
-                           local_ptn_invar[ptn_lower:scl_count], \
-                           local_ptn_freq[ptn_lower:scl_count]) \
-                    copyout(local_pattern_lh[ptn_lower:scl_count], \
+                           partial_lh_node[0:plh_node_size]) \
+                    present(dad_partial_lh_base[plh_offset:plh_count], \
+                            dad_scale_num_base[scl_offset:scl_count], \
+                            local_ptn_invar[ptn_lower:scl_count], \
+                            local_ptn_freq[ptn_lower:scl_count], \
+                            local_pattern_lh[ptn_lower:scl_count], \
                             local_pattern_lh_cat[ptn_lower:scl_count])
                 {
                     #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
@@ -654,21 +695,18 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
                 size_t plh_count  = (ptn_upper - ptn_lower) * block;
                 size_t scl_offset = ptn_lower;
                 size_t scl_count  = ptn_upper - ptn_lower;
-                // Capture class members into locals (avoid this-> on GPU)
-                double *local_pattern_lh = _pattern_lh;
-                double *local_pattern_lh_cat = _pattern_lh_cat;
-                double *local_ptn_invar = ptn_invar;
-                double *local_ptn_freq = ptn_freq;
+                // Step 12: class member pointers captured in outer scope for
+                // enter data; persistent data uses present() instead of copyin/copyout.
 
                 #pragma acc data \
-                    copyin(trans_mat[0:trans_mat_size], \
-                           dad_partial_lh_base[plh_offset:plh_count], \
-                           node_partial_lh_base[plh_offset:plh_count], \
-                           dad_scale_num_base[scl_offset:scl_count], \
-                           node_scale_num_base[scl_offset:scl_count], \
-                           local_ptn_invar[ptn_lower:scl_count], \
-                           local_ptn_freq[ptn_lower:scl_count]) \
-                    copyout(local_pattern_lh[ptn_lower:scl_count], \
+                    copyin(trans_mat[0:trans_mat_size]) \
+                    present(dad_partial_lh_base[plh_offset:plh_count], \
+                            node_partial_lh_base[plh_offset:plh_count], \
+                            dad_scale_num_base[scl_offset:scl_count], \
+                            node_scale_num_base[scl_offset:scl_count], \
+                            local_ptn_invar[ptn_lower:scl_count], \
+                            local_ptn_freq[ptn_lower:scl_count], \
+                            local_pattern_lh[ptn_lower:scl_count], \
                             local_pattern_lh_cat[ptn_lower:scl_count])
                 {
                     #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
@@ -704,6 +742,23 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
             }
         } // FOR packet_id
     }
+
+    // ====== Step 12: Copy results back and clean up GPU data ======
+    // Copy _pattern_lh back to host (needed by prob_const correction and
+    // IQ-TREE's caller). Also copy central_partial_lh and central_scale_num
+    // back so that subsequent calls (which may have empty traversal_info if
+    // nodes are already marked computed) get correct host data when they
+    // re-upload via enter data copyin.
+    #pragma acc update self(local_pattern_lh[0:nptn])
+    #pragma acc update self(local_central_plh[0:total_lh_entries])
+    #pragma acc update self(local_central_scl[0:total_scale_entries])
+    #pragma acc exit data \
+        delete(local_central_plh[0:total_lh_entries], \
+               local_central_scl[0:total_scale_entries], \
+               local_ptn_freq[0:nptn], \
+               local_ptn_invar[0:nptn], \
+               local_pattern_lh[0:nptn], \
+               local_pattern_lh_cat[0:nptn_ncat])
 
     if (std::isnan(tree_lh) || std::isinf(tree_lh)) {
         cout << "WARNING: Numerical underflow caused by alignment sites";
