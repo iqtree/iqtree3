@@ -176,5 +176,88 @@ bool testJCTransMatrix();
  */
 bool testPrecomputedMatrices(PhyloTree *tree);
 
+// ==========================================================================
+// Step 13: Reversible OpenACC Kernel — Standalone Tests
+// ==========================================================================
+
+/**
+ * Test reversible eigenspace basics for JC DNA model:
+ *   13a.1: Eigenvalues [0, -4/3, -4/3, -4/3]
+ *   13a.2: U * U^{-1} = Identity
+ *   13a.3: P(t) via eigendecomposition matches JC direct formula
+ *   13a.4: Eigenspace tip vectors (U^{-1} * e_state)
+ *
+ * @return true if all tests pass
+ */
+bool testRevEigenspace();
+
+/**
+ * Test reversible TIP-TIP partial likelihood computation:
+ *   13b.1: Mismatch (A vs C) at t=0.1 → Hadamard sum matches P(t) product
+ *   13b.2: Match (A vs A) at t=0.1
+ *   13b.3: Asymmetric branch lengths (A vs G, t=0.05/0.2)
+ *
+ * Verifies: partial_lh_leaves pre-contraction, Hadamard product in state space,
+ * inv_evec back-transform, and agreement with non-rev P(t) approach.
+ *
+ * @return true if all tests pass
+ */
+bool testRevTipTip();
+
+/**
+ * Test reversible TIP-INTERNAL partial likelihood computation:
+ *   13c.1: 3-taxon tree ((A:0.1,C:0.2):0.05,G:0.15) root state-space partials
+ *          match non-rev reference
+ *   13c.2: Log-likelihood matches Step 5 reference (-6.465999)
+ *
+ * Verifies: eright dot product (eigenspace→state space), Hadamard with
+ * pre-contracted tip, inv_evec back-transform.
+ *
+ * @return true if all tests pass
+ */
+bool testRevTipInternal();
+
+/**
+ * Test reversible INTERNAL-INTERNAL partial likelihood computation:
+ *   13d.1: 4-taxon tree ((A:0.1,C:0.1):0.05,(G:0.15,T:0.15):0.05) root
+ *          state-space partials match non-rev reference
+ *   13d.2: Log-likelihood matches non-rev computation
+ *   13d.3: Swap symmetry (cherry1 ↔ cherry2 gives same result)
+ *
+ * Verifies: dual eigenspace→state-space transforms, Hadamard product,
+ * inv_evec back-transform.
+ *
+ * @return true if all tests pass
+ */
+bool testRevInternalInternal();
+
+/**
+ * Test reversible eigenspace likelihood reduction:
+ *   13e.1: Identity reduction (val at t=0 gives quadratic form)
+ *   13e.2: TIP-INTERNAL reduction matches non-rev site likelihood
+ *   13e.3: INTERNAL-INTERNAL reduction on 4-taxon tree matches reference
+ *
+ * Verifies: val[i] = exp(eval[i]*t)*prop computation, element-wise
+ * three-way product reduction formula.
+ *
+ * @return true if all tests pass
+ */
+bool testRevLikelihoodReduction();
+
+/**
+ * Full end-to-end test of the reversible OpenACC kernel on a real tree.
+ *   13f.1: Production lnL is finite and negative
+ *   13f.2: Weighted sum from _pattern_lh matches production lnL
+ *   13f.3: Determinism (recompute gives identical result)
+ *   13f.4: Per-pattern log-likelihoods are all valid
+ *
+ * Requires a fully initialized PhyloTree running with the rev kernel path
+ * (i.e., without --kernel-nonrev).
+ *
+ * @param tree  the PhyloTree (fully initialized)
+ * @return true if all tests pass
+ */
+bool testRevFullTraversal(PhyloTree *tree);
+
 #endif // USE_OPENACC
 #endif // PHYLOKERNEL_OPENACC_TEST_H

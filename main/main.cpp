@@ -2449,6 +2449,12 @@ int main(int argc, char *argv[]) {
     testTipInternalInternal();    // Step 5: TIP-INTERNAL + INTERNAL-INTERNAL
     testScaling();                // Step 6: Underflow scaling
     testLogLikelihoodRoot();      // Step 7: Log-likelihood at root
+    // Step 13: Reversible kernel standalone tests
+    testRevEigenspace();          // Step 13a: eigenvalues/vectors, P(t), tip vectors
+    testRevTipTip();              // Step 13b: TIP-TIP Hadamard + inv_evec
+    testRevTipInternal();         // Step 13c: TIP-INTERNAL eigenspace→state
+    testRevInternalInternal();    // Step 13d: INTERNAL-INTERNAL dual transforms
+    testRevLikelihoodReduction(); // Step 13e: eigenspace reduction formula
 #endif
 
     cout << "Command:";
@@ -2479,6 +2485,12 @@ int main(int argc, char *argv[]) {
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    if (Params::getInstance().kernel_nonrev)
+        cout << "OpenACC (non-rev, GPU-offloaded)";
+    else
+        cout << "OpenACC (rev, GPU-offloaded)";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -2497,6 +2509,7 @@ int main(int argc, char *argv[]) {
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {
@@ -3633,6 +3646,12 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    if (Params::getInstance().kernel_nonrev)
+        cout << "OpenACC (non-rev, GPU-offloaded)";
+    else
+        cout << "OpenACC (rev, GPU-offloaded)";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -3651,6 +3670,7 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {

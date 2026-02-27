@@ -2110,4 +2110,1198 @@ bool testPrecomputedMatrices(PhyloTree *tree) {
     return all_pass;
 }
 
+// ==========================================================================
+// Step 13 (Rev): Reversible OpenACC Kernel — Standalone Tests
+//
+// These tests verify the reversible eigenspace-based kernel path using
+// hand-computed reference values for the JC (Jukes-Cantor) DNA model.
+//
+// JC eigendecomposition (4 states, pi = [0.25, 0.25, 0.25, 0.25]):
+//   eigenvalues = [0, -4/3, -4/3, -4/3]
+//   U (eigenvectors, row-major):
+//     [ 1, -1, -1, -1]
+//     [ 1,  1,  0,  0]
+//     [ 1,  0,  1,  0]
+//     [ 1,  0,  0,  1]
+//   U^{-1} (inverse eigenvectors, row-major):
+//     [ 0.25,  0.25,  0.25,  0.25]
+//     [-0.25,  0.25,  0,     0   ]
+//     [-0.25,  0,     0.25,  0   ]
+//     [-0.25,  0,     0,     0.25]
+//
+// Reversible kernel storage:
+//   tip_partial_lh[state] = U^{-1} * e_state (eigenspace tips)
+//   echildren[s*K+i] = U[s][i] * exp(eval[i] * t)
+//   partial_lh_leaves[state][s] = Σ_i echildren[s*K+i] * tip_plh[state][i]
+//   Partial lh: Hadamard product in state space, then inv_evec back-transform
+//   Reduction: lh = Σ_i val[i] * plh_node[i] * plh_dad[i]
+// ==========================================================================
+
+// Helper: compute JC eigenvectors U, U^{-1}, eigenvalues
+static void jcEigenDecomposition(double *evec, double *inv_evec, double *eval) {
+    const int K = 4;
+    // Eigenvalues
+    eval[0] = 0.0;
+    eval[1] = eval[2] = eval[3] = -4.0/3.0;
+
+    // Properly normalized eigenvectors for JC (symmetric Q, equal pi=0.25).
+    //
+    // IQ-TREE's JC model uses Eigen3 decomposition (NOT the manual F81 path),
+    // which produces orthonormal eigenvectors of the symmetrized Q, then
+    // transforms: evec = S_evec * diag(1/sqrt(pi)) = S_evec * 2.
+    // This gives the normalization: Σ_i π[i]*evec[i][k]*evec[i][m] = δ(k,m).
+    //
+    // Orthonormal eigenvectors of symmetric JC Q (S_evec columns):
+    //   col 0 (λ=0):    [1/2, 1/2, 1/2, 1/2]
+    //   col 1 (λ=-4/3): [1/√2, -1/√2, 0, 0]
+    //   col 2 (λ=-4/3): [1/√6, 1/√6, -2/√6, 0]
+    //   col 3 (λ=-4/3): [1/√12, 1/√12, 1/√12, -3/√12]
+    //
+    // evec = S_evec * 2 (for equal pi=0.25, 1/sqrt(0.25) = 2):
+    double s2  = sqrt(2.0);
+    double s6  = sqrt(6.0);
+    double s12 = sqrt(12.0);
+
+    memset(evec, 0, K*K*sizeof(double));
+    // Column 0 (λ=0): all 1s
+    evec[0*K+0] = 1.0;  evec[1*K+0] = 1.0;  evec[2*K+0] = 1.0;  evec[3*K+0] = 1.0;
+    // Column 1 (λ=-4/3): [√2, -√2, 0, 0]
+    evec[0*K+1] =  s2;  evec[1*K+1] = -s2;
+    // Column 2 (λ=-4/3): [2/√6, 2/√6, -4/√6, 0]
+    evec[0*K+2] =  2.0/s6;  evec[1*K+2] =  2.0/s6;  evec[2*K+2] = -4.0/s6;
+    // Column 3 (λ=-4/3): [2/√12, 2/√12, 2/√12, -6/√12]
+    evec[0*K+3] =  2.0/s12; evec[1*K+3] =  2.0/s12; evec[2*K+3] =  2.0/s12; evec[3*K+3] = -6.0/s12;
+
+    // Inverse eigenvectors: inv_evec[i][j] = pi[j] * evec[j][i] = 0.25 * evec[j][i]
+    // With proper normalization, this satisfies evec * inv_evec = I.
+    for (int i = 0; i < K; i++)
+        for (int j = 0; j < K; j++)
+            inv_evec[i*K+j] = 0.25 * evec[j*K+i];
+}
+
+// Helper: compute tip_partial_lh in eigenspace (U^{-1} * e_state)
+static void jcRevTipPartialLh(const double *inv_evec, int K, double *tip_plh) {
+    // For states 0..3 (A,C,G,T): tip_plh[state*K + i] = inv_evec[i][state]
+    for (int state = 0; state < K; state++) {
+        for (int i = 0; i < K; i++)
+            tip_plh[state*K + i] = inv_evec[i*K + state];
+    }
+    // STATE_UNKNOWN (index 4 for DNA): tip_plh = U^{-1} * [1,1,1,1]
+    // = [Σ_j inv_evec[i][j]] for each i
+    for (int i = 0; i < K; i++) {
+        double sum = 0.0;
+        for (int j = 0; j < K; j++)
+            sum += inv_evec[i*K + j];
+        tip_plh[K*K + i] = sum;
+    }
+}
+
+// Helper: compute echildren[s*K+i] = U[s][i] * exp(eval[i] * t)
+static void jcRevEchildren(const double *evec, const double *eval,
+                           double t, int K, double *echild) {
+    for (int s = 0; s < K; s++)
+        for (int i = 0; i < K; i++)
+            echild[s*K + i] = evec[s*K + i] * exp(eval[i] * t);
+}
+
+// Helper: compute partial_lh_leaves[state][s] = Σ_i echildren[s*K+i] * tip_plh[state*K+i]
+static void jcRevLeafPartials(const double *echild, const double *tip_plh,
+                              int K, int num_states_plus_unknown,
+                              double *partial_lh_leaves) {
+    for (int state = 0; state < num_states_plus_unknown; state++) {
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += echild[s*K + i] * tip_plh[state*K + i];
+            partial_lh_leaves[state*K + s] = v;
+        }
+    }
+}
+
+bool testRevEigenspace() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13a: Eigenspace Basics (JC DNA)             ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;
+    double evec[16], inv_evec[16], eval[4];
+    jcEigenDecomposition(evec, inv_evec, eval);
+
+    // Test 1: Eigenvalues
+    {
+        cout << endl << "  --- Test 13a.1: Eigenvalues ---" << endl;
+        bool pass = approxEqual(eval[0], 0.0, 1e-15)
+                 && approxEqual(eval[1], -4.0/3.0, 1e-15)
+                 && approxEqual(eval[2], -4.0/3.0, 1e-15)
+                 && approxEqual(eval[3], -4.0/3.0, 1e-15);
+        cout << "  eval = [" << eval[0] << ", " << eval[1] << ", "
+             << eval[2] << ", " << eval[3] << "]" << endl;
+        cout << "  Expected [0, -1.33333, -1.33333, -1.33333]: "
+             << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // Test 2: U * U^{-1} = Identity
+    {
+        cout << endl << "  --- Test 13a.2: U * U^{-1} = I ---" << endl;
+        double prod[16];
+        for (int i = 0; i < K; i++)
+            for (int j = 0; j < K; j++) {
+                double sum = 0.0;
+                for (int k = 0; k < K; k++)
+                    sum += evec[i*K+k] * inv_evec[k*K+j];
+                prod[i*K+j] = sum;
+            }
+        bool pass = true;
+        for (int i = 0; i < K; i++)
+            for (int j = 0; j < K; j++) {
+                double expected = (i == j) ? 1.0 : 0.0;
+                if (!approxEqual(prod[i*K+j], expected, 1e-14))
+                    pass = false;
+            }
+        cout << "  Identity check: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) {
+            cout << "  Product matrix:" << endl;
+            for (int i = 0; i < K; i++) {
+                cout << "    [";
+                for (int j = 0; j < K; j++)
+                    cout << " " << prod[i*K+j];
+                cout << " ]" << endl;
+            }
+            all_pass = false;
+        }
+    }
+
+    // Test 3: P(t) = U * diag(exp(lambda*t)) * U^{-1} matches JC formula
+    {
+        cout << endl << "  --- Test 13a.3: P(t) reconstruction matches JC formula ---" << endl;
+        double t = 0.1;
+        double P_eigen[16], P_jc[16];
+
+        // Eigendecomposition: P[i][j] = Σ_k U[i][k] * exp(eval[k]*t) * inv_evec[k][j]
+        for (int i = 0; i < K; i++)
+            for (int j = 0; j < K; j++) {
+                double sum = 0.0;
+                for (int k = 0; k < K; k++)
+                    sum += evec[i*K+k] * exp(eval[k]*t) * inv_evec[k*K+j];
+                P_eigen[i*K+j] = sum;
+            }
+
+        // Direct JC formula
+        computeTransMatrixEqualRate(t, K, P_jc);
+
+        double max_diff = 0.0;
+        for (int i = 0; i < 16; i++) {
+            double d = fabs(P_eigen[i] - P_jc[i]);
+            if (d > max_diff) max_diff = d;
+        }
+
+        bool pass = max_diff < 1e-14;
+        cout << "  P_eigen[0][0] = " << P_eigen[0] << ", P_jc[0][0] = " << P_jc[0] << endl;
+        cout << "  P_eigen[0][1] = " << P_eigen[1] << ", P_jc[0][1] = " << P_jc[1] << endl;
+        cout << "  Max diff: " << max_diff << endl;
+        cout << "  Match (tol 1e-14): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // Test 4: Eigenspace tip vectors
+    {
+        cout << endl << "  --- Test 13a.4: Eigenspace tip vectors ---" << endl;
+        double tip_plh[5*K]; // states 0..3 + STATE_UNKNOWN
+        jcRevTipPartialLh(inv_evec, K, tip_plh);
+
+        bool pass = true;
+
+        // Round-trip property: U * tip_plh[s] should recover the one-hot e_s.
+        // This is equivalent to U * U^{-1} * e_s = e_s (eigenvector-independent).
+        for (int s = 0; s < K; s++) {
+            for (int sp = 0; sp < K; sp++) {
+                double dot = 0.0;
+                for (int i = 0; i < K; i++)
+                    dot += evec[sp*K+i] * tip_plh[s*K+i];
+                double expected = (s == sp) ? 1.0 : 0.0;
+                if (!approxEqual(dot, expected, 1e-14)) pass = false;
+            }
+        }
+
+        // First component of all tip vectors = pi = 0.25
+        // (because inv_evec row 0 = [0.25, 0.25, 0.25, 0.25] for equal freq)
+        for (int s = 0; s < K; s++)
+            if (!approxEqual(tip_plh[s*K+0], 0.25, 1e-15)) pass = false;
+
+        // STATE_UNKNOWN: U * tip_plh[?] should give [1,1,1,1]
+        double expected_unk[4] = {1.0, 0.0, 0.0, 0.0};
+        for (int i = 0; i < K; i++)
+            if (!approxEqual(tip_plh[K*K+i], expected_unk[i], 1e-14)) pass = false;
+
+        cout << "  tip_plh[A] = [" << tip_plh[0] << ", " << tip_plh[1]
+             << ", " << tip_plh[2] << ", " << tip_plh[3] << "]" << endl;
+        cout << "  Round-trip U * tip_plh[A] = e_A: verified" << endl;
+        cout << "  tip_plh[?] = [" << tip_plh[4*K] << ", " << tip_plh[4*K+1]
+             << ", " << tip_plh[4*K+2] << ", " << tip_plh[4*K+3] << "]" << endl;
+        cout << "  Expected:    [1, 0, 0, 0]" << endl;
+        cout << "  " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13a Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+bool testRevTipTip() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13b: TIP-TIP Partial Likelihood             ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;
+    double evec[16], inv_evec[16], eval[4];
+    jcEigenDecomposition(evec, inv_evec, eval);
+
+    // Tip partial likelihoods in eigenspace (5 entries: A,C,G,T,?)
+    double tip_plh[5*K];
+    jcRevTipPartialLh(inv_evec, K, tip_plh);
+
+    // --- Test 13b.1: TIP-TIP cherry, mismatch (A vs C), t_left=0.1, t_right=0.1 ---
+    {
+        cout << endl << "  --- Test 13b.1: TIP-TIP mismatch (A vs C) ---" << endl;
+
+        double t_left = 0.1, t_right = 0.1;
+        double echild_left[16], echild_right[16];
+        jcRevEchildren(evec, eval, t_left, K, echild_left);
+        jcRevEchildren(evec, eval, t_right, K, echild_right);
+
+        // Compute partial_lh_leaves (pre-contracted tips in state space)
+        double plh_left[5*K], plh_right[5*K];
+        jcRevLeafPartials(echild_left, tip_plh, K, 5, plh_left);
+        jcRevLeafPartials(echild_right, tip_plh, K, 5, plh_right);
+
+        // State A=0, State C=1
+        int state_left = 0, state_right = 1;
+
+        // Hadamard product in state space
+        double tmp_state[4];
+        for (int s = 0; s < K; s++)
+            tmp_state[s] = plh_left[state_left*K + s] * plh_right[state_right*K + s];
+
+        // Back-transform to eigenspace via inv_evec
+        double dad_plh[4];
+        for (int i = 0; i < K; i++) {
+            double v = 0.0;
+            for (int x = 0; x < K; x++)
+                v += inv_evec[i*K + x] * tmp_state[x];
+            dad_plh[i] = v;
+        }
+
+        // Verify: compute site likelihood via eigenspace reduction
+        // At the root, use val[i] = exp(eval[i] * 0) * prop = 1.0 * 1.0
+        // and tip_plh for the root state (root is special, but for a 2-taxon
+        // tree we just do pi^T . L_state_space)
+        //
+        // Actually for 2-taxon, let's verify the partial_lh agrees with
+        // the P(t) approach: site_lh = Σ_s P_left(A,s) * P_right(C,s)
+        double P_left[16], P_right[16];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+        double site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_ref += P_left[0*K + s] * P_right[1*K + s];
+
+        // The Hadamard product tmp_state[s] should equal P_left(A,s)*P_right(C,s)
+        // Because partial_lh_leaves are computed as echildren * tip_plh which
+        // gives U * diag(exp(λt)) * U⁻¹ * e_state = P(t) * e_state = P(t)[:,state]
+        double hadamard_sum = 0.0;
+        for (int s = 0; s < K; s++)
+            hadamard_sum += tmp_state[s];
+
+        bool pass_sum = approxEqual(hadamard_sum, site_lh_ref, 1e-14);
+        cout << "  Hadamard sum (state-space) = " << hadamard_sum << endl;
+        cout << "  Reference (P*P)            = " << site_lh_ref << endl;
+        cout << "  Match: " << (pass_sum ? "PASS" : "FAIL") << endl;
+
+        // Also verify the eigenspace partials are self-consistent:
+        // Applying U to dad_plh should recover tmp_state
+        double recovered[4];
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += evec[s*K + i] * dad_plh[i];
+            recovered[s] = v;
+        }
+        double max_diff = 0.0;
+        for (int s = 0; s < K; s++) {
+            double d = fabs(recovered[s] - tmp_state[s]);
+            if (d > max_diff) max_diff = d;
+        }
+        bool pass_recover = max_diff < 1e-14;
+        cout << "  U * dad_plh recovers state-space: " << (pass_recover ? "PASS" : "FAIL")
+             << " (max_diff=" << max_diff << ")" << endl;
+
+        // Log-likelihood: lnL = log(pi^T . L_state_space) = log(0.25 * Σ_s tmp_state[s])
+        double lnL_rev = log(0.25 * hadamard_sum);
+        double lnL_ref = log(0.25 * site_lh_ref);
+        bool pass_lnL = approxEqual(lnL_rev, lnL_ref, 1e-14);
+        cout << "  lnL(rev)  = " << lnL_rev << endl;
+        cout << "  lnL(ref)  = " << lnL_ref << endl;
+        // Also compare with the known Step 4 value for A vs C at t=0.1
+        double lnL_step4 = -4.224717;
+        bool pass_step4 = approxEqual(lnL_rev, lnL_step4, 1e-4);
+        cout << "  Step 4 reference (-4.224717): " << (pass_step4 ? "PASS" : "FAIL") << endl;
+
+        if (!pass_sum || !pass_recover || !pass_lnL || !pass_step4) all_pass = false;
+    }
+
+    // --- Test 13b.2: TIP-TIP match (A vs A), t_left=0.1, t_right=0.1 ---
+    {
+        cout << endl << "  --- Test 13b.2: TIP-TIP match (A vs A) ---" << endl;
+
+        double t_left = 0.1, t_right = 0.1;
+        double echild_left[16], echild_right[16];
+        jcRevEchildren(evec, eval, t_left, K, echild_left);
+        jcRevEchildren(evec, eval, t_right, K, echild_right);
+
+        double plh_left[5*K], plh_right[5*K];
+        jcRevLeafPartials(echild_left, tip_plh, K, 5, plh_left);
+        jcRevLeafPartials(echild_right, tip_plh, K, 5, plh_right);
+
+        int state_left = 0, state_right = 0; // A vs A
+
+        double tmp_state[4];
+        for (int s = 0; s < K; s++)
+            tmp_state[s] = plh_left[state_left*K + s] * plh_right[state_right*K + s];
+
+        double P_left[16], P_right[16];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+        double site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_ref += P_left[0*K + s] * P_right[0*K + s];
+
+        double hadamard_sum = 0.0;
+        for (int s = 0; s < K; s++) hadamard_sum += tmp_state[s];
+
+        bool pass = approxEqual(hadamard_sum, site_lh_ref, 1e-14);
+        double lnL = log(0.25 * hadamard_sum);
+        cout << "  Hadamard sum = " << hadamard_sum << endl;
+        cout << "  Reference    = " << site_lh_ref << endl;
+        cout << "  lnL          = " << lnL << " (expected ~-1.579)" << endl;
+        cout << "  Match: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13b.3: Asymmetric branch lengths ---
+    {
+        cout << endl << "  --- Test 13b.3: TIP-TIP asymmetric branches (A vs G) ---" << endl;
+
+        double t_left = 0.05, t_right = 0.2;
+        double echild_left[16], echild_right[16];
+        jcRevEchildren(evec, eval, t_left, K, echild_left);
+        jcRevEchildren(evec, eval, t_right, K, echild_right);
+
+        double plh_left[5*K], plh_right[5*K];
+        jcRevLeafPartials(echild_left, tip_plh, K, 5, plh_left);
+        jcRevLeafPartials(echild_right, tip_plh, K, 5, plh_right);
+
+        int state_left = 0, state_right = 2; // A vs G
+
+        double tmp_state[4];
+        for (int s = 0; s < K; s++)
+            tmp_state[s] = plh_left[state_left*K + s] * plh_right[state_right*K + s];
+
+        double P_left[16], P_right[16];
+        computeTransMatrixEqualRate(t_left, K, P_left);
+        computeTransMatrixEqualRate(t_right, K, P_right);
+        double site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_ref += P_left[0*K + s] * P_right[2*K + s];
+
+        double hadamard_sum = 0.0;
+        for (int s = 0; s < K; s++) hadamard_sum += tmp_state[s];
+
+        bool pass = approxEqual(hadamard_sum, site_lh_ref, 1e-14);
+        double lnL = log(0.25 * hadamard_sum);
+        cout << "  Hadamard sum = " << hadamard_sum << ", Ref = " << site_lh_ref << endl;
+        cout << "  lnL = " << lnL << endl;
+        cout << "  Match: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13b Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+bool testRevTipInternal() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13c: TIP-INTERNAL Partial Likelihood         ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;
+    double evec[16], inv_evec[16], eval[4];
+    jcEigenDecomposition(evec, inv_evec, eval);
+
+    double tip_plh[5*K];
+    jcRevTipPartialLh(inv_evec, K, tip_plh);
+
+    // 3-taxon tree: ((A:0.1, C:0.2):0.05, G:0.15)  — matches Step 5 reference
+    // First compute TIP-TIP cherry (A:0.1, C:0.2) → internal node in eigenspace
+    double t_A = 0.1, t_C = 0.2, t_cherry = 0.05, t_G = 0.15;
+
+    double echild_A[16], echild_C[16];
+    jcRevEchildren(evec, eval, t_A, K, echild_A);
+    jcRevEchildren(evec, eval, t_C, K, echild_C);
+
+    double plh_A[5*K], plh_C[5*K];
+    jcRevLeafPartials(echild_A, tip_plh, K, 5, plh_A);
+    jcRevLeafPartials(echild_C, tip_plh, K, 5, plh_C);
+
+    // TIP-TIP: A(state=0) vs C(state=1)
+    double tmp_state_cherry[4];
+    for (int s = 0; s < K; s++)
+        tmp_state_cherry[s] = plh_A[0*K + s] * plh_C[1*K + s];
+
+    // Back-transform to eigenspace
+    double cherry_plh[4]; // eigenspace
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp_state_cherry[x];
+        cherry_plh[i] = v;
+    }
+
+    // Now TIP-INTERNAL: cherry (internal, eigenspace) vs G (tip, state=2)
+    // The cherry branch has length t_cherry=0.05 going UP to the root.
+    // The G branch has length t_G=0.15.
+    // echildren for cherry branch (left=G tip, right=cherry internal)
+
+    // Actually in the TIP-INTERNAL case:
+    // Left = tip (G), Right = internal (cherry)
+    // eleft = echildren for G branch (t_G)
+    // eright = echildren for cherry branch (t_cherry)
+
+    double echild_G[16], echild_cherry[16];
+    jcRevEchildren(evec, eval, t_G, K, echild_G);
+    jcRevEchildren(evec, eval, t_cherry, K, echild_cherry);
+
+    // Pre-contracted left tip
+    double plh_G[5*K];
+    jcRevLeafPartials(echild_G, tip_plh, K, 5, plh_G);
+
+    // Right child (cherry) is internal: transform eigenspace→state space via eright
+    double right_state[4];
+    for (int s = 0; s < K; s++) {
+        double v = 0.0;
+        for (int i = 0; i < K; i++)
+            v += echild_cherry[s*K + i] * cherry_plh[i];
+        right_state[s] = v;
+    }
+
+    // Hadamard: left (state 2=G from pre-contracted) * right (state space)
+    double tmp_state_root[4];
+    for (int s = 0; s < K; s++)
+        tmp_state_root[s] = plh_G[2*K + s] * right_state[s];
+
+    // Back-transform to eigenspace
+    double root_plh[4];
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp_state_root[x];
+        root_plh[i] = v;
+    }
+
+    // Verify: compute reference via non-rev (P(t) matrices)
+    double P_A[16], P_C_mat[16], P_cherry[16], P_G[16];
+    computeTransMatrixEqualRate(t_A, K, P_A);
+    computeTransMatrixEqualRate(t_C, K, P_C_mat);
+    computeTransMatrixEqualRate(t_cherry, K, P_cherry);
+    computeTransMatrixEqualRate(t_G, K, P_G);
+
+    // Cherry partial in state space (non-rev):
+    // cherry_state[s] = Σ_x P_A(s,x)*δ(x,A=0) * Σ_y P_C(s,y)*δ(y,C=1)
+    //                 = P_A(s,0) * P_C(s,1)
+    double cherry_state_ref[4];
+    for (int s = 0; s < K; s++)
+        cherry_state_ref[s] = P_A[s*K + 0] * P_C_mat[s*K + 1];
+
+    // Root partial (non-rev):
+    // root_state[s] = Σ_x P_cherry(s,x)*cherry_state[x] * Σ_y P_G(s,y)*δ(y,G=2)
+    //              = (Σ_x P_cherry(s,x)*cherry_state[x]) * P_G(s,2)
+    double root_state_ref[4];
+    for (int s = 0; s < K; s++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += P_cherry[s*K + x] * cherry_state_ref[x];
+        root_state_ref[s] = v * P_G[s*K + 2];
+    }
+
+    // --- Test 13c.1: Root state-space partials match reference ---
+    {
+        cout << endl << "  --- Test 13c.1: Root state-space partials ---" << endl;
+
+        // Convert eigenspace root_plh back to state space via U
+        double root_state_rev[4];
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += evec[s*K + i] * root_plh[i];
+            root_state_rev[s] = v;
+        }
+
+        double max_diff = 0.0;
+        for (int s = 0; s < K; s++) {
+            double d = fabs(root_state_rev[s] - root_state_ref[s]);
+            if (d > max_diff) max_diff = d;
+        }
+        bool pass = max_diff < 1e-14;
+
+        cout << "  Rev root (state-space):    [";
+        for (int s = 0; s < K; s++) cout << root_state_rev[s] << (s<K-1?", ":"");
+        cout << "]" << endl;
+        cout << "  Nonrev root (reference):   [";
+        for (int s = 0; s < K; s++) cout << root_state_ref[s] << (s<K-1?", ":"");
+        cout << "]" << endl;
+        cout << "  Max diff: " << max_diff << " ... " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13c.2: Log-likelihood matches Step 5 reference ---
+    {
+        cout << endl << "  --- Test 13c.2: Log-likelihood ---" << endl;
+
+        double site_lh_rev = 0.0;
+        // Convert root_plh back to state space and dot with pi
+        double root_state_rev[4];
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += evec[s*K + i] * root_plh[i];
+            root_state_rev[s] = v;
+        }
+        for (int s = 0; s < K; s++)
+            site_lh_rev += 0.25 * root_state_rev[s];
+
+        double site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_ref += 0.25 * root_state_ref[s];
+
+        double lnL_rev = log(site_lh_rev);
+        double lnL_ref = log(site_lh_ref);
+        double lnL_step5 = -6.465999; // known reference from Step 5
+
+        bool pass_match = approxEqual(lnL_rev, lnL_ref, 1e-14);
+        bool pass_step5 = approxEqual(lnL_rev, lnL_step5, 1e-4);
+
+        cout << "  lnL(rev)       = " << lnL_rev << endl;
+        cout << "  lnL(nonrev)    = " << lnL_ref << endl;
+        cout << "  Step 5 ref     = " << lnL_step5 << endl;
+        cout << "  Rev==Nonrev: " << (pass_match ? "PASS" : "FAIL") << endl;
+        cout << "  Step 5 match:  " << (pass_step5 ? "PASS" : "FAIL") << endl;
+        if (!pass_match || !pass_step5) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13c Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+bool testRevInternalInternal() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13d: INTERNAL-INTERNAL Partial Likelihood    ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;
+    double evec[16], inv_evec[16], eval[4];
+    jcEigenDecomposition(evec, inv_evec, eval);
+
+    double tip_plh[5*K];
+    jcRevTipPartialLh(inv_evec, K, tip_plh);
+
+    // 4-taxon balanced tree: ((A:0.1, C:0.1):0.05, (G:0.15, T:0.15):0.05)
+    double t_A = 0.1, t_C = 0.1, t_G = 0.15, t_T = 0.15;
+    double t_left_branch = 0.05, t_right_branch = 0.05;
+
+    // Cherry 1: (A:0.1, C:0.1)
+    double echild_A[16], echild_C[16];
+    jcRevEchildren(evec, eval, t_A, K, echild_A);
+    jcRevEchildren(evec, eval, t_C, K, echild_C);
+
+    double plh_A[5*K], plh_C[5*K];
+    jcRevLeafPartials(echild_A, tip_plh, K, 5, plh_A);
+    jcRevLeafPartials(echild_C, tip_plh, K, 5, plh_C);
+
+    double tmp1[4];
+    for (int s = 0; s < K; s++)
+        tmp1[s] = plh_A[0*K + s] * plh_C[1*K + s]; // A=0, C=1
+
+    double cherry1_plh[4]; // eigenspace
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp1[x];
+        cherry1_plh[i] = v;
+    }
+
+    // Cherry 2: (G:0.15, T:0.15)
+    double echild_G[16], echild_T[16];
+    jcRevEchildren(evec, eval, t_G, K, echild_G);
+    jcRevEchildren(evec, eval, t_T, K, echild_T);
+
+    double plh_G[5*K], plh_T[5*K];
+    jcRevLeafPartials(echild_G, tip_plh, K, 5, plh_G);
+    jcRevLeafPartials(echild_T, tip_plh, K, 5, plh_T);
+
+    double tmp2[4];
+    for (int s = 0; s < K; s++)
+        tmp2[s] = plh_G[2*K + s] * plh_T[3*K + s]; // G=2, T=3
+
+    double cherry2_plh[4]; // eigenspace
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp2[x];
+        cherry2_plh[i] = v;
+    }
+
+    // INTERNAL-INTERNAL: cherry1 (t_left_branch=0.05) vs cherry2 (t_right_branch=0.05)
+    double echild_left[16], echild_right[16];
+    jcRevEchildren(evec, eval, t_left_branch, K, echild_left);
+    jcRevEchildren(evec, eval, t_right_branch, K, echild_right);
+
+    // Transform both from eigenspace to state space
+    double left_state[4], right_state[4];
+    for (int s = 0; s < K; s++) {
+        double vl = 0.0, vr = 0.0;
+        for (int i = 0; i < K; i++) {
+            vl += echild_left[s*K + i]  * cherry1_plh[i];
+            vr += echild_right[s*K + i] * cherry2_plh[i];
+        }
+        left_state[s] = vl;
+        right_state[s] = vr;
+    }
+
+    // Hadamard product
+    double tmp_root[4];
+    for (int s = 0; s < K; s++)
+        tmp_root[s] = left_state[s] * right_state[s];
+
+    // Back-transform to eigenspace
+    double root_plh[4];
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp_root[x];
+        root_plh[i] = v;
+    }
+
+    // Reference: non-rev approach
+    double P_A_mat[16], P_C_mat[16], P_G_mat[16], P_T_mat[16], P_L[16], P_R[16];
+    computeTransMatrixEqualRate(t_A, K, P_A_mat);
+    computeTransMatrixEqualRate(t_C, K, P_C_mat);
+    computeTransMatrixEqualRate(t_G, K, P_G_mat);
+    computeTransMatrixEqualRate(t_T, K, P_T_mat);
+    computeTransMatrixEqualRate(t_left_branch, K, P_L);
+    computeTransMatrixEqualRate(t_right_branch, K, P_R);
+
+    // cherry1_state[s] = P_A(s,A=0) * P_C(s,C=1)
+    // cherry2_state[s] = P_G(s,G=2) * P_T(s,T=3)
+    double c1_state_ref[4], c2_state_ref[4];
+    for (int s = 0; s < K; s++) {
+        c1_state_ref[s] = P_A_mat[s*K + 0] * P_C_mat[s*K + 1];
+        c2_state_ref[s] = P_G_mat[s*K + 2] * P_T_mat[s*K + 3];
+    }
+
+    // root_state_ref[s] = (Σ_x P_L(s,x)*c1[x]) * (Σ_y P_R(s,y)*c2[y])
+    double root_state_ref[4];
+    for (int s = 0; s < K; s++) {
+        double vl = 0.0, vr = 0.0;
+        for (int x = 0; x < K; x++) {
+            vl += P_L[s*K + x] * c1_state_ref[x];
+            vr += P_R[s*K + x] * c2_state_ref[x];
+        }
+        root_state_ref[s] = vl * vr;
+    }
+
+    // --- Test 13d.1: Root state-space match ---
+    {
+        cout << endl << "  --- Test 13d.1: INTERNAL-INTERNAL root partials ---" << endl;
+
+        double root_state_rev[4];
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += evec[s*K + i] * root_plh[i];
+            root_state_rev[s] = v;
+        }
+
+        double max_diff = 0.0;
+        for (int s = 0; s < K; s++) {
+            double d = fabs(root_state_rev[s] - root_state_ref[s]);
+            if (d > max_diff) max_diff = d;
+        }
+        bool pass = max_diff < 1e-13;
+
+        cout << "  Rev root (state-space): [";
+        for (int s = 0; s < K; s++) cout << root_state_rev[s] << (s<K-1?", ":"");
+        cout << "]" << endl;
+        cout << "  Ref root (P(t)):        [";
+        for (int s = 0; s < K; s++) cout << root_state_ref[s] << (s<K-1?", ":"");
+        cout << "]" << endl;
+        cout << "  Max diff: " << max_diff << " ... " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13d.2: Log-likelihood ---
+    {
+        cout << endl << "  --- Test 13d.2: Log-likelihood ---" << endl;
+
+        double root_state_rev[4];
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int i = 0; i < K; i++)
+                v += evec[s*K + i] * root_plh[i];
+            root_state_rev[s] = v;
+        }
+
+        double site_lh_rev = 0.0, site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++) {
+            site_lh_rev += 0.25 * root_state_rev[s];
+            site_lh_ref += 0.25 * root_state_ref[s];
+        }
+
+        double lnL_rev = log(site_lh_rev);
+        double lnL_ref = log(site_lh_ref);
+
+        bool pass = approxEqual(lnL_rev, lnL_ref, 1e-13);
+        cout << "  lnL(rev)    = " << lnL_rev << endl;
+        cout << "  lnL(nonrev) = " << lnL_ref << endl;
+        cout << "  Diff: " << fabs(lnL_rev - lnL_ref) << endl;
+        cout << "  Match: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13d.3: Swap symmetry ---
+    {
+        cout << endl << "  --- Test 13d.3: Swap symmetry (cherry1 ↔ cherry2) ---" << endl;
+
+        // Swap: eleft ↔ eright, cherry1 ↔ cherry2
+        double left_s2[4], right_s2[4];
+        for (int s = 0; s < K; s++) {
+            double vl = 0.0, vr = 0.0;
+            for (int i = 0; i < K; i++) {
+                vl += echild_right[s*K + i] * cherry2_plh[i]; // was right→left
+                vr += echild_left[s*K + i]  * cherry1_plh[i]; // was left→right
+            }
+            left_s2[s] = vl;
+            right_s2[s] = vr;
+        }
+
+        double tmp_root2[4];
+        for (int s = 0; s < K; s++)
+            tmp_root2[s] = left_s2[s] * right_s2[s];
+
+        // Since it's a Hadamard product (element-wise multiply), swapping
+        // left/right state-space values gives the same result
+        double max_diff = 0.0;
+        for (int s = 0; s < K; s++) {
+            double d = fabs(tmp_root2[s] - tmp_root[s]);
+            if (d > max_diff) max_diff = d;
+        }
+        bool pass = max_diff < 1e-14;
+        cout << "  Swap symmetry max diff: " << max_diff
+             << " ... " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13d Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+bool testRevLikelihoodReduction() {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13e: Eigenspace Likelihood Reduction         ===" << endl;
+    cout << "============================================================" << endl;
+
+    bool all_pass = true;
+    const int K = 4;
+    double evec[16], inv_evec[16], eval[4];
+    jcEigenDecomposition(evec, inv_evec, eval);
+
+    double tip_plh[5*K];
+    jcRevTipPartialLh(inv_evec, K, tip_plh);
+
+    // 2-taxon tree: (A:0.1, C:0.1) — TIP-INTERNAL reduction
+    // Compute cherry eigenspace partials from test 13b
+    double t = 0.1;
+    double echild_A[16], echild_C[16];
+    jcRevEchildren(evec, eval, t, K, echild_A);
+    jcRevEchildren(evec, eval, t, K, echild_C);
+
+    double plh_A[5*K], plh_C[5*K];
+    jcRevLeafPartials(echild_A, tip_plh, K, 5, plh_A);
+    jcRevLeafPartials(echild_C, tip_plh, K, 5, plh_C);
+
+    // Cherry: A=0, C=1
+    double tmp_state[4];
+    for (int s = 0; s < K; s++)
+        tmp_state[s] = plh_A[0*K + s] * plh_C[1*K + s];
+
+    double cherry_plh[4]; // eigenspace
+    for (int i = 0; i < K; i++) {
+        double v = 0.0;
+        for (int x = 0; x < K; x++)
+            v += inv_evec[i*K + x] * tmp_state[x];
+        cherry_plh[i] = v;
+    }
+
+    // --- Test 13e.1: INTERNAL-INTERNAL reduction ---
+    // Suppose dad's eigenspace partials are identical to cherry's (self-reduction test)
+    // val[i] = exp(eval[i] * 0) * 1.0 = 1.0 for eval[0], exp(-4/3 * 0) = 1.0
+    // Actually val[i] = exp(eval[i] * rate * t) * prop — at t=0, val=[1,1,1,1]
+    {
+        cout << endl << "  --- Test 13e.1: val at t=0 (identity reduction) ---" << endl;
+
+        double val[4];
+        for (int i = 0; i < K; i++)
+            val[i] = exp(eval[i] * 0.0) * 1.0; // t=0, prop=1
+
+        // lh = Σ_i val[i] * node_plh[i] * dad_plh[i]
+        double lh = 0.0;
+        for (int i = 0; i < K; i++)
+            lh += val[i] * cherry_plh[i] * cherry_plh[i]; // node==dad for self-test
+
+        // This should be Σ_i plh[i]^2 (quadratic form)
+        double lh_check = 0.0;
+        for (int i = 0; i < K; i++)
+            lh_check += cherry_plh[i] * cherry_plh[i];
+
+        bool pass = approxEqual(lh, lh_check, 1e-15);
+        cout << "  val = [1,1,1,1] (t=0)" << endl;
+        cout << "  lh (reduction) = " << lh << ", lh (direct) = " << lh_check << endl;
+        cout << "  Match: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13e.2: TIP-INTERNAL reduction with actual val ---
+    // Dad is a leaf (state A), node is cherry internal.
+    // val[i] = exp(eval[i] * t_dad) * prop for a branch t_dad
+    // partial_lh_node[A][i] = val[i] * tip_plh[A][i]
+    // lh = Σ_i partial_lh_node[A][i] * cherry_plh[i]
+    {
+        cout << endl << "  --- Test 13e.2: TIP-INTERNAL reduction ---" << endl;
+
+        double t_dad = 0.05;
+        double val[4];
+        for (int i = 0; i < K; i++)
+            val[i] = exp(eval[i] * t_dad) * 1.0; // prop=1, ncat=1
+
+        // partial_lh_node for state A
+        double plh_node_A[4];
+        for (int i = 0; i < K; i++)
+            plh_node_A[i] = val[i] * tip_plh[0*K + i]; // state A=0
+
+        double lh_rev = 0.0;
+        for (int i = 0; i < K; i++)
+            lh_rev += plh_node_A[i] * cherry_plh[i];
+
+        // Reference: pi^T * P(t_dad) * L_state_space(cherry)
+        // = Σ_s 0.25 * P_dad(A,s) * cherry_state[s]
+        // where cherry_state[s] = P_A(s,0) * P_C(s,1)
+        double P_dad[16], P_Amat[16], P_Cmat[16];
+        computeTransMatrixEqualRate(t_dad, K, P_dad);
+        computeTransMatrixEqualRate(t, K, P_Amat);
+        computeTransMatrixEqualRate(t, K, P_Cmat);
+
+        double cherry_state_ref[4];
+        for (int s = 0; s < K; s++)
+            cherry_state_ref[s] = P_Amat[s*K + 0] * P_Cmat[s*K + 1];
+
+        double lh_ref = 0.0;
+        for (int s = 0; s < K; s++)
+            lh_ref += P_dad[0*K + s] * cherry_state_ref[s];
+        // Note: lh_ref doesn't include pi; the rev reduction also doesn't include pi
+        // The rev formula gives: Σ_i val[i]*tip_plh[A][i]*cherry_plh[i]
+        // = Σ_i exp(λ_i*t)*U⁻¹[i,A]*cherry_plh[i]
+        // = e_A^T * P(t)^T * U * cherry_plh (in state space via U)
+        // Actually, need to verify the factor of pi.
+        // For the eigenspace reduction the full formula at the root includes pi
+        // implicitly through tip_partial_lh = U^{-1} * e_state where
+        // U^{-1}[i,j] = pi[j] * U[j,i].
+        //
+        // So lh_rev = Σ_i val[i] * (U⁻¹*e_A)[i] * cherry_plh[i]
+        // This produces the site probability (not yet multiplied by pi).
+        //
+        // The reference site probability including pi is:
+        // site_lh = Σ_s pi[s] * Σ_x P_dad(s,x)*cherry_state[x] ... but
+        // that's the full tree likelihood. For comparing the branch reduction
+        // we need to compare like-for-like.
+
+        // Let's just compute the full site likelihood both ways:
+        // Rev: lh_site = Σ_i plh_node_A[i] * cherry_plh[i]  (this IS the site lh)
+        // Ref: lh_site = Σ_s pi[s] * root_state[s] where root_state is
+        //   for a rooted tree with root edge going to dad=A.
+        // Actually for IQ-TREE rooted trees, the reduction already includes pi
+        // via the root state handling. Let's just verify log:
+
+        // For a 2-taxon rooted tree A--cherry, the site likelihood is:
+        // Σ_s π(s) * P_dad(s,A) * cherry_state[s]  -- wrong decomposition
+        // Actually: site_lh = Σ_s π(s) * cherry_state_with_all_branches(s)
+        //
+        // The simplest check: both should give the same lnL for the site.
+        // lnL = log(Σ_s π(s) * Σ_x P_A_total(s,x) * δ(x,A) * Σ_y P_C_total(s,y)*δ(y,C))
+        // With A at t_A = 0.1, C at t_C = 0.1, internal branch = t_dad = 0.05
+        // and dad branch being the root edge.
+        // Total A path: t_A = 0.1, Total C path: t_C = 0.1
+        // Cherry to root: t_cherry = 0.05 ... but we're doing a 3-branch star for 2 taxa.
+        //
+        // Let me just verify the reduction value matches the non-rev computation
+        // without pi (since pi is handled separately at the very end).
+
+        // Actually the eigenspace reduction for TIP-INTERNAL already gives the
+        // site probability (including pi). Let me verify numerically:
+        double lnL_rev = log(fabs(lh_rev));
+
+        // The non-rev approach for the same structure:
+        // root_partial[s] = P_dad(s,0_A) * cherry_state[s]
+        // (where P_dad = P(t_dad) goes from root to dad leaf)
+        // site_lh = Σ_s pi[s] * root_partial[s] = 0.25 * Σ_s P_dad(s,0)*cherry_state[s]
+        double site_lh_nonrev = 0.0;
+        for (int s = 0; s < K; s++)
+            site_lh_nonrev += 0.25 * P_dad[s*K + 0] * cherry_state_ref[s];
+        double lnL_ref = log(site_lh_nonrev);
+
+        bool pass = approxEqual(lnL_rev, lnL_ref, 1e-10);
+        cout << "  lh_rev     = " << lh_rev << endl;
+        cout << "  site_lh_ref = " << site_lh_nonrev << endl;
+        cout << "  lnL(rev)   = " << lnL_rev << endl;
+        cout << "  lnL(ref)   = " << lnL_ref << endl;
+        cout << "  Match (tol 1e-10): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13e.3: INTERNAL-INTERNAL reduction at actual branch ---
+    {
+        cout << endl << "  --- Test 13e.3: INT-INT reduction at branch ---" << endl;
+
+        // 4-taxon tree: ((A:0.1,C:0.1):0.05, (G:0.15,T:0.15):0.05)
+        // Compute cherry1 and cherry2 eigenspace partials
+        double t_G = 0.15, t_T = 0.15;
+        double echild_G[16], echild_T[16];
+        jcRevEchildren(evec, eval, t_G, K, echild_G);
+        jcRevEchildren(evec, eval, t_T, K, echild_T);
+
+        double plh_G[5*K], plh_T[5*K];
+        jcRevLeafPartials(echild_G, tip_plh, K, 5, plh_G);
+        jcRevLeafPartials(echild_T, tip_plh, K, 5, plh_T);
+
+        double tmp2[4];
+        for (int s = 0; s < K; s++)
+            tmp2[s] = plh_G[2*K + s] * plh_T[3*K + s];
+
+        double cherry2_plh[4];
+        for (int i = 0; i < K; i++) {
+            double v = 0.0;
+            for (int x = 0; x < K; x++)
+                v += inv_evec[i*K + x] * tmp2[x];
+            cherry2_plh[i] = v;
+        }
+
+        // Reduction at the branch connecting cherry1 and cherry2
+        // val[i] = exp(eval[i] * (t_left + t_right)) * prop
+        // But the reduction uses the branch between the two:
+        // In IQ-TREE: dad_branch->length is the edge between node and dad.
+        // val[i] = exp(eval[i] * rate * dad_branch_len) * prop
+        double branch_len = 0.05 + 0.05; // total branch = 0.1
+        double val[4];
+        for (int i = 0; i < K; i++)
+            val[i] = exp(eval[i] * branch_len) * 1.0;
+
+        double lh_rev = 0.0;
+        for (int i = 0; i < K; i++)
+            lh_rev += val[i] * cherry_plh[i] * cherry2_plh[i];
+
+        // Reference via non-rev
+        double P_Amat[16], P_Cmat[16], P_Gmat[16], P_Tmat[16], P_branch[16];
+        computeTransMatrixEqualRate(0.1, K, P_Amat);
+        computeTransMatrixEqualRate(0.1, K, P_Cmat);
+        computeTransMatrixEqualRate(0.15, K, P_Gmat);
+        computeTransMatrixEqualRate(0.15, K, P_Tmat);
+        computeTransMatrixEqualRate(branch_len, K, P_branch);
+
+        double c1_ref[4], c2_ref[4];
+        for (int s = 0; s < K; s++) {
+            c1_ref[s] = P_Amat[s*K + 0] * P_Cmat[s*K + 1];
+            c2_ref[s] = P_Gmat[s*K + 2] * P_Tmat[s*K + 3];
+        }
+
+        // The rev reduction computes:
+        //   lh = Σ_i val[i] * cherry1_plh[i] * cherry2_plh[i]
+        //   where val[i]=exp(λ_i*t), cherry_plh = U⁻¹*L (eigenspace)
+        //
+        // This equals the full site likelihood because:
+        //   Σ_i exp(λ_i*t) * (U⁻¹*L1)[i] * (U⁻¹*L2)[i]
+        //   = Σ_k exp(λ_k*t) * (Σ_x U⁻¹[k,x]*L1[x]) * (Σ_s U⁻¹[k,s]*L2[s])
+        //   = Σ_k exp(λ_k*t) * (Σ_x U⁻¹[k,x]*L1[x]) * (Σ_s π[s]*U[s,k]*L2[s])
+        //   = Σ_s π[s]*L2[s] * Σ_x (Σ_k U[s,k]*exp(λ_k*t)*U⁻¹[k,x]) * L1[x]
+        //   = Σ_s π[s]*L2[s] * Σ_x P(t)[s,x]*L1[x]
+        //   = Σ_s π[s] * (P(t)*L1)[s] * L2[s]  ← standard site likelihood
+        //
+        // Reference: site_lh = Σ_s π[s] * (Σ_x P_branch(s,x)*c1[x]) * c2[s]
+        double site_lh_ref = 0.0;
+        for (int s = 0; s < K; s++) {
+            double v = 0.0;
+            for (int x = 0; x < K; x++)
+                v += P_branch[s*K + x] * c1_ref[x];
+            site_lh_ref += 0.25 * v * c2_ref[s];
+        }
+
+        // The rev reduction result should equal this site_lh
+        bool pass = approxEqual(lh_rev, site_lh_ref, 1e-12);
+
+        double lnL_rev = log(fabs(lh_rev));
+        double lnL_ref = log(site_lh_ref);
+
+        cout << "  lh(rev reduction) = " << lh_rev << endl;
+        cout << "  site_lh(ref)      = " << site_lh_ref << endl;
+        cout << "  lnL(rev)  = " << lnL_rev << endl;
+        cout << "  lnL(ref)  = " << lnL_ref << endl;
+        cout << "  Match (tol 1e-12): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13e Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
+bool testRevFullTraversal(PhyloTree *tree) {
+    cout << endl;
+    cout << "============================================================" << endl;
+    cout << "=== Rev Step 13f: Full Reversible Traversal (End-to-End) ===" << endl;
+    cout << "============================================================" << endl;
+
+    if (!tree || !tree->aln || !tree->getModel() || !tree->getModelFactory()) {
+        cout << "  ERROR: Tree not fully initialized" << endl;
+        return false;
+    }
+
+    bool all_pass = true;
+    int K = tree->aln->num_states;
+    int ncat = tree->getRate()->getNRate();
+    size_t orig_nptn = tree->aln->size();
+    size_t nptn = tree->aln->size() + tree->getModelFactory()->unobserved_ptns.size();
+
+    cout << "  Alignment: " << tree->aln->getNSeq() << " taxa, "
+         << tree->aln->getNSite() << " sites, "
+         << nptn << " patterns" << endl;
+    cout << "  Model: " << tree->getModelName() << endl;
+    cout << "  States: " << K << ", Rate categories: " << ncat << endl;
+    cout << "  useRevKernel: " << (tree->getModel()->useRevKernel() ? "true" : "false") << endl;
+
+    // --- Test 13f.1: Production lnL validity ---
+    {
+        cout << endl << "  --- Test 13f.1: Production kernel lnL ---" << endl;
+
+        tree->initializeAllPartialLh();
+        tree->clearAllPartialLH();
+        double lnL = tree->computeLikelihood();
+
+        bool pass_finite = !std::isnan(lnL) && !std::isinf(lnL);
+        bool pass_negative = lnL < 0.0;
+
+        cout << "  lnL = " << fixed << lnL << endl;
+        cout.unsetf(ios_base::fixed);
+        cout << "  Finite:   " << (pass_finite ? "PASS" : "FAIL") << endl;
+        cout << "  Negative: " << (pass_negative ? "PASS" : "FAIL") << endl;
+        if (!pass_finite || !pass_negative) all_pass = false;
+    }
+
+    // --- Test 13f.2: Weighted sum from _pattern_lh ---
+    {
+        cout << endl << "  --- Test 13f.2: Weighted sum from _pattern_lh ---" << endl;
+
+        vector<double> pattern_lh_buf(orig_nptn);
+        tree->computePatternLikelihood(pattern_lh_buf.data());
+        double manual_sum = 0.0;
+        for (size_t ptn = 0; ptn < orig_nptn; ptn++)
+            manual_sum += pattern_lh_buf[ptn] * tree->ptn_freq[ptn];
+
+        double prod_lnL = tree->computeLikelihood();
+        double diff = fabs(manual_sum - prod_lnL);
+        bool pass = diff < 1e-6;
+
+        cout << "  Sum(_pattern_lh * ptn_freq) = " << fixed << manual_sum << endl;
+        cout << "  Production lnL              = " << prod_lnL << endl;
+        cout.unsetf(ios_base::fixed);
+        cout << "  Diff: " << diff << endl;
+        cout << "  Match (tol 1e-6): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13f.3: Determinism ---
+    {
+        cout << endl << "  --- Test 13f.3: Determinism ---" << endl;
+
+        tree->clearAllPartialLH();
+        double lnL1 = tree->computeLikelihood();
+        tree->clearAllPartialLH();
+        double lnL2 = tree->computeLikelihood();
+
+        double diff = fabs(lnL1 - lnL2);
+        bool pass = diff < 1e-10;
+
+        cout << "  Run 1: " << fixed << lnL1 << endl;
+        cout << "  Run 2: " << lnL2 << endl;
+        cout.unsetf(ios_base::fixed);
+        cout << "  Diff: " << diff << endl;
+        cout << "  Deterministic (tol 1e-10): " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    // --- Test 13f.4: Per-pattern log-likelihoods valid ---
+    {
+        cout << endl << "  --- Test 13f.4: Per-pattern log-likelihoods ---" << endl;
+
+        vector<double> pattern_lh_buf(orig_nptn);
+        tree->computePatternLikelihood(pattern_lh_buf.data());
+
+        int bad_patterns = 0;
+        double min_ptn = 0.0, max_ptn = -1e300;
+        for (size_t ptn = 0; ptn < orig_nptn; ptn++) {
+            if (std::isnan(pattern_lh_buf[ptn]) || std::isinf(pattern_lh_buf[ptn]))
+                bad_patterns++;
+            else {
+                if (pattern_lh_buf[ptn] < min_ptn) min_ptn = pattern_lh_buf[ptn];
+                if (pattern_lh_buf[ptn] > max_ptn) max_ptn = pattern_lh_buf[ptn];
+            }
+        }
+
+        bool pass = (bad_patterns == 0);
+        cout << "  Patterns: " << orig_nptn << ", Bad: " << bad_patterns << endl;
+        cout << "  Min: " << min_ptn << ", Max: " << max_ptn << endl;
+        cout << "  All valid: " << (pass ? "PASS" : "FAIL") << endl;
+        if (!pass) all_pass = false;
+    }
+
+    cout << endl << "=== Rev Step 13f Result: "
+         << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")
+         << " ===" << endl << endl;
+    return all_pass;
+}
+
 #endif // USE_OPENACC

@@ -7,6 +7,7 @@
  *     Step 10: TIP-INTERNAL + INTERNAL-INTERNAL                          *
  *     Step 11: Log-likelihood reduction                                  *
  *     Step 12: Persistent GPU data                                       *
+ *     Step 13: Hook into IQ-TREE kernel machinery                       *
  ***************************************************************************/
 
 #ifdef USE_OPENACC
@@ -803,6 +804,706 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
     ASSERT(!std::isnan(tree_lh) && !std::isinf(tree_lh));
 
     delete [] trans_mat;
+    return tree_lh;
+}
+
+// ==========================================================================
+// Step 13: Reversible Partial Likelihood Kernel (OpenACC)
+//
+// Same Felsenstein pruning as non-rev, but:
+//   - echildren = U * diag(exp(lambda*t))  (half-factored P(t))
+//   - partial_lh stored in eigenspace: U^{-1} * L_real
+//   - After Hadamard product in state space, back-transform via inv_evec
+//
+// Math per pattern (INTERNAL-INTERNAL):
+//   tmp[x] = (Σ_i eleft[x][i] * plh_left[i]) * (Σ_i eright[x][i] * plh_right[i])
+//   dad_plh[i] = Σ_x inv_evec[i][x] * tmp[x]
+// ==========================================================================
+
+void PhyloTree::computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id) {
+
+    PhyloNeighbor *dad_branch = info.dad_branch;
+    PhyloNode *dad = info.dad;
+
+    ASSERT(dad);
+    PhyloNode *node = (PhyloNode*)(dad_branch->node);
+
+    ASSERT(dad_branch->direction != UNDEFINED_DIRECTION);
+
+    size_t nstates = aln->num_states;
+    size_t nstatesqr = nstates * nstates;
+
+    if (node->isLeaf()) {
+        return;
+    }
+
+    ASSERT(node->degree() >= 3);
+
+    size_t ptn, c;
+    size_t orig_ntn = aln->size();
+    size_t ncat = site_rate->getNRate();
+    size_t i, x;
+    size_t block = nstates * ncat;
+
+    PhyloNeighbor *left = NULL, *right = NULL;
+    FOR_NEIGHBOR_IT(node, dad, it) {
+        if (!left) left = (PhyloNeighbor*)(*it); else right = (PhyloNeighbor*)(*it);
+    }
+
+    double *echildren = info.echildren;
+    double *partial_lh_leaves = info.partial_lh_leaves;
+
+    double *eleft = echildren, *eright = echildren + block*nstates;
+
+    if ((!left->node->isLeaf() && right->node->isLeaf())) {
+        PhyloNeighbor *tmp = left;
+        left = right;
+        right = tmp;
+        double *etmp = eleft;
+        eleft = eright;
+        eright = etmp;
+    }
+
+    double *dad_partial_lh  = dad_branch->partial_lh;
+    UBYTE  *dad_scale_num   = dad_branch->scale_num;
+
+    // Get inverse eigenvectors for back-transform (eigenspace storage)
+    double *inv_evec = model->getInverseEigenvectors();
+    ASSERT(inv_evec != NULL);
+
+    if (node->degree() > 3) {
+
+        /*--------------------- multifurcating node (rev) ------------------*/
+        // Sequential for now. The Hadamard product happens in state space,
+        // then the result is transformed back to eigenspace via inv_evec.
+
+        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
+            // Initialize tmp in state space to 1.0
+            double tmp_state[block];
+            for (i = 0; i < block; i++)
+                tmp_state[i] = 1.0;
+            dad_scale_num[ptn] = 0;
+
+            double *partial_lh_leaf = partial_lh_leaves;
+            double *echild = echildren;
+
+            FOR_NEIGHBOR_IT(node, dad, it) {
+                PhyloNeighbor *child = (PhyloNeighbor*)*it;
+                if (child->node->isLeaf()) {
+                    int state_child;
+                    if (child->node == root)
+                        state_child = 0;
+                    else
+                        state_child = (ptn < orig_ntn) ? (aln->at(ptn))[child->node->id] : model_factory->unobserved_ptns[ptn-orig_ntn][child->node->id];
+                    double *child_lh = partial_lh_leaf + state_child*block;
+                    for (c = 0; c < block; c++)
+                        tmp_state[c] *= child_lh[c];
+                    partial_lh_leaf += (aln->STATE_UNKNOWN+1)*block;
+                } else {
+                    double *child_partial_lh = child->partial_lh;
+                    UBYTE  *child_scale_num  = child->scale_num;
+                    dad_scale_num[ptn] += child_scale_num[ptn];
+
+                    for (c = 0; c < ncat; c++) {
+                        for (x = 0; x < nstates; x++) {
+                            double vchild = 0.0;
+                            for (i = 0; i < nstates; i++)
+                                vchild += echild[c*nstatesqr + x*nstates + i] * child_partial_lh[ptn*block + c*nstates + i];
+                            tmp_state[c*nstates + x] *= vchild;
+                        }
+                    }
+                }
+                echild += block*nstates;
+            }
+
+            // Back-transform from state space to eigenspace
+            for (c = 0; c < ncat; c++) {
+                for (i = 0; i < nstates; i++) {
+                    double v = 0.0;
+                    for (x = 0; x < nstates; x++)
+                        v += inv_evec[i*nstates + x] * tmp_state[c*nstates + x];
+                    dad_partial_lh[ptn*block + c*nstates + i] = v;
+                }
+            }
+
+            // Scaling check
+            double lh_max = fabs(dad_partial_lh[ptn*block]);
+            for (i = 1; i < block; i++) {
+                double v = fabs(dad_partial_lh[ptn*block + i]);
+                if (v > lh_max) lh_max = v;
+            }
+            if (lh_max == 0.0) {
+                for (c = 0; c < ncat; c++)
+                    for (i = 0; i < nstates; i++)
+                        dad_partial_lh[ptn*block + c*nstates + i] = tip_partial_lh[aln->STATE_UNKNOWN*nstates + i];
+                dad_scale_num[ptn] += 4;
+            } else if (lh_max < SCALING_THRESHOLD) {
+                for (i = 0; i < block; i++)
+                    dad_partial_lh[ptn*block + i] = ldexp(dad_partial_lh[ptn*block + i], SCALING_THRESHOLD_EXP);
+                dad_scale_num[ptn] += 1;
+            }
+        }
+
+    } else if (left->node->isLeaf() && right->node->isLeaf()) {
+
+        /*--------------------- TIP-TIP (rev) ------------------*/
+        // partial_lh_leaves are pre-contracted: already in state space.
+        // Hadamard product in state space, then back-transform via inv_evec.
+
+        double *tip_lh_left = partial_lh_leaves;
+        double *tip_lh_right = partial_lh_leaves + (aln->STATE_UNKNOWN+1)*block;
+
+        if (right->node == root) {
+            PhyloNeighbor *tmp = left; left = right; right = tmp;
+            double *etmp = eleft; eleft = eright; eright = etmp;
+            etmp = tip_lh_left; tip_lh_left = tip_lh_right; tip_lh_right = etmp;
+        }
+
+        size_t nptn_range = ptn_upper - ptn_lower;
+        int *states_left  = new int[nptn_range];
+        int *states_right = new int[nptn_range];
+        bool left_is_root = (left->node == root);
+        int left_node_id  = left->node->id;
+        int right_node_id = right->node->id;
+
+        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
+            size_t idx = ptn - ptn_lower;
+            if (left_is_root) states_left[idx] = 0;
+            else states_left[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[left_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][left_node_id];
+            states_right[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[right_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][right_node_id];
+        }
+
+        // GPU kernel: Hadamard + inv_evec back-transform
+        {
+            size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
+            size_t inv_evec_size = nstatesqr;
+            size_t plh_offset = ptn_lower * block;
+            size_t plh_count  = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset = ptn_lower;
+            size_t scl_count  = ptn_upper - ptn_lower;
+
+            #pragma acc data \
+                copyin(states_left[0:nptn_range], states_right[0:nptn_range], \
+                       tip_lh_left[0:tip_lh_size], tip_lh_right[0:tip_lh_size], \
+                       inv_evec[0:inv_evec_size]) \
+                present(dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                #pragma acc parallel loop gang vector
+                for (size_t p = ptn_lower; p < ptn_upper; p++)
+                    dad_scale_num[p] = 0;
+
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    size_t idx = p - ptn_lower;
+                    int sl = states_left[idx];
+                    int sr = states_right[idx];
+                    // Hadamard in state space, then inv_evec back-transform
+                    for (size_t cc = 0; cc < ncat; cc++) {
+                        double tmp_state[4]; // nstates max for DNA
+                        for (size_t xx = 0; xx < nstates; xx++)
+                            tmp_state[xx] = tip_lh_left[sl*block + cc*nstates + xx]
+                                          * tip_lh_right[sr*block + cc*nstates + xx];
+                        for (size_t ii = 0; ii < nstates; ii++) {
+                            double v = 0.0;
+                            for (size_t xx = 0; xx < nstates; xx++)
+                                v += inv_evec[ii*nstates + xx] * tmp_state[xx];
+                            dad_partial_lh[p*block + cc*nstates + ii] = v;
+                        }
+                    }
+                }
+            }
+        }
+
+        delete [] states_left;
+        delete [] states_right;
+
+    } else if (left->node->isLeaf() && !right->node->isLeaf()) {
+
+        /*--------------------- TIP-INTERNAL (rev) ------------------*/
+        // Left: pre-contracted tip (state space).
+        // Right: eigenspace partial_lh, transformed via eright to state space.
+        // Hadamard in state space, then inv_evec back-transform.
+
+        double *right_partial_lh = right->partial_lh;
+        UBYTE  *right_scale_num  = right->scale_num;
+        double *tip_lh_left = partial_lh_leaves;
+
+        size_t nptn_range = ptn_upper - ptn_lower;
+        int *states_left = new int[nptn_range];
+        bool left_is_root = (left->node == root);
+        int left_node_id = left->node->id;
+
+        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
+            size_t idx = ptn - ptn_lower;
+            if (left_is_root) states_left[idx] = 0;
+            else states_left[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[left_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][left_node_id];
+        }
+
+        {
+            size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
+            size_t eright_size = block * nstates;
+            size_t inv_evec_size = nstatesqr;
+            size_t plh_offset  = ptn_lower * block;
+            size_t plh_count   = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset  = ptn_lower;
+            size_t scl_count   = ptn_upper - ptn_lower;
+            size_t tip_unknown_size = (aln->STATE_UNKNOWN + 1) * nstates;
+            size_t state_unknown = aln->STATE_UNKNOWN;
+            double *local_tip_plh = tip_partial_lh;
+
+            #pragma acc data \
+                copyin(states_left[0:nptn_range], \
+                       tip_lh_left[0:tip_lh_size], \
+                       eright[0:eright_size], \
+                       inv_evec[0:inv_evec_size]) \
+                present(right_partial_lh[plh_offset:plh_count], \
+                        right_scale_num[scl_offset:scl_count], \
+                        local_tip_plh[0:tip_unknown_size], \
+                        dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                // Kernel 1: Partial likelihoods with inv_evec back-transform
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    size_t idx = p - ptn_lower;
+                    int state_left = states_left[idx];
+                    dad_scale_num[p] = right_scale_num[p];
+
+                    for (size_t cc = 0; cc < ncat; cc++) {
+                        double tmp_state[4];
+                        for (size_t xx = 0; xx < nstates; xx++) {
+                            // Right child: eigenspace → state space via eright
+                            double vright = 0.0;
+                            for (size_t kk = 0; kk < nstates; kk++)
+                                vright += eright[cc*nstatesqr + xx*nstates + kk]
+                                        * right_partial_lh[p*block + cc*nstates + kk];
+                            // Left child: already in state space from partial_lh_leaves
+                            tmp_state[xx] = tip_lh_left[state_left*block + cc*nstates + xx] * vright;
+                        }
+                        // Back-transform to eigenspace
+                        for (size_t ii = 0; ii < nstates; ii++) {
+                            double v = 0.0;
+                            for (size_t xx = 0; xx < nstates; xx++)
+                                v += inv_evec[ii*nstates + xx] * tmp_state[xx];
+                            dad_partial_lh[p*block + cc*nstates + ii] = v;
+                        }
+                    }
+                }
+
+                // Kernel 2: Scaling check
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    double lh_max = 0.0;
+                    for (size_t s = 0; s < block; s++) {
+                        double v = fabs(dad_partial_lh[p * block + s]);
+                        if (v > lh_max) lh_max = v;
+                    }
+                    if (lh_max == 0.0) {
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p*block + s] = local_tip_plh[state_unknown * nstates + (s % nstates)];
+                        dad_scale_num[p] += 4;
+                    } else if (lh_max < SCALING_THRESHOLD) {
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p*block + s] = ldexp(dad_partial_lh[p*block + s], SCALING_THRESHOLD_EXP);
+                        dad_scale_num[p] += 1;
+                    }
+                }
+            }
+        }
+
+        delete [] states_left;
+
+    } else {
+
+        /*--------------------- INTERNAL-INTERNAL (rev) ------------------*/
+        // Both children in eigenspace. Transform to state space via eleft/eright,
+        // Hadamard product, then back-transform via inv_evec.
+
+        double *left_partial_lh  = left->partial_lh;
+        double *right_partial_lh = right->partial_lh;
+        UBYTE  *left_scale_num   = left->scale_num;
+        UBYTE  *right_scale_num  = right->scale_num;
+
+        {
+            size_t eleft_size  = block * nstates;
+            size_t eright_size = block * nstates;
+            size_t inv_evec_size = nstatesqr;
+            size_t plh_offset  = ptn_lower * block;
+            size_t plh_count   = (ptn_upper - ptn_lower) * block;
+            size_t scl_offset  = ptn_lower;
+            size_t scl_count   = ptn_upper - ptn_lower;
+            size_t tip_unknown_size = (aln->STATE_UNKNOWN + 1) * nstates;
+            size_t state_unknown = aln->STATE_UNKNOWN;
+            double *local_tip_plh = tip_partial_lh;
+
+            #pragma acc data \
+                copyin(eleft[0:eleft_size], eright[0:eright_size], \
+                       inv_evec[0:inv_evec_size]) \
+                present(left_partial_lh[plh_offset:plh_count], \
+                        right_partial_lh[plh_offset:plh_count], \
+                        left_scale_num[scl_offset:scl_count], \
+                        right_scale_num[scl_offset:scl_count], \
+                        local_tip_plh[0:tip_unknown_size], \
+                        dad_partial_lh[plh_offset:plh_count], \
+                        dad_scale_num[scl_offset:scl_count])
+            {
+                // Kernel 1: Dual dot products + Hadamard + inv_evec back-transform
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    dad_scale_num[p] = left_scale_num[p] + right_scale_num[p];
+
+                    for (size_t cc = 0; cc < ncat; cc++) {
+                        double tmp_state[4];
+                        for (size_t xx = 0; xx < nstates; xx++) {
+                            double vleft = 0.0, vright = 0.0;
+                            for (size_t kk = 0; kk < nstates; kk++) {
+                                vleft  += eleft[cc*nstatesqr + xx*nstates + kk]
+                                        * left_partial_lh[p*block + cc*nstates + kk];
+                                vright += eright[cc*nstatesqr + xx*nstates + kk]
+                                        * right_partial_lh[p*block + cc*nstates + kk];
+                            }
+                            tmp_state[xx] = vleft * vright;
+                        }
+                        for (size_t ii = 0; ii < nstates; ii++) {
+                            double v = 0.0;
+                            for (size_t xx = 0; xx < nstates; xx++)
+                                v += inv_evec[ii*nstates + xx] * tmp_state[xx];
+                            dad_partial_lh[p*block + cc*nstates + ii] = v;
+                        }
+                    }
+                }
+
+                // Kernel 2: Scaling check
+                #pragma acc parallel loop gang
+                for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                    double lh_max = 0.0;
+                    for (size_t s = 0; s < block; s++) {
+                        double v = fabs(dad_partial_lh[p * block + s]);
+                        if (v > lh_max) lh_max = v;
+                    }
+                    if (lh_max == 0.0) {
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p*block + s] = local_tip_plh[state_unknown * nstates + (s % nstates)];
+                        dad_scale_num[p] += 4;
+                    } else if (lh_max < SCALING_THRESHOLD) {
+                        #pragma acc loop seq
+                        for (size_t s = 0; s < block; s++)
+                            dad_partial_lh[p*block + s] = ldexp(dad_partial_lh[p*block + s], SCALING_THRESHOLD_EXP);
+                        dad_scale_num[p] += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==========================================================================
+// Step 13: Reversible Log-Likelihood Kernel (OpenACC)
+//
+// Reduction in eigenspace:
+//   val[i] = exp(eval[i] * rate * t) * prop
+//   TIP-INT:  lh = Σ_i (val[i] * tip_plh[state][i]) * dad_plh[i]
+//   INT-INT:  lh = Σ_i val[i] * node_plh[i] * dad_plh[i]
+//
+// Simpler than non-rev (no matrix-vector product in reduction).
+// ==========================================================================
+
+double PhyloTree::computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+
+    static bool openacc_rev_kernel_printed = false;
+    if (!openacc_rev_kernel_printed) {
+        cout << "OpenACC: Using GPU-ready reversible likelihood kernel "
+             << "(computeRevPartialLikelihoodOpenACC + "
+             << "computeRevLikelihoodBranchOpenACC)" << endl;
+        openacc_rev_kernel_printed = true;
+    }
+
+    ASSERT(rooted);
+
+    PhyloNode *node = (PhyloNode*) dad_branch->node;
+    PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
+    if (!central_partial_lh)
+        initializeAllPartialLh();
+    if (node->isLeaf() || (dad_branch->direction == AWAYFROM_ROOT && dad != root)) {
+        PhyloNode *tmp_node = dad;
+        dad = node;
+        node = tmp_node;
+        PhyloNeighbor *tmp_nei = dad_branch;
+        dad_branch = node_branch;
+        node_branch = tmp_nei;
+    }
+
+    computeTraversalInfo<Vec1d>(node, dad, false);
+
+    double tree_lh = 0.0;
+    size_t nstates = aln->num_states;
+    size_t nstatesqr = nstates*nstates;
+    size_t ncat = site_rate->getNRate();
+
+    size_t block = ncat * nstates;
+    size_t ptn;
+    size_t c, i;
+    size_t orig_nptn = aln->size();
+    size_t nptn = aln->size()+model_factory->unobserved_ptns.size();
+
+    vector<size_t> limits;
+    computeBounds<Vec1d>(num_threads, num_packets, nptn, limits);
+
+    // Precompute val[i] = exp(eval[i] * rate * t) * prop
+    // This replaces the full trans_mat used in non-rev.
+    double *eval = model->getEigenvalues();
+    ASSERT(eval != NULL);
+    double *val = new double[block];
+    for (c = 0; c < ncat; c++) {
+        double len = site_rate->getRate(c) * dad_branch->length;
+        double prop = site_rate->getProp(c);
+        for (i = 0; i < nstates; i++)
+            val[c*nstates + i] = exp(eval[i] * len) * prop;
+    }
+
+    // GPU data upload (same as non-rev Step 12)
+    size_t nptn_safe = get_safe_upper_limit(aln->size())
+        + max(get_safe_upper_limit(nstates),
+              get_safe_upper_limit(model_factory->unobserved_ptns.size()));
+    size_t nmix = (model_factory->fused_mix_rate) ? (size_t)1 : (size_t)model->getNMixtures();
+    size_t scale_block_total = nptn_safe * ncat * nmix;
+    size_t lh_block_total = scale_block_total * nstates;
+    size_t tip_alloc_size = get_safe_upper_limit(
+        nstates * (aln->STATE_UNKNOWN + 1) * model->getNMixtures());
+    size_t total_lh_entries = (size_t)max_lh_slots * lh_block_total + 4 + tip_alloc_size;
+    size_t total_scale_entries = (size_t)max_lh_slots * scale_block_total;
+    size_t nptn_ncat = nptn * ncat;
+
+    double *local_central_plh = central_partial_lh;
+    UBYTE  *local_central_scl = central_scale_num;
+    double *local_ptn_freq = ptn_freq;
+    double *local_ptn_invar = ptn_invar;
+    double *local_pattern_lh = _pattern_lh;
+    double *local_pattern_lh_cat = _pattern_lh_cat;
+
+    #pragma acc enter data \
+        copyin(local_central_plh[0:total_lh_entries], \
+               local_central_scl[0:total_scale_entries], \
+               local_ptn_freq[0:nptn], \
+               local_ptn_invar[0:nptn]) \
+        create(local_pattern_lh[0:nptn], \
+               local_pattern_lh_cat[0:nptn_ncat])
+
+    double prob_const = 0.0;
+
+    double *dad_partial_lh_base = dad_branch->partial_lh;
+    UBYTE  *dad_scale_num_base  = dad_branch->scale_num;
+
+    if (dad->isLeaf()) {
+        // TIP-INTERNAL: dad is a leaf
+        // Precompute partial_lh_node[state*block + i] = val[i] * tip_partial_lh[state*nstates + i]
+        // (tip_partial_lh is already in eigenspace: U^{-1} * e_state)
+        size_t tip_block = nstates * nmix;
+        double *partial_lh_node = new double[(aln->STATE_UNKNOWN+1)*block];
+        double *local_tip_plh = tip_partial_lh;
+
+        if (dad == root) {
+            for (c = 0; c < ncat; c++) {
+                double *lh_node = partial_lh_node + c*nstates;
+                model->getStateFrequency(lh_node);
+                double prop = site_rate->getProp(c);
+                for (i = 0; i < nstates; i++)
+                    lh_node[i] *= prop;
+            }
+        } else {
+            for (int state = 0; state <= aln->STATE_UNKNOWN; state++) {
+                for (c = 0; c < ncat; c++) {
+                    for (i = 0; i < nstates; i++) {
+                        partial_lh_node[state*block + c*nstates + i] =
+                            val[c*nstates + i] * local_tip_plh[state*tip_block + c*nstates + i];
+                    }
+                }
+            }
+        }
+
+        for (int packet_id = 0; packet_id < num_packets; packet_id++) {
+            size_t ptn_lower = limits[packet_id];
+            size_t ptn_upper = limits[packet_id+1];
+            for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
+                computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+
+            size_t nptn_range = ptn_upper - ptn_lower;
+            int *states_dad = new int[nptn_range];
+            bool dad_is_root = (dad == root);
+            int dad_node_id = dad->id;
+            for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
+                size_t idx = ptn - ptn_lower;
+                if (dad_is_root) states_dad[idx] = 0;
+                else states_dad[idx] = (ptn < orig_nptn) ? (aln->at(ptn))[dad_node_id] : model_factory->unobserved_ptns[ptn-orig_nptn][dad_node_id];
+            }
+
+            // Reduction: simple dot product (no matrix-vector multiply)
+            // lh_cat = Σ_i partial_lh_node[state][i] * dad_partial_lh[i]
+            {
+                size_t plh_node_size = (aln->STATE_UNKNOWN + 1) * block;
+                size_t plh_offset = ptn_lower * block;
+                size_t plh_count  = (ptn_upper - ptn_lower) * block;
+                size_t scl_offset = ptn_lower;
+                size_t scl_count  = ptn_upper - ptn_lower;
+
+                #pragma acc data \
+                    copyin(states_dad[0:nptn_range], \
+                           partial_lh_node[0:plh_node_size]) \
+                    present(dad_partial_lh_base[plh_offset:plh_count], \
+                            dad_scale_num_base[scl_offset:scl_count], \
+                            local_ptn_invar[ptn_lower:scl_count], \
+                            local_ptn_freq[ptn_lower:scl_count], \
+                            local_pattern_lh[ptn_lower:scl_count], \
+                            local_pattern_lh_cat[ptn_lower:scl_count])
+                {
+                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
+                    for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                        size_t idx = p - ptn_lower;
+                        int state_dad = states_dad[idx];
+                        double lh_ptn = local_ptn_invar[p];
+
+                        for (size_t cc = 0; cc < ncat; cc++) {
+                            double lh_cat = 0.0;
+                            for (size_t ii = 0; ii < nstates; ii++)
+                                lh_cat += partial_lh_node[state_dad*block + cc*nstates + ii]
+                                        * dad_partial_lh_base[p*block + cc*nstates + ii];
+                            local_pattern_lh_cat[p*ncat + cc] = lh_cat;
+                            lh_ptn += lh_cat;
+                        }
+
+                        if (p < orig_nptn) {
+                            lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
+                            local_pattern_lh[p] = lh_ptn;
+                            tree_lh += lh_ptn * local_ptn_freq[p];
+                        } else {
+                            if (dad_scale_num_base[p] >= 1)
+                                lh_ptn *= SCALING_THRESHOLD;
+                            prob_const += lh_ptn;
+                        }
+                    }
+                }
+            }
+
+            delete [] states_dad;
+        }
+        delete [] partial_lh_node;
+    } else {
+
+        // INTERNAL-INTERNAL: both dad and node are internal
+        // Reduction: lh = Σ_i val[i] * node_plh[i] * dad_plh[i]
+        double *node_partial_lh_base = node_branch->partial_lh;
+        UBYTE  *node_scale_num_base  = node_branch->scale_num;
+
+        for (int packet_id = 0; packet_id < num_packets; packet_id++) {
+            size_t ptn_lower = limits[packet_id];
+            size_t ptn_upper = limits[packet_id+1];
+            for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
+                computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+
+            {
+                size_t plh_offset = ptn_lower * block;
+                size_t plh_count  = (ptn_upper - ptn_lower) * block;
+                size_t scl_offset = ptn_lower;
+                size_t scl_count  = ptn_upper - ptn_lower;
+
+                #pragma acc data \
+                    copyin(val[0:block]) \
+                    present(dad_partial_lh_base[plh_offset:plh_count], \
+                            node_partial_lh_base[plh_offset:plh_count], \
+                            dad_scale_num_base[scl_offset:scl_count], \
+                            node_scale_num_base[scl_offset:scl_count], \
+                            local_ptn_invar[ptn_lower:scl_count], \
+                            local_ptn_freq[ptn_lower:scl_count], \
+                            local_pattern_lh[ptn_lower:scl_count], \
+                            local_pattern_lh_cat[ptn_lower:scl_count])
+                {
+                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
+                    for (size_t p = ptn_lower; p < ptn_upper; p++) {
+                        double lh_ptn = local_ptn_invar[p];
+
+                        for (size_t cc = 0; cc < ncat; cc++) {
+                            double lh_cat = 0.0;
+                            // Simple three-way element-wise product (no matrix multiply!)
+                            for (size_t ii = 0; ii < nstates; ii++)
+                                lh_cat += val[cc*nstates + ii]
+                                        * node_partial_lh_base[p*block + cc*nstates + ii]
+                                        * dad_partial_lh_base[p*block + cc*nstates + ii];
+                            local_pattern_lh_cat[p*ncat + cc] = lh_cat;
+                            lh_ptn += lh_cat;
+                        }
+
+                        if (p < orig_nptn) {
+                            lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
+                            local_pattern_lh[p] = lh_ptn;
+                            tree_lh += lh_ptn * local_ptn_freq[p];
+                        } else {
+                            if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
+                                lh_ptn *= SCALING_THRESHOLD;
+                            prob_const += lh_ptn;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // GPU cleanup (same as non-rev Step 12)
+    #pragma acc update self(local_pattern_lh[0:nptn])
+    #pragma acc update self(local_central_plh[0:total_lh_entries])
+    #pragma acc update self(local_central_scl[0:total_scale_entries])
+    #pragma acc exit data \
+        delete(local_central_plh[0:total_lh_entries], \
+               local_central_scl[0:total_scale_entries], \
+               local_ptn_freq[0:nptn], \
+               local_ptn_invar[0:nptn], \
+               local_pattern_lh[0:nptn], \
+               local_pattern_lh_cat[0:nptn_ncat])
+
+    if (std::isnan(tree_lh) || std::isinf(tree_lh)) {
+        cout << "WARNING: Numerical underflow caused by alignment sites";
+        i = aln->getNSite();
+        size_t j;
+        for (j = 0, c = 0; j < i; j++) {
+            ptn = aln->getPatternID(j);
+            if (std::isnan(_pattern_lh[ptn]) || std::isinf(_pattern_lh[ptn])) {
+                cout << " " << j+1;
+                c++;
+                if (c >= 10) {
+                    cout << " ...";
+                    break;
+                }
+            }
+        }
+        cout << endl;
+        tree_lh = 0.0;
+        for (ptn = 0; ptn < orig_nptn; ptn++) {
+            if (std::isnan(_pattern_lh[ptn]) || std::isinf(_pattern_lh[ptn]))
+                _pattern_lh[ptn] = LOG_SCALING_THRESHOLD*4;
+            tree_lh += _pattern_lh[ptn] * ptn_freq[ptn];
+        }
+    }
+
+    if (orig_nptn < nptn) {
+        if (prob_const >= 1.0 || prob_const < 0.0) {
+            printTree(cout, WT_TAXON_ID + WT_BR_LEN + WT_NEWLINE);
+            model->writeInfo(cout);
+        }
+        ASSERT(prob_const < 1.0 && prob_const >= 0.0);
+
+        prob_const = log(1.0 - prob_const);
+        for (ptn = 0; ptn < orig_nptn; ptn++)
+            _pattern_lh[ptn] -= prob_const;
+        tree_lh -= aln->getNSite()*prob_const;
+        ASSERT(!std::isnan(tree_lh) && !std::isinf(tree_lh));
+    }
+
+    ASSERT(!std::isnan(tree_lh) && !std::isinf(tree_lh));
+
+    delete [] val;
     return tree_lh;
 }
 

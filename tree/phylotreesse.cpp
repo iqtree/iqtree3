@@ -144,11 +144,20 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
     }
 
 #ifdef USE_OPENACC
-    // OpenACC: use scalar (plain C) non-rev kernels — no SIMD, no Eigen.
-    // This bypasses all SIMD kernel selection below.
-    // These kernels are ready for future GPU offloading via OpenACC pragmas.
-    computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihoodOpenACC;
-    computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranchOpenACC;
+    // OpenACC GPU-offloaded kernels.
+    // Dispatch rev vs non-rev based on useRevKernel() — same logic IQ-TREE uses
+    // for SIMD kernels.  The --kernel-nonrev flag controls data preparation
+    // (tips, echildren format) via useRevKernel() in modelsubst.h.
+    if (model_factory && model_factory->model->useRevKernel()) {
+        // Reversible path: eigenspace math (echildren = U*diag(exp(λ*t)),
+        // tips pre-multiplied by U⁻¹, inv_evec back-transform).
+        computePartialLikelihoodPointer = &PhyloTree::computeRevPartialLikelihoodOpenACC;
+        computeLikelihoodBranchPointer = &PhyloTree::computeRevLikelihoodBranchOpenACC;
+    } else {
+        // Non-reversible path: raw P(t) matrices, one-hot tips.
+        computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihoodOpenACC;
+        computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranchOpenACC;
+    }
     computeLikelihoodDervPointer = NULL;  // not needed for -blfix (fixed branch lengths)
     computeLikelihoodDervMixlenPointer = NULL;
     computeLikelihoodFromBufferPointer = NULL;
@@ -239,6 +248,12 @@ double PhyloTree::computeLikelihoodBranch(PhyloNeighbor *dad_branch, PhyloNode *
 }
 
 void PhyloTree::computeLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf) {
+#ifdef USE_OPENACC
+    if (computeLikelihoodDervPointer == NULL) {
+        outError("OpenACC kernels do not support likelihood derivatives.\n"
+                 "Please use -blfix for fixed branch lengths.");
+    }
+#endif
 	(this->*computeLikelihoodDervPointer)(dad_branch, dad, df, ddf);
 }
 

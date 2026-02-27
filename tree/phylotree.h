@@ -934,6 +934,10 @@ public:
     /** OpenACC: scalar (plain C) partial likelihood kernel for non-reversible models.
         No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
     void computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+
+    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models.
+        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)). */
+    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
@@ -994,6 +998,10 @@ public:
         Signature matches ComputeLikelihoodBranchType (includes save_log_value param).
         No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
     double computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models.
+        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i]. */
+    double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
