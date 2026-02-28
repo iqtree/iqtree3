@@ -931,12 +931,14 @@ public:
     void computeNonrevPartialLikelihoodSIMD(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
 #ifdef USE_OPENACC
-    /** OpenACC: scalar (plain C) partial likelihood kernel for non-reversible models.
-        No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
-    void computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+    /** OpenACC: scalar (plain C) partial likelihood kernel.
+        State-space computation with direct P(t) matrices — used for all models.
+        GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
+    void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
-    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models.
-        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)). */
+    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models (UNUSED).
+        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
+        Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
     void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 #endif
 
@@ -994,13 +996,14 @@ public:
     double computeNonrevLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 
 #ifdef USE_OPENACC
-    /** OpenACC: scalar (plain C) branch likelihood kernel for non-reversible models.
-        Signature matches ComputeLikelihoodBranchType (includes save_log_value param).
-        No SIMD, no Eigen — ready for future GPU offloading via OpenACC pragmas. */
-    double computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+    /** OpenACC: scalar (plain C) branch likelihood kernel.
+        State-space computation with direct P(t) matrices — used for all models.
+        GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
+    double computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 
-    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models.
-        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i]. */
+    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models (UNUSED).
+        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i].
+        Kept as dead code — dispatch always uses computeLikelihoodBranchGenericOpenACC. */
     double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 #endif
 

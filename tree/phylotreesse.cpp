@@ -145,19 +145,12 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 
 #ifdef USE_OPENACC
     // OpenACC GPU-offloaded kernels.
-    // Dispatch rev vs non-rev based on useRevKernel() — same logic IQ-TREE uses
-    // for SIMD kernels.  The --kernel-nonrev flag controls data preparation
-    // (tips, echildren format) via useRevKernel() in modelsubst.h.
-    if (model_factory && model_factory->model->useRevKernel()) {
-        // Reversible path: eigenspace math (echildren = U*diag(exp(λ*t)),
-        // tips pre-multiplied by U⁻¹, inv_evec back-transform).
-        computePartialLikelihoodPointer = &PhyloTree::computeRevPartialLikelihoodOpenACC;
-        computeLikelihoodBranchPointer = &PhyloTree::computeRevLikelihoodBranchOpenACC;
-    } else {
-        // Non-reversible path: raw P(t) matrices, one-hot tips.
-        computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihoodOpenACC;
-        computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranchOpenACC;
-    }
+    // Always use state-space (non-eigenspace) kernels, matching the PoC prototype.
+    // Both reversible and non-reversible models use direct P(t) matrices.
+    // Data preparation is forced to non-rev mode inside the branch likelihood
+    // function (via temporary kernel_nonrev=true before computeTraversalInfo).
+    computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericOpenACC;
+    computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericOpenACC;
     computeLikelihoodDervPointer = NULL;  // not needed for -blfix (fixed branch lengths)
     computeLikelihoodDervMixlenPointer = NULL;
     computeLikelihoodFromBufferPointer = NULL;

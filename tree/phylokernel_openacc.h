@@ -1,6 +1,7 @@
 /***************************************************************************
  *   OpenACC GPU Likelihood Computation for IQ-TREE                       *
- *   Scalar (plain C) likelihood kernels for non-reversible models        *
+ *   Scalar (plain C) likelihood kernels — state-space P(t) computation   *
+ *   Used for all models (both reversible and non-reversible)             *
  *                                                                        *
  *   Reuses IQ-TREE's existing data structures:                           *
  *     - partial_lh arrays (flat double*, pattern-state layout)           *
@@ -21,8 +22,8 @@
 // The standalone GPU-compatible function computeTransMatrixEqualRate()
 // lives in model/modelsubst.h — callable from both CPU and OpenACC kernels.
 //
-// Kernel member functions (computeNonrevPartialLikelihoodOpenACC,
-// computeNonrevLikelihoodBranchOpenACC) are declared in phylotree.h
+// Kernel member functions (computePartialLikelihoodGenericOpenACC,
+// computeLikelihoodBranchGenericOpenACC) are declared in phylotree.h
 // under #ifdef USE_OPENACC — they are PhyloTree members.
 //
 // Test declarations live in phylokernel_openacc_test.h

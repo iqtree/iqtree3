@@ -17,6 +17,7 @@
 #include "phylokernelnew.h"      // computeTraversalInfo<Vec1d>, computeBounds<Vec1d>, computePartialInfo<Vec1d>
 #include "vectorclass/vectorf64.h" // Vec1d (pure C++ scalar wrapper, no x86 intrinsics)
 #include "model/modelsubst.h"    // computeTransMatrixEqualRate(), ModelSubst
+#include "utils/tools.h"         // Params (for kernel_nonrev flag)
 
 #include <cmath>
 #include <iostream>
@@ -35,7 +36,7 @@ using namespace std;
 //   - ASSERT removed from kernel regions
 // ==========================================================================
 
-void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id) {
+void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id) {
 
     PhyloNeighbor *dad_branch = info.dad_branch;
     PhyloNode *dad = info.dad;
@@ -465,14 +466,14 @@ void PhyloTree::computeNonrevPartialLikelihoodOpenACC(TraversalInfo &info, size_
 //   - ASSERT removed from kernel regions
 // ==========================================================================
 
-double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
 
     // One-time verification message
     static bool openacc_kernel_printed = false;
     if (!openacc_kernel_printed) {
         cout << "OpenACC: Using GPU-ready (explicit indexing) likelihood kernel "
-             << "(computeNonrevPartialLikelihoodOpenACC + "
-             << "computeNonrevLikelihoodBranchOpenACC)" << endl;
+             << "(computePartialLikelihoodGenericOpenACC + "
+             << "computeLikelihoodBranchGenericOpenACC)" << endl;
         openacc_kernel_printed = true;
     }
 
@@ -491,7 +492,8 @@ double PhyloTree::computeNonrevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch
         node_branch = tmp_nei;
     }
 
-    // Build traversal order and precompute P(t) / tip lookup tables
+    // Build traversal order and precompute P(t) / tip lookup tables.
+    Params::getInstance().kernel_nonrev = true;
     computeTraversalInfo<Vec1d>(node, dad, false);
 
     double tree_lh = 0.0;
