@@ -3695,10 +3695,10 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         initTree = iqtree->ensureModelParametersAreSet(initEpsilon);
 
 #ifdef USE_OPENACC
-        // OpenACC verification (require fully initialized tree)
-        testLikelihoodKernel(iqtree);        // Step 3: scalar kernel validity
-        testPrecomputedMatrices(iqtree);     // Step 2: standalone vs model P(t)
-        testFullTraversal(iqtree);           // Step 8: full post-order traversal
+        // OpenACC verification (Steps 2-8) — commented out after validation
+        // testLikelihoodKernel(iqtree);        // Step 3: scalar kernel validity
+        // testPrecomputedMatrices(iqtree);     // Step 2: standalone vs model P(t)
+        // testFullTraversal(iqtree);           // Step 8: full post-order traversal
 #endif
 
         if (params.lmap_num_quartets >= 0) {
