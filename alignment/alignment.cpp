@@ -928,6 +928,9 @@ void Alignment::readSiteSpecFloatWeights()
         // update total_site_float_weight
         total_site_float_weight += site_float_weights[i];
     }
+    
+    // Show info
+    std::cout << "Total site floating weight: " << total_site_float_weight << std::endl;
 }
 
 void Alignment::integrateSiteSpecWeights()
@@ -984,7 +987,7 @@ void Alignment::integrateSiteSpecWeights()
     }
     
     // Show info
-    std::cout << "Total site weights: " << total_weight << std::endl;
+    std::cout << "Total site weight: " << total_weight << std::endl;
     
     // expand the alignment (adding columns according to the site weights)
     size_t expanding_site_id = site_pattern.size();
