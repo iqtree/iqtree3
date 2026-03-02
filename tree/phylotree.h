@@ -2512,11 +2512,6 @@ protected:
     } // save current tree
 
     /**
-        Integrate site-specific floating weights
-     */
-    void integrateSiteSpecFloatWeights();
-
-    /**
      * Current score of the tree;
      */
     double curScore;

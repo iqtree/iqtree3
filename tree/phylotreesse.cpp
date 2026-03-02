@@ -543,16 +543,21 @@ void PhyloTree::computePtnFreq() {
     // integrate site-specific floating weights, if specified
     if (params->site_float_weights_file != "")
     {
-        integrateSiteSpecFloatWeights();
+        // read site-specific floating weights from file for the first time
+        if (aln->pattern_weight.size() != nptn)
+            aln->readSiteSpecFloatWeights();
+        
+        for (ptn = 0; ptn < nptn; ptn++)
+            ptn_freq[ptn] = aln->pattern_weight[ptn];
     }
     // otherwise, apply the pattern freqs from the alignment
     else
     {
         for (ptn = 0; ptn < nptn; ptn++)
             ptn_freq[ptn] = (*aln)[ptn].frequency;
-        for (ptn = nptn; ptn < maxptn; ptn++)
-            ptn_freq[ptn] = 0.0;
     }
+    for (ptn = nptn; ptn < maxptn; ptn++)
+        ptn_freq[ptn] = 0.0;
     
     // debug
     /* cout << "Original vs revised pattern freqs" << std::endl;
@@ -560,90 +565,6 @@ void PhyloTree::computePtnFreq() {
     {
         std::cout << (*aln)[ptn].frequency << " vs " << ptn_freq[ptn] << std::endl;
     }*/
-}
-
-void PhyloTree::integrateSiteSpecFloatWeights()
-{
-    const string& site_float_weights_file = params->site_float_weights_file;
-    ASSERT(site_float_weights_file != "");
-
-    if (!params->load_float_weights_printed)
-    {
-        std::cout << "Reading site-specific floating weights from file "
-        << site_float_weights_file << "..." << std::endl;
-        
-        params->load_float_weights_printed = true;
-    }
-    
-    std::cout << "AAAAAAA" << std::endl;
-
-    std::ifstream in(site_float_weights_file);
-    if (!in)
-    {
-        throw std::runtime_error(
-            "Failed to open site-specific floating weight file: " + site_float_weights_file);
-    }
-
-    // pre-allocate the memory
-    std::vector<double> site_float_weights;
-    // update aln->ori_num_sites, if it's not been set
-    if (!(aln->ori_num_sites > 0))
-    {
-        aln->ori_num_sites = aln->getNSite();
-    }
-    const size_t ori_num_sites = aln->ori_num_sites;
-    site_float_weights.reserve(ori_num_sites);
-
-    std::string token;
-    while (in >> token)
-    {
-        double weight;
-        try
-        {
-            size_t pos = 0;
-            weight = convert_double(token.c_str());
-        }
-        catch (...)
-        {
-            throw std::runtime_error(
-                "Invalid site weight '" + token +
-                "': weights must be positive floating-point numbers");
-        }
-
-        if (!(weight > 0.0))
-        {
-            throw std::runtime_error(
-                "Site weights must be positive (found " + token + ")");
-        }
-
-        site_float_weights.push_back(weight);
-    }
-
-    // Check the number of weights
-    if (site_float_weights.size() != ori_num_sites)
-    {
-        throw std::runtime_error(
-            "The number of weights ("
-            + convertIntToString(site_float_weights.size())
-            + ") differs from the number of sites ("
-            + convertIntToString(ori_num_sites) + ")!");
-    }
-    
-    // initialize all ptn_freq at 0
-    const size_t maxptn = get_safe_upper_limit(aln->getNPattern())
-        + get_safe_upper_limit(model_factory->unobserved_ptns.size());
-    for (size_t ptn = 0; ptn < maxptn; ptn++)
-        ptn_freq[ptn] = 0.0;
-    
-    // integrate the site-specific floating weights into the pattern frequencies
-    aln->total_site_float_weight = 0.0;
-    for (int i = 0; i < site_float_weights.size(); ++i)
-    {
-        ptn_freq[aln->getPatternID(i)] += site_float_weights[i];
-        
-        // update total_site_float_weight
-        aln->total_site_float_weight += site_float_weights[i];
-    }
 }
 
 void PhyloTree::computePtnInvar() {

@@ -954,6 +954,11 @@ public:
     
     /** site to state frequency vector */
     vector<double*> site_state_freq;
+    
+    /** pattern weights
+        i.e., the pattern freqs that integrate site-specific floating weights
+     */
+    DoubleVector pattern_weight;
 
     /**
      * @return true if data type is SEQ_CODON and state is a stop codon
@@ -1078,6 +1083,11 @@ public:
      * @return id the genetic code id, or 0 if not a codon type
      */
     int getGeneticCodeId();
+    
+    /**
+        Read site-specific floating weights
+     */
+    void readSiteSpecFloatWeights();
 
 protected:
 

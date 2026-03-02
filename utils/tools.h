@@ -2562,12 +2562,6 @@ public:
         user file used to specify site-specific floating weights
     */
     string site_float_weights_file;
-    
-    /**
-        TRUE if the message
-        "Loading site-specific floating weights from file" is printed
-    */
-    bool load_float_weights_printed;
 
     /**
     *  TRUE if multiple random streams are used

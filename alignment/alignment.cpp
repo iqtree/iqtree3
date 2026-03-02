@@ -856,6 +856,80 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
 
 }
 
+void Alignment::readSiteSpecFloatWeights()
+{
+    const string& site_float_weights_file =
+        Params::getInstance().site_float_weights_file;
+    ASSERT(site_float_weights_file != "");
+
+    std::cout << "Reading site-specific floating weights from file "
+        << site_float_weights_file << "..." << std::endl;
+
+    std::ifstream in(site_float_weights_file);
+    if (!in)
+    {
+        throw std::runtime_error(
+            "Failed to open site-specific floating weight file: " + site_float_weights_file);
+    }
+
+    // pre-allocate the memory
+    DoubleVector site_float_weights;
+    // update aln->ori_num_sites, if it's not been set
+    if (!(ori_num_sites > 0))
+    {
+        ori_num_sites = getNSite();
+    }
+    site_float_weights.reserve(ori_num_sites);
+
+    std::string token;
+    while (in >> token)
+    {
+        double weight;
+        try
+        {
+            size_t pos = 0;
+            weight = convert_double(token.c_str());
+        }
+        catch (...)
+        {
+            throw std::runtime_error(
+                "Invalid site weight '" + token +
+                "': weights must be positive floating-point numbers");
+        }
+
+        if (!(weight > 0.0))
+        {
+            throw std::runtime_error(
+                "Site floating weights must be positive (found " + token + ")");
+        }
+
+        site_float_weights.push_back(weight);
+    }
+
+    // Check the number of weights
+    if (site_float_weights.size() != ori_num_sites)
+    {
+        throw std::runtime_error(
+            "The number of floating weights ("
+            + convertIntToString(site_float_weights.size())
+            + ") differs from the number of sites ("
+            + convertIntToString(ori_num_sites) + ")!");
+    }
+    
+    // initialize all ptn_freq at 0
+    pattern_weight.resize(getNPattern(), 0.0);
+    
+    // integrate the site-specific floating weights into the pattern frequencies
+    total_site_float_weight = 0.0;
+    for (size_t i = 0; i < site_float_weights.size(); ++i)
+    {
+        pattern_weight[site_pattern[i]] += site_float_weights[i];
+        
+        // update total_site_float_weight
+        total_site_float_weight += site_float_weights[i];
+    }
+}
+
 void Alignment::integrateSiteSpecWeights()
 {
     const string& site_weights_file = Params::getInstance().site_weights_file;

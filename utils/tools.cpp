@@ -1568,7 +1568,6 @@ void parseArg(int argc, char *argv[], Params &params) {
     
     params.site_weights_file = "";
     params.site_float_weights_file = "";
-    params.load_float_weights_printed = false;
     
     params.original_params = "";
     params.alisim_active = false;
