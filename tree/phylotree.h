@@ -2511,6 +2511,10 @@ protected:
     virtual void saveCurrentTree(double logl) {
     } // save current tree
 
+    /**
+        Integrate site-specific floating weights
+     */
+    void integrateSiteSpecFloatWeights();
 
     /**
      * Current score of the tree;

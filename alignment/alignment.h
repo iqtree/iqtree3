@@ -437,7 +437,12 @@ public:
         if (expected_num_sites > -1)
             site_pattern.resize(expected_num_sites);
         
-        return site_pattern.size();
+        // if site-specific floating weight are specified
+        // return the total weights
+        // otherwise, return the normal number of sites
+        return (total_site_float_weight > 0
+                ? total_site_float_weight
+                : site_pattern.size());
     }
 
     /**
@@ -918,6 +923,16 @@ public:
 	 * Virtual population size for PoMo model
 	 */
 	int virtual_pop_size;
+    
+    /**
+     * the original number of site before expanding alignment with site-specific weights
+     */
+    int ori_num_sites = -1;
+    
+    /**
+     * the total site-specific floating weights (if specified)
+     */
+    double total_site_float_weight = -1;
 
   // TODO DS: Maybe change default to SAMPLING_WEIGHTED_HYPER.
   /// The sampling method (defaults to SAMPLING_WEIGHTED_BINOM).

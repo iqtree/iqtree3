@@ -914,6 +914,8 @@ void Alignment::integrateSiteSpecWeights()
     
     // expand the alignment (adding columns according to the site weights)
     size_t expanding_site_id = site_pattern.size();
+    // record the original number of sites before expanding the site_pattern
+    ori_num_sites = expanding_site_id;
     site_pattern.resize(total_weight);
     
     // integrate the site-specific weights into the pattern frequencies

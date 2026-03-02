@@ -1567,6 +1567,8 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.suppress_duplicate_sequence_warnings = false;
     
     params.site_weights_file = "";
+    params.site_float_weights_file = "";
+    params.load_float_weights_printed = false;
     
     params.original_params = "";
     params.alisim_active = false;
@@ -3666,6 +3668,14 @@ void parseArg(int argc, char *argv[], Params &params) {
                 if (cnt >= argc)
                     throw "Use --site-weights <site_weight_file>";
                 params.site_weights_file = argv[cnt];
+                continue;
+            }
+            
+            if (strcmp(argv[cnt], "--site-float-weights") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --site-float-weights <site_float_weight_file>";
+                params.site_float_weights_file = argv[cnt];
                 continue;
             }
 
