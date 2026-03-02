@@ -934,12 +934,12 @@ public:
     /** OpenACC: scalar (plain C) partial likelihood kernel.
         State-space computation with direct P(t) matrices — used for all models.
         GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
-    void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+    void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
 
     /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models (UNUSED).
         Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
         Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
-    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
+    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>

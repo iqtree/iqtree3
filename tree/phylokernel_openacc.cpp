@@ -36,7 +36,13 @@ using namespace std;
 //   - ASSERT removed from kernel regions
 // ==========================================================================
 
-void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id) {
+void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id) {
+    // NOTE: packet_id is not used yet in the OpenACC kernel. It is kept to match the
+    // ComputePartialLikelihoodType function pointer signature (phylotree.h).
+    // In the CPU SIMD kernel, packet_id indexes into thread-private scratch buffers.
+    // In future, we can use packet_id to divide the data and offload section by section
+    // to the GPU, enabling overlapping computation with data transfers.
+    (void)packet_id;  // suppress unused-variable warning
 
     PhyloNeighbor *dad_branch = info.dad_branch;
     PhyloNode *dad = info.dad;
@@ -822,7 +828,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
 //   dad_plh[i] = Σ_x inv_evec[i][x] * tmp[x]
 // ==========================================================================
 
-void PhyloTree::computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id) {
+void PhyloTree::computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id) {
+    // NOTE: packet_id is not used yet — see comment in computePartialLikelihoodGenericOpenACC.
+    (void)packet_id;
 
     PhyloNeighbor *dad_branch = info.dad_branch;
     PhyloNode *dad = info.dad;
