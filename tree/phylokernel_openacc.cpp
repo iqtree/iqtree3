@@ -39,9 +39,6 @@ using namespace std;
 void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id) {
     // NOTE: packet_id is not used yet in the OpenACC kernel. It is kept to match the
     // ComputePartialLikelihoodType function pointer signature (phylotree.h).
-    // In the CPU SIMD kernel, packet_id indexes into thread-private scratch buffers.
-    // In future, we can use packet_id to divide the data and offload section by section
-    // to the GPU, enabling overlapping computation with data transfers.
     (void)packet_id;  // suppress unused-variable warning
 
     PhyloNeighbor *dad_branch = info.dad_branch;
@@ -526,32 +523,21 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             this_trans_mat[i] *= prop;
     }
 
-    // ====== Step 12: Upload persistent GPU data ======
-    // Upload all partial_lh and scale_num buffers (via central_partial_lh and
-    // central_scale_num) to GPU ONCE before the traversal loop.
-    // Also upload read-only arrays (ptn_freq, ptn_invar) and create output
-    // arrays (_pattern_lh, _pattern_lh_cat).
-    // Kernels use present() instead of per-call copyin/copyout, eliminating
-    // redundant PCIe transfers across traversal nodes.
+    // ====== Persistent GPU data management ======
+    // Upload central_partial_lh, central_scale_num, ptn_freq, ptn_invar to GPU
+    // ONCE on the first call. Subsequent calls find data already present().
+    // Only _pattern_lh is copied back to host per call (needed by prob_const
+    // correction and IQ-TREE callers). This eliminates ~6.5 GB of PCIe
+    // round-trips per evaluation for large datasets.
     //
     // Size computation replicates initializeAllPartialLh() allocation logic:
     //   central_partial_lh: max_lh_slots * lh_block + 4 + tip_alloc_size
     //   central_scale_num:  max_lh_slots * scale_block
-    size_t nptn_safe = get_safe_upper_limit(aln->size())
-        + max(get_safe_upper_limit(nstates),
-              get_safe_upper_limit(model_factory->unobserved_ptns.size()));
-    size_t nmix = (model_factory->fused_mix_rate) ? (size_t)1 : (size_t)model->getNMixtures();
-    size_t scale_block_total = nptn_safe * ncat * nmix;
-    size_t lh_block_total = scale_block_total * nstates;
-    size_t tip_alloc_size = get_safe_upper_limit(
-        nstates * (aln->STATE_UNKNOWN + 1) * model->getNMixtures());
-    size_t total_lh_entries = (size_t)max_lh_slots * lh_block_total + 4 + tip_alloc_size;
-    size_t total_scale_entries = (size_t)max_lh_slots * scale_block_total;
     size_t nptn_ncat = nptn * ncat;  // for _pattern_lh_cat
 
     // Capture class member pointers for OpenACC directives.
-    // enter data is host-side but we capture to locals for consistency with
-    // present() usage inside kernels and the exit data at the end.
+    // Class member pointers (this->central_partial_lh, etc.) cause the compiler
+    // to map 'this' to the device — capture into locals to avoid that.
     double *local_central_plh = central_partial_lh;
     UBYTE  *local_central_scl = central_scale_num;
     double *local_ptn_freq = ptn_freq;
@@ -559,13 +545,44 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     double *local_pattern_lh = _pattern_lh;
     double *local_pattern_lh_cat = _pattern_lh_cat;
 
-    #pragma acc enter data \
-        copyin(local_central_plh[0:total_lh_entries], \
-               local_central_scl[0:total_scale_entries], \
-               local_ptn_freq[0:nptn], \
-               local_ptn_invar[0:nptn]) \
-        create(local_pattern_lh[0:nptn], \
-               local_pattern_lh_cat[0:nptn_ncat])
+    if (!gpu_data_resident) {
+        size_t nptn_safe = get_safe_upper_limit(aln->size())
+            + max(get_safe_upper_limit(nstates),
+                  get_safe_upper_limit(model_factory->unobserved_ptns.size()));
+        size_t nmix = (model_factory->fused_mix_rate) ? (size_t)1 : (size_t)model->getNMixtures();
+        size_t scale_block_total = nptn_safe * ncat * nmix;
+        size_t lh_block_total = scale_block_total * nstates;
+        size_t tip_alloc_size = get_safe_upper_limit(
+            nstates * (aln->STATE_UNKNOWN + 1) * model->getNMixtures());
+        size_t total_lh_entries = (size_t)max_lh_slots * lh_block_total + 4 + tip_alloc_size;
+        size_t total_scale_entries = (size_t)max_lh_slots * scale_block_total;
+
+        #pragma acc enter data \
+            copyin(local_central_plh[0:total_lh_entries], \
+                   local_central_scl[0:total_scale_entries], \
+                   local_ptn_freq[0:nptn], \
+                   local_ptn_invar[0:nptn]) \
+            create(local_pattern_lh[0:nptn], \
+                   local_pattern_lh_cat[0:nptn_ncat])
+
+        // Save sizes and pointers for freeOpenACCData()
+        gpu_total_lh_entries = total_lh_entries;
+        gpu_total_scale_entries = total_scale_entries;
+        gpu_nptn = nptn;
+        gpu_nptn_ncat = nptn_ncat;
+        gpu_central_plh_ptr = local_central_plh;
+        gpu_central_scl_ptr = local_central_scl;
+        gpu_ptn_freq_ptr = local_ptn_freq;
+        gpu_ptn_invar_ptr = local_ptn_invar;
+        gpu_pattern_lh_ptr = local_pattern_lh;
+        gpu_pattern_lh_cat_ptr = local_pattern_lh_cat;
+        gpu_data_resident = true;
+
+        if (verbose_mode >= VB_MED)
+            cout << "OpenACC: Uploaded persistent GPU data ("
+                 << (total_lh_entries * sizeof(double) + total_scale_entries * sizeof(UBYTE)) / (1024*1024)
+                 << " MB)" << endl;
+    }
 
     double prob_const = 0.0;
 
@@ -752,22 +769,12 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         } // FOR packet_id
     }
 
-    // ====== Step 12: Copy results back and clean up GPU data ======
-    // Copy _pattern_lh back to host (needed by prob_const correction and
-    // IQ-TREE's caller). Also copy central_partial_lh and central_scale_num
-    // back so that subsequent calls (which may have empty traversal_info if
-    // nodes are already marked computed) get correct host data when they
-    // re-upload via enter data copyin.
+    // ====== Copy _pattern_lh back to host ======
+    // Only _pattern_lh is needed on the host (for prob_const correction and
+    // IQ-TREE callers). All other GPU data stays resident — no download of
+    // central_partial_lh or central_scale_num needed since they remain
+    // present() for subsequent calls.
     #pragma acc update self(local_pattern_lh[0:nptn])
-    #pragma acc update self(local_central_plh[0:total_lh_entries])
-    #pragma acc update self(local_central_scl[0:total_scale_entries])
-    #pragma acc exit data \
-        delete(local_central_plh[0:total_lh_entries], \
-               local_central_scl[0:total_scale_entries], \
-               local_ptn_freq[0:nptn], \
-               local_ptn_invar[0:nptn], \
-               local_pattern_lh[0:nptn], \
-               local_pattern_lh_cat[0:nptn_ncat])
 
     if (std::isnan(tree_lh) || std::isinf(tree_lh)) {
         cout << "WARNING: Numerical underflow caused by alignment sites";
@@ -1515,6 +1522,36 @@ double PhyloTree::computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, P
 
     delete [] val;
     return tree_lh;
+}
+
+// ==========================================================================
+// Persistent GPU data cleanup
+// Called from destructor and initializeAllPartialLh (before host realloc).
+// ==========================================================================
+
+void PhyloTree::freeOpenACCData() {
+    if (!gpu_data_resident) return;
+
+    if (verbose_mode >= VB_MED)
+        cout << "OpenACC: Freeing persistent GPU data" << endl;
+
+    // Use the saved pointers and sizes from the enter data copyin call.
+    // These must match exactly — OpenACC tracks device data by host address.
+    #pragma acc exit data \
+        delete(gpu_central_plh_ptr[0:gpu_total_lh_entries], \
+               gpu_central_scl_ptr[0:gpu_total_scale_entries], \
+               gpu_ptn_freq_ptr[0:gpu_nptn], \
+               gpu_ptn_invar_ptr[0:gpu_nptn], \
+               gpu_pattern_lh_ptr[0:gpu_nptn], \
+               gpu_pattern_lh_cat_ptr[0:gpu_nptn_ncat])
+
+    gpu_data_resident = false;
+    gpu_central_plh_ptr = nullptr;
+    gpu_central_scl_ptr = nullptr;
+    gpu_ptn_freq_ptr = nullptr;
+    gpu_ptn_invar_ptr = nullptr;
+    gpu_pattern_lh_ptr = nullptr;
+    gpu_pattern_lh_cat_ptr = nullptr;
 }
 
 #endif // USE_OPENACC

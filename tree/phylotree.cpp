@@ -240,6 +240,9 @@ void myPartitionsDestroy(partitionList *pl) {
 }
 
 PhyloTree::~PhyloTree() {
+#ifdef USE_OPENACC
+    freeOpenACCData();
+#endif
     doneComputingDistances();
     aligned_free(nni_scale_num);
     aligned_free(nni_partial_lh);
@@ -911,6 +914,13 @@ size_t PhyloTree::getBufferPartialLhSize() {
 }
 
 void PhyloTree::initializeAllPartialLh() {
+#ifdef USE_OPENACC
+    // Free any existing GPU data before host buffers are reallocated.
+    // The OpenACC runtime tracks device data by host pointer address —
+    // if central_partial_lh is freed and re-allocated, the old device
+    // mapping becomes invalid.
+    freeOpenACCData();
+#endif
     int index, indexlh;
     int numStates = model->num_states;
     // Minh's question: why getAlnNSite() but not getAlnNPattern() ?

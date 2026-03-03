@@ -940,6 +940,26 @@ public:
         Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
         Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
     void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
+
+    /** Free all OpenACC device data (called before host buffers are freed). */
+    void freeOpenACCData();
+
+    // --- Persistent GPU data tracking ---
+    // When true, central_partial_lh/scale_num and read-only arrays are resident
+    // on the GPU device.  Data is uploaded once on first call to
+    // computeLikelihoodBranchGenericOpenACC and stays until freeOpenACCData().
+    bool gpu_data_resident = false;
+    // Saved sizes and pointers to match exit data delete with enter data copyin
+    size_t gpu_total_lh_entries = 0;
+    size_t gpu_total_scale_entries = 0;
+    size_t gpu_nptn = 0;
+    size_t gpu_nptn_ncat = 0;
+    double *gpu_central_plh_ptr = nullptr;
+    UBYTE  *gpu_central_scl_ptr = nullptr;
+    double *gpu_ptn_freq_ptr = nullptr;
+    double *gpu_ptn_invar_ptr = nullptr;
+    double *gpu_pattern_lh_ptr = nullptr;
+    double *gpu_pattern_lh_cat_ptr = nullptr;
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
