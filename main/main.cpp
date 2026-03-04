@@ -2480,7 +2480,7 @@ int main(int argc, char *argv[]) {
     }
 
 #ifdef USE_OPENACC
-    cout << "OpenACC (GPU-offloaded)";
+    cout << "GPU";
 #else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
@@ -2514,11 +2514,13 @@ int main(int argc, char *argv[]) {
         cout << Params::getInstance().num_threads  << " threads";
     else
         cout << "auto-detect threads";
+#ifndef USE_OPENACC
     cout << " (" << max_procs << " CPU cores detected)";
     if (Params::getInstance().num_threads  > max_procs) {
         cout << endl;
         outError("You have specified more threads than CPU cores available");
     }
+#endif
     // omp_set_nested(false); // don't allow nested OpenMP parallelism
     omp_set_max_active_levels(1);
 #else
