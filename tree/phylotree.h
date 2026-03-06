@@ -960,6 +960,14 @@ public:
     double *gpu_ptn_invar_ptr = nullptr;
     double *gpu_pattern_lh_ptr = nullptr;
     double *gpu_pattern_lh_cat_ptr = nullptr;
+
+    // P2: Persistent tip state array for batched kernels
+    // tip_states_flat[node_id * nptn + pattern] = alignment state for leaf node
+    int *tip_states_flat = nullptr;
+    size_t gpu_tip_states_size = 0;
+    int *gpu_tip_states_ptr = nullptr;
+    // P2: Saved buffer_partial_lh size for batch upload/delete
+    size_t gpu_buffer_plh_size = 0;
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>

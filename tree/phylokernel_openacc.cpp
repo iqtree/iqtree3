@@ -22,9 +22,299 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
+#include <algorithm>
 #include <openacc.h>            // Step 12: acc_is_present (future dynamic checks)
 
 using namespace std;
+
+// ==========================================================================
+// P2: Level-based node batching — helper structures and batched kernels
+// Groups independent tree nodes by dependency level and processes all nodes
+// at the same level in a single GPU kernel launch using collapse(2) over
+// (node, pattern). Reduces ~196 kernel launches to ~15 per evaluation.
+// ==========================================================================
+
+// Kernel type classification for batching
+enum BatchKernelType { BATCH_TIP_TIP = 0, BATCH_TIP_INTERNAL = 1, BATCH_INTERNAL_INTERNAL = 2 };
+
+// Per-level grouping of TraversalInfo pointers by kernel type
+struct LevelBatch {
+    vector<TraversalInfo*> tip_tip;
+    vector<TraversalInfo*> tip_internal;
+    vector<TraversalInfo*> internal_internal;
+};
+
+// Group traversal_info by dependency level and kernel type.
+// Returns vector of LevelBatch (index = level), and sets max_level.
+static vector<LevelBatch> groupByLevelAndType(
+    vector<TraversalInfo> &traversal_info,
+    int &max_level)
+{
+    // Compute dependency level for each node in post-order.
+    // Leaf: level = -1. Internal: level = max(children_levels) + 1.
+    // Post-order guarantees children appear before parents in traversal_info.
+    unordered_map<int, int> node_level;
+    max_level = 0;
+    vector<int> info_levels(traversal_info.size());
+
+    for (size_t ti = 0; ti < traversal_info.size(); ti++) {
+        TraversalInfo &info = traversal_info[ti];
+        PhyloNode *node = (PhyloNode*)info.dad_branch->node;
+        PhyloNode *dad = info.dad;
+
+        int max_child_level = -1;
+        FOR_NEIGHBOR_IT(node, dad, it) {
+            PhyloNode *child = (PhyloNode*)(*it)->node;
+            if (!child->isLeaf()) {
+                auto found = node_level.find(child->id);
+                if (found != node_level.end()) {
+                    if (found->second > max_child_level)
+                        max_child_level = found->second;
+                }
+            }
+        }
+        int level = max_child_level + 1;
+        node_level[node->id] = level;
+        info_levels[ti] = level;
+        if (level > max_level) max_level = level;
+    }
+
+    // Group by (level, kernel type)
+    vector<LevelBatch> levels(max_level + 1);
+    for (size_t ti = 0; ti < traversal_info.size(); ti++) {
+        TraversalInfo &info = traversal_info[ti];
+        int level = info_levels[ti];
+        PhyloNode *node = (PhyloNode*)info.dad_branch->node;
+        PhyloNode *dad = info.dad;
+
+        // Determine kernel type from children
+        PhyloNeighbor *left = NULL, *right = NULL;
+        FOR_NEIGHBOR_IT(node, dad, it2) {
+            if (!left) left = (PhyloNeighbor*)(*it2);
+            else right = (PhyloNeighbor*)(*it2);
+        }
+
+        bool left_leaf = left->node->isLeaf();
+        bool right_leaf = right->node->isLeaf();
+        if (left_leaf && right_leaf) {
+            levels[level].tip_tip.push_back(&info);
+        } else if (left_leaf || right_leaf) {
+            levels[level].tip_internal.push_back(&info);
+        } else {
+            levels[level].internal_internal.push_back(&info);
+        }
+    }
+
+    return levels;
+}
+
+// ==========================================================================
+// P2: Batched TIP-TIP kernel
+// Processes all TIP-TIP nodes in a single kernel launch.
+// collapse(2) over (node, pattern) — sequential state loop.
+// No scaling needed (cherry nodes always have scale_num = 0).
+// ==========================================================================
+static void batchedTipTip(
+    size_t *offsets, int num_nodes,
+    double *central_plh_base, UBYTE *central_scl_base,
+    double *buffer_plh_base, int *tip_states_base,
+    size_t total_lh, size_t total_scl, size_t buffer_size, size_t tip_states_size,
+    int ptn_lower_int, int ptn_upper_int, int block_int, size_t nptn_stride)
+{
+    #pragma acc data \
+        copyin(offsets[0:num_nodes*6]) \
+        present(central_plh_base[0:total_lh], \
+                central_scl_base[0:total_scl], \
+                buffer_plh_base[0:buffer_size], \
+                tip_states_base[0:tip_states_size])
+    {
+        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        for (int op = 0; op < num_nodes; op++) {
+            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
+                size_t dad_off       = offsets[op * 6 + 0];
+                size_t dad_scl_off   = offsets[op * 6 + 1];
+                size_t tlh_left_off  = offsets[op * 6 + 2];
+                size_t tlh_right_off = offsets[op * 6 + 3];
+                int left_nid         = (int)offsets[op * 6 + 4];
+                int right_nid        = (int)offsets[op * 6 + 5];
+
+                int sl = tip_states_base[(size_t)left_nid * nptn_stride + p];
+                int sr = tip_states_base[(size_t)right_nid * nptn_stride + p];
+
+                central_scl_base[dad_scl_off + p] = 0;
+                for (int s = 0; s < block_int; s++) {
+                    central_plh_base[dad_off + (size_t)p * block_int + s] =
+                        buffer_plh_base[tlh_left_off + (size_t)sl * block_int + s] *
+                        buffer_plh_base[tlh_right_off + (size_t)sr * block_int + s];
+                }
+            }
+        }
+    } // end acc data
+}
+
+// ==========================================================================
+// P2: Batched TIP-INTERNAL kernel
+// Left child is a leaf (tip lookup), right child has partial likelihoods.
+// Fused computation + scaling in same kernel.
+// ==========================================================================
+static void batchedTipInternal(
+    size_t *offsets, int num_nodes,
+    double *central_plh_base, UBYTE *central_scl_base,
+    double *buffer_plh_base, int *tip_states_base,
+    double *local_tip_plh,
+    size_t total_lh, size_t total_scl, size_t buffer_size, size_t tip_states_size,
+    size_t tip_unknown_size,
+    int ptn_lower_int, int ptn_upper_int,
+    int block_int, int nstates_int, int nstatesqr_int,
+    size_t nptn_stride, size_t state_unknown)
+{
+    // offsets layout per node [8]: dad_plh, dad_scl, right_plh, right_scl,
+    //                              eright (buffer_plh), tip_lh_left (buffer_plh),
+    //                              left_node_id, (pad)
+    #pragma acc data \
+        copyin(offsets[0:num_nodes*8]) \
+        present(central_plh_base[0:total_lh], \
+                central_scl_base[0:total_scl], \
+                buffer_plh_base[0:buffer_size], \
+                tip_states_base[0:tip_states_size], \
+                local_tip_plh[0:tip_unknown_size])
+    {
+        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        for (int op = 0; op < num_nodes; op++) {
+            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
+                size_t dad_off       = offsets[op * 8 + 0];
+                size_t dad_scl_off   = offsets[op * 8 + 1];
+                size_t right_plh_off = offsets[op * 8 + 2];
+                size_t right_scl_off = offsets[op * 8 + 3];
+                size_t eright_off    = offsets[op * 8 + 4];
+                size_t tlh_left_off  = offsets[op * 8 + 5];
+                int left_nid         = (int)offsets[op * 8 + 6];
+
+                int state_left = tip_states_base[(size_t)left_nid * nptn_stride + p];
+
+                // Scale_num from right child only (left is a leaf, no scaling)
+                central_scl_base[dad_scl_off + p] = central_scl_base[right_scl_off + p];
+
+                // Compute partial likelihoods
+                for (int s = 0; s < block_int; s++) {
+                    int cat = s / nstates_int;
+                    int state = s % nstates_int;
+                    int emat_base = cat * nstatesqr_int + state * nstates_int;
+                    int plh_base = p * block_int + cat * nstates_int;
+
+                    // Right child: dot product P(t) × partial_lh
+                    double vright = 0.0;
+                    for (int k = 0; k < nstates_int; k++) {
+                        vright += buffer_plh_base[eright_off + emat_base + k]
+                                * central_plh_base[right_plh_off + plh_base + k];
+                    }
+                    // Left child: precomputed tip lookup
+                    double vleft_val = buffer_plh_base[tlh_left_off + state_left * block_int + s];
+                    central_plh_base[dad_off + (size_t)p * block_int + s] = vleft_val * vright;
+                }
+
+                // Fused scaling check
+                double lh_max = 0.0;
+                for (int s = 0; s < block_int; s++) {
+                    double v = central_plh_base[dad_off + (size_t)p * block_int + s];
+                    if (v > lh_max) lh_max = v;
+                }
+                if (lh_max == 0.0) {
+                    for (int s = 0; s < block_int; s++)
+                        central_plh_base[dad_off + (size_t)p * block_int + s] =
+                            local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    central_scl_base[dad_scl_off + p] += 4;
+                } else if (lh_max < SCALING_THRESHOLD) {
+                    for (int s = 0; s < block_int; s++)
+                        central_plh_base[dad_off + (size_t)p * block_int + s] =
+                            ldexp(central_plh_base[dad_off + (size_t)p * block_int + s], SCALING_THRESHOLD_EXP);
+                    central_scl_base[dad_scl_off + p] += 1;
+                }
+            }
+        }
+    } // end acc data
+}
+
+// ==========================================================================
+// P2: Batched INTERNAL-INTERNAL kernel
+// Both children are internal nodes with partial likelihoods.
+// HOT PATH — two matrix-vector products + Hadamard product.
+// Fused computation + scaling in same kernel.
+// ==========================================================================
+static void batchedInternalInternal(
+    size_t *offsets, int num_nodes,
+    double *central_plh_base, UBYTE *central_scl_base,
+    double *buffer_plh_base,
+    double *local_tip_plh,
+    size_t total_lh, size_t total_scl, size_t buffer_size,
+    size_t tip_unknown_size,
+    int ptn_lower_int, int ptn_upper_int,
+    int block_int, int nstates_int, int nstatesqr_int,
+    size_t state_unknown)
+{
+    // offsets layout per node [8]: dad_plh, dad_scl, left_plh, right_plh,
+    //                              left_scl, right_scl, eleft (buffer_plh), eright (buffer_plh)
+    #pragma acc data \
+        copyin(offsets[0:num_nodes*8]) \
+        present(central_plh_base[0:total_lh], \
+                central_scl_base[0:total_scl], \
+                buffer_plh_base[0:buffer_size], \
+                local_tip_plh[0:tip_unknown_size])
+    {
+        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        for (int op = 0; op < num_nodes; op++) {
+            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
+                size_t dad_off       = offsets[op * 8 + 0];
+                size_t dad_scl_off   = offsets[op * 8 + 1];
+                size_t left_plh_off  = offsets[op * 8 + 2];
+                size_t right_plh_off = offsets[op * 8 + 3];
+                size_t left_scl_off  = offsets[op * 8 + 4];
+                size_t right_scl_off = offsets[op * 8 + 5];
+                size_t eleft_off     = offsets[op * 8 + 6];
+                size_t eright_off    = offsets[op * 8 + 7];
+
+                // Propagate scale counts from both children
+                central_scl_base[dad_scl_off + p] =
+                    central_scl_base[left_scl_off + p] + central_scl_base[right_scl_off + p];
+
+                // Two matrix-vector products + Hadamard
+                for (int s = 0; s < block_int; s++) {
+                    int cat = s / nstates_int;
+                    int state = s % nstates_int;
+                    int emat_base = cat * nstatesqr_int + state * nstates_int;
+                    int plh_base = p * block_int + cat * nstates_int;
+                    double vleft = 0.0, vright = 0.0;
+                    for (int k = 0; k < nstates_int; k++) {
+                        vleft  += buffer_plh_base[eleft_off + emat_base + k]
+                                * central_plh_base[left_plh_off + plh_base + k];
+                        vright += buffer_plh_base[eright_off + emat_base + k]
+                                * central_plh_base[right_plh_off + plh_base + k];
+                    }
+                    central_plh_base[dad_off + (size_t)p * block_int + s] = vleft * vright;
+                }
+
+                // Fused scaling check
+                double lh_max = 0.0;
+                for (int s = 0; s < block_int; s++) {
+                    double v = central_plh_base[dad_off + (size_t)p * block_int + s];
+                    if (v > lh_max) lh_max = v;
+                }
+                if (lh_max == 0.0) {
+                    for (int s = 0; s < block_int; s++)
+                        central_plh_base[dad_off + (size_t)p * block_int + s] =
+                            local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    central_scl_base[dad_scl_off + p] += 4;
+                } else if (lh_max < SCALING_THRESHOLD) {
+                    for (int s = 0; s < block_int; s++)
+                        central_plh_base[dad_off + (size_t)p * block_int + s] =
+                            ldexp(central_plh_base[dad_off + (size_t)p * block_int + s], SCALING_THRESHOLD_EXP);
+                    central_scl_base[dad_scl_off + p] += 1;
+                }
+            }
+        }
+    } // end acc data
+}
 
 // ==========================================================================
 // Step 4 Phase A: GPU-ready Partial Likelihood Kernel
@@ -516,6 +806,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     Params::getInstance().kernel_nonrev = true;
     computeTraversalInfo<Vec1d>(node, dad, false);
 
+    // P2: Batch upload buffer_partial_lh — contains all per-node P(t) matrices
+    // and tip lookup tables, already filled by computeTraversalInfo().
+    // One upload replaces ~98 per-node copyin calls.
+    gpu_buffer_plh_size = getBufferPartialLhSize();
+    double *local_buffer_plh = buffer_partial_lh;
+    #pragma acc enter data copyin(local_buffer_plh[0:gpu_buffer_plh_size])
+
     double tree_lh = 0.0;
     size_t nstates = aln->num_states;
     size_t nstatesqr = nstates*nstates;
@@ -595,9 +892,31 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         gpu_pattern_lh_cat_ptr = local_pattern_lh_cat;
         gpu_data_resident = true;
 
+        // P2: Build and upload tip_states_flat — alignment state for each leaf × pattern
+        // Used by batched kernels to avoid per-node states_left/states_right copyin.
+        tip_states_flat = new int[(size_t)leafNum * nptn];
+        for (int nid = 0; nid < (int)leafNum; nid++) {
+            int *row = &tip_states_flat[(size_t)nid * nptn];
+            if (nid == root->id) {
+                // Root node always gets state 0 (rooted tree convention)
+                memset(row, 0, nptn * sizeof(int));
+            } else {
+                for (size_t p = 0; p < orig_nptn; p++)
+                    row[p] = (aln->at(p))[nid];
+                for (size_t p = orig_nptn; p < nptn; p++)
+                    row[p] = model_factory->unobserved_ptns[p - orig_nptn][nid];
+            }
+        }
+        int *local_tip_states = tip_states_flat;
+        size_t tip_states_total = (size_t)leafNum * nptn;
+        #pragma acc enter data copyin(local_tip_states[0:tip_states_total])
+        gpu_tip_states_ptr = local_tip_states;
+        gpu_tip_states_size = tip_states_total;
+
         if (verbose_mode >= VB_MED)
             cout << "OpenACC: Uploaded persistent GPU data ("
-                 << (total_lh_entries * sizeof(double) + total_scale_entries * sizeof(UBYTE)) / (1024*1024)
+                 << (total_lh_entries * sizeof(double) + total_scale_entries * sizeof(UBYTE)
+                     + tip_states_total * sizeof(int)) / (1024*1024)
                  << " MB)" << endl;
     }
 
@@ -638,9 +957,174 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         for (int packet_id = 0; packet_id < num_packets; packet_id++) {
             size_t ptn_lower = limits[packet_id];
             size_t ptn_upper = limits[packet_id+1];
-            // first compute partial_lh (on GPU via Steps 9-10)
-            for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
-                computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+
+            // P2: Level-based batched partial likelihood computation
+            // Group independent nodes by level, launch single kernel per (level, type).
+            // Check for multifurcating nodes — fall back to per-node approach if any exist.
+            {
+                bool has_multifurcating = false;
+                for (auto &info_check : traversal_info) {
+                    PhyloNode *node_check = (PhyloNode*)info_check.dad_branch->node;
+                    if (!node_check->isLeaf() && node_check->degree() > 3) {
+                        has_multifurcating = true;
+                        break;
+                    }
+                }
+
+                if (has_multifurcating) {
+                    // Fallback: per-node sequential computation (handles multifurcating nodes)
+                    for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
+                        computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+                } else {
+
+                int max_level = 0;
+                vector<LevelBatch> level_batches = groupByLevelAndType(traversal_info, max_level);
+
+                // Precompute values needed by all batched kernels
+                int ptn_lower_int = (int)ptn_lower;
+                int ptn_upper_int = (int)ptn_upper;
+                int block_int_b = (int)block;
+                int nstates_int_b = (int)nstates;
+                int nstatesqr_int_b = (int)nstatesqr;
+                size_t nptn_stride = nptn;
+                size_t state_unknown_b = aln->STATE_UNKNOWN;
+                double *local_tip_plh_b = tip_partial_lh;
+                int *local_tip_states_b = tip_states_flat;
+                size_t tip_unknown_size_b = (aln->STATE_UNKNOWN + 1) * nstates;
+
+                for (int lev = 0; lev <= max_level; lev++) {
+                    // TIP-TIP batch
+                    if (!level_batches[lev].tip_tip.empty()) {
+                        auto &batch = level_batches[lev].tip_tip;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 6];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            // Swap logic: if right child is root, swap so left is root
+                            // (matches original TIP-TIP kernel behavior)
+                            bool swapped_tt = false;
+                            if (right_b->node == root) {
+                                PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
+                                swapped_tt = true;
+                            }
+                            double *tip_lh_left_b = info_b.partial_lh_leaves;
+                            double *tip_lh_right_b = info_b.partial_lh_leaves + (aln->STATE_UNKNOWN + 1) * block;
+                            if (swapped_tt) {
+                                double *tmp_tlh = tip_lh_left_b;
+                                tip_lh_left_b = tip_lh_right_b;
+                                tip_lh_right_b = tmp_tlh;
+                            }
+                            offsets[bi*6 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*6 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*6 + 2] = (size_t)(tip_lh_left_b - buffer_partial_lh);
+                            offsets[bi*6 + 3] = (size_t)(tip_lh_right_b - buffer_partial_lh);
+                            offsets[bi*6 + 4] = (size_t)left_b->node->id;
+                            offsets[bi*6 + 5] = (size_t)right_b->node->id;
+                        }
+                        batchedTipTip(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh, local_tip_states_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size, gpu_tip_states_size,
+                            ptn_lower_int, ptn_upper_int, block_int_b, nptn_stride);
+                        delete[] offsets;
+                    }
+
+                    // TIP-INTERNAL batch
+                    if (!level_batches[lev].tip_internal.empty()) {
+                        auto &batch = level_batches[lev].tip_internal;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 8];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            // Ensure left is the leaf, right is internal
+                            // Must swap both neighbors AND P(t) matrices (matches original kernel)
+                            double *eleft_b = info_b.echildren;
+                            double *eright_b = info_b.echildren + block * nstates;
+                            if (!left_b->node->isLeaf() && right_b->node->isLeaf()) {
+                                PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
+                                double *etmp = eleft_b; eleft_b = eright_b; eright_b = etmp;
+                            }
+                            double *tip_lh_left_b = info_b.partial_lh_leaves;
+
+                            offsets[bi*8 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*8 + 2] = (size_t)(right_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 3] = (size_t)(right_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 4] = (size_t)(eright_b - buffer_partial_lh);
+                            offsets[bi*8 + 5] = (size_t)(tip_lh_left_b - buffer_partial_lh);
+                            offsets[bi*8 + 6] = (size_t)left_b->node->id;
+                            offsets[bi*8 + 7] = 0; // padding
+                        }
+                        batchedTipInternal(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh, local_tip_states_b,
+                            local_tip_plh_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size, gpu_tip_states_size,
+                            tip_unknown_size_b,
+                            ptn_lower_int, ptn_upper_int,
+                            block_int_b, nstates_int_b, nstatesqr_int_b,
+                            nptn_stride, state_unknown_b);
+                        delete[] offsets;
+                    }
+
+                    // INTERNAL-INTERNAL batch
+                    if (!level_batches[lev].internal_internal.empty()) {
+                        auto &batch = level_batches[lev].internal_internal;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 8];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            double *eleft_b = info_b.echildren;
+                            double *eright_b = info_b.echildren + block * nstates;
+
+                            offsets[bi*8 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*8 + 2] = (size_t)(left_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 3] = (size_t)(right_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 4] = (size_t)(left_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 5] = (size_t)(right_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 6] = (size_t)(eleft_b - buffer_partial_lh);
+                            offsets[bi*8 + 7] = (size_t)(eright_b - buffer_partial_lh);
+                        }
+                        batchedInternalInternal(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh,
+                            local_tip_plh_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size,
+                            tip_unknown_size_b,
+                            ptn_lower_int, ptn_upper_int,
+                            block_int_b, nstates_int_b, nstatesqr_int_b,
+                            state_unknown_b);
+                        delete[] offsets;
+                    }
+                } // for lev
+
+                } // end else (bifurcating batched path)
+            } // end P2 batched computation
 
             // A3: Precompute per-pattern dad states (CPU side, before GPU region)
             size_t nptn_range = ptn_upper - ptn_lower;
@@ -727,9 +1211,159 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         for (int packet_id = 0; packet_id < num_packets; packet_id++) {
             size_t ptn_lower = limits[packet_id];
             size_t ptn_upper = limits[packet_id+1];
-            // first compute partial_lh (on GPU via Steps 9-10)
-            for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
-                computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+
+            // P2: Level-based batched partial likelihood computation
+            {
+                bool has_multifurcating = false;
+                for (auto &info_check : traversal_info) {
+                    PhyloNode *node_check = (PhyloNode*)info_check.dad_branch->node;
+                    if (!node_check->isLeaf() && node_check->degree() > 3) {
+                        has_multifurcating = true;
+                        break;
+                    }
+                }
+
+                if (has_multifurcating) {
+                    for (vector<TraversalInfo>::iterator it = traversal_info.begin(); it != traversal_info.end(); it++)
+                        computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
+                } else {
+
+                int max_level = 0;
+                vector<LevelBatch> level_batches = groupByLevelAndType(traversal_info, max_level);
+
+                int ptn_lower_int = (int)ptn_lower;
+                int ptn_upper_int = (int)ptn_upper;
+                int block_int_b = (int)block;
+                int nstates_int_b = (int)nstates;
+                int nstatesqr_int_b = (int)nstatesqr;
+                size_t nptn_stride = nptn;
+                size_t state_unknown_b = aln->STATE_UNKNOWN;
+                double *local_tip_plh_b = tip_partial_lh;
+                int *local_tip_states_b = tip_states_flat;
+                size_t tip_unknown_size_b = (aln->STATE_UNKNOWN + 1) * nstates;
+
+                for (int lev = 0; lev <= max_level; lev++) {
+                    if (!level_batches[lev].tip_tip.empty()) {
+                        auto &batch = level_batches[lev].tip_tip;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 6];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            bool swapped_tt = false;
+                            if (right_b->node == root) {
+                                PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
+                                swapped_tt = true;
+                            }
+                            double *tip_lh_left_b = info_b.partial_lh_leaves;
+                            double *tip_lh_right_b = info_b.partial_lh_leaves + (aln->STATE_UNKNOWN + 1) * block;
+                            if (swapped_tt) {
+                                double *tmp_tlh = tip_lh_left_b;
+                                tip_lh_left_b = tip_lh_right_b;
+                                tip_lh_right_b = tmp_tlh;
+                            }
+                            offsets[bi*6 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*6 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*6 + 2] = (size_t)(tip_lh_left_b - buffer_partial_lh);
+                            offsets[bi*6 + 3] = (size_t)(tip_lh_right_b - buffer_partial_lh);
+                            offsets[bi*6 + 4] = (size_t)left_b->node->id;
+                            offsets[bi*6 + 5] = (size_t)right_b->node->id;
+                        }
+                        batchedTipTip(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh, local_tip_states_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size, gpu_tip_states_size,
+                            ptn_lower_int, ptn_upper_int, block_int_b, nptn_stride);
+                        delete[] offsets;
+                    }
+                    if (!level_batches[lev].tip_internal.empty()) {
+                        auto &batch = level_batches[lev].tip_internal;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 8];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            double *eleft_b = info_b.echildren;
+                            double *eright_b = info_b.echildren + block * nstates;
+                            if (!left_b->node->isLeaf() && right_b->node->isLeaf()) {
+                                PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
+                                double *etmp = eleft_b; eleft_b = eright_b; eright_b = etmp;
+                            }
+                            double *tip_lh_left_b = info_b.partial_lh_leaves;
+                            offsets[bi*8 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*8 + 2] = (size_t)(right_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 3] = (size_t)(right_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 4] = (size_t)(eright_b - buffer_partial_lh);
+                            offsets[bi*8 + 5] = (size_t)(tip_lh_left_b - buffer_partial_lh);
+                            offsets[bi*8 + 6] = (size_t)left_b->node->id;
+                            offsets[bi*8 + 7] = 0;
+                        }
+                        batchedTipInternal(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh, local_tip_states_b,
+                            local_tip_plh_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size, gpu_tip_states_size,
+                            tip_unknown_size_b,
+                            ptn_lower_int, ptn_upper_int,
+                            block_int_b, nstates_int_b, nstatesqr_int_b,
+                            nptn_stride, state_unknown_b);
+                        delete[] offsets;
+                    }
+                    if (!level_batches[lev].internal_internal.empty()) {
+                        auto &batch = level_batches[lev].internal_internal;
+                        int num_nodes = (int)batch.size();
+                        size_t *offsets = new size_t[num_nodes * 8];
+                        for (int bi = 0; bi < num_nodes; bi++) {
+                            TraversalInfo &info_b = *batch[bi];
+                            PhyloNode *node_b = (PhyloNode*)info_b.dad_branch->node;
+                            PhyloNode *dad_b = info_b.dad;
+                            PhyloNeighbor *left_b = NULL, *right_b = NULL;
+                            FOR_NEIGHBOR_IT(node_b, dad_b, it3) {
+                                if (!left_b) left_b = (PhyloNeighbor*)(*it3);
+                                else right_b = (PhyloNeighbor*)(*it3);
+                            }
+                            double *eleft_b = info_b.echildren;
+                            double *eright_b = info_b.echildren + block * nstates;
+                            offsets[bi*8 + 0] = (size_t)(info_b.dad_branch->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 1] = (size_t)(info_b.dad_branch->scale_num - central_scale_num);
+                            offsets[bi*8 + 2] = (size_t)(left_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 3] = (size_t)(right_b->partial_lh - central_partial_lh);
+                            offsets[bi*8 + 4] = (size_t)(left_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 5] = (size_t)(right_b->scale_num - central_scale_num);
+                            offsets[bi*8 + 6] = (size_t)(eleft_b - buffer_partial_lh);
+                            offsets[bi*8 + 7] = (size_t)(eright_b - buffer_partial_lh);
+                        }
+                        batchedInternalInternal(offsets, num_nodes,
+                            local_central_plh, local_central_scl,
+                            local_buffer_plh,
+                            local_tip_plh_b,
+                            gpu_total_lh_entries, gpu_total_scale_entries,
+                            gpu_buffer_plh_size,
+                            tip_unknown_size_b,
+                            ptn_lower_int, ptn_upper_int,
+                            block_int_b, nstates_int_b, nstatesqr_int_b,
+                            state_unknown_b);
+                        delete[] offsets;
+                    }
+                } // for lev
+
+                } // end else (bifurcating batched path)
+            } // end P2 batched computation
 
             // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
             // INTERNAL-INTERNAL case: both dad and node are internal nodes.
@@ -843,6 +1477,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     }
 
     ASSERT(!std::isnan(tree_lh) && !std::isinf(tree_lh));
+
+    // P2: Release buffer_partial_lh from GPU
+    #pragma acc exit data delete(local_buffer_plh[0:gpu_buffer_plh_size])
 
     delete [] trans_mat;
     return tree_lh;
@@ -1570,6 +2207,15 @@ void PhyloTree::freeOpenACCData() {
                gpu_ptn_invar_ptr[0:gpu_nptn], \
                gpu_pattern_lh_ptr[0:gpu_nptn], \
                gpu_pattern_lh_cat_ptr[0:gpu_nptn_ncat])
+
+    // P2: Free tip_states_flat from GPU and host
+    if (gpu_tip_states_ptr) {
+        #pragma acc exit data delete(gpu_tip_states_ptr[0:gpu_tip_states_size])
+        delete[] tip_states_flat;
+        tip_states_flat = nullptr;
+        gpu_tip_states_ptr = nullptr;
+        gpu_tip_states_size = 0;
+    }
 
     gpu_data_resident = false;
     gpu_central_plh_ptr = nullptr;
