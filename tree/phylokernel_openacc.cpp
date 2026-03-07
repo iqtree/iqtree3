@@ -993,13 +993,28 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         size_t total_lh_entries = (size_t)max_lh_slots * lh_block_total + 4 + tip_alloc_size;
         size_t total_scale_entries = (size_t)max_lh_slots * scale_block_total;
 
+        // O1 optimization: Use create (allocate-only, no upload) for central_partial_lh
+        // and central_scale_num. The GPU computes ALL internal node partial likelihoods
+        // and scale counts during traversal — uploading host values (zeros) is wasteful.
+        // Only tip_partial_lh (tiny, at end of central_partial_lh) needs host→device
+        // transfer because it contains pre-computed one-hot/ambiguity state vectors.
+        //
+        // Before O1: copyin uploaded 3.2 GB (DNA) / 15.8 GB (AA) — 99.99% wasted.
+        // After O1:  create + selective update uploads only ~608 B (DNA) / ~3.7 KB (AA).
+        size_t tip_offset = (size_t)max_lh_slots * lh_block_total + 4;
+
         #pragma acc enter data \
-            copyin(local_central_plh[0:total_lh_entries], \
-                   local_central_scl[0:total_scale_entries], \
-                   local_ptn_freq[0:nptn], \
+            create(local_central_plh[0:total_lh_entries], \
+                   local_central_scl[0:total_scale_entries]) \
+            copyin(local_ptn_freq[0:nptn], \
                    local_ptn_invar[0:nptn]) \
             create(local_pattern_lh[0:nptn], \
                    local_pattern_lh_cat[0:nptn_ncat])
+
+        // Upload ONLY the tip_partial_lh section (few KB at end of central_partial_lh).
+        // tip_partial_lh = central_partial_lh + max_lh_slots * block_size (see phylotree.cpp:1146)
+        // It stores one-hot vectors and ambiguity state mappings used by TIP-TIP/TIP-INT kernels.
+        #pragma acc update device(local_central_plh[tip_offset:tip_alloc_size])
 
         // Save sizes and pointers for freeOpenACCData()
         gpu_total_lh_entries = total_lh_entries;
@@ -1035,11 +1050,20 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         gpu_tip_states_ptr = local_tip_states;
         gpu_tip_states_size = tip_states_total;
 
-        if (verbose_mode >= VB_MED)
-            cout << "OpenACC: Uploaded persistent GPU data ("
-                 << (total_lh_entries * sizeof(double) + total_scale_entries * sizeof(UBYTE)
-                     + tip_states_total * sizeof(int)) / (1024*1024)
-                 << " MB)" << endl;
+        if (verbose_mode >= VB_MED) {
+            size_t uploaded_bytes = tip_alloc_size * sizeof(double)
+                + nptn * sizeof(double) * 2  // ptn_freq + ptn_invar
+                + tip_states_total * sizeof(int);
+            size_t allocated_bytes = total_lh_entries * sizeof(double)
+                + total_scale_entries * sizeof(UBYTE);
+            cout << "OpenACC: GPU persistent data — allocated "
+                 << allocated_bytes / (1024*1024) << " MB (create, no upload), "
+                 << "uploaded " << uploaded_bytes / (1024*1024) << " MB "
+                 << "(tip_partial_lh=" << tip_alloc_size * sizeof(double) << " B, "
+                 << "ptn_freq/invar=" << nptn * sizeof(double) * 2 / (1024*1024) << " MB, "
+                 << "tip_states=" << tip_states_total * sizeof(int) / (1024*1024) << " MB)"
+                 << endl;
+        }
 #ifdef USE_OPENACC_PROFILE
         if (profiling) {
             #pragma acc wait
@@ -2505,8 +2529,11 @@ void PhyloTree::freeOpenACCData() {
     if (verbose_mode >= VB_MED)
         cout << "OpenACC: Freeing persistent GPU data" << endl;
 
-    // Use the saved pointers and sizes from the enter data copyin call.
+    // Use the saved pointers and sizes from the enter data create/copyin call.
     // These must match exactly — OpenACC tracks device data by host address.
+    // Note: central_partial_lh and central_scale_num were allocated with 'create'
+    // (O1 optimization — no host-to-device upload). exit data delete works the
+    // same for 'create' and 'copyin' data.
     #pragma acc exit data \
         delete(gpu_central_plh_ptr[0:gpu_total_lh_entries], \
                gpu_central_scl_ptr[0:gpu_total_scale_entries], \
