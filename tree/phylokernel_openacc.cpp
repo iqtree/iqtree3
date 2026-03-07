@@ -191,8 +191,10 @@ static vector<LevelBatch> groupByLevelAndType(
 // ==========================================================================
 // P2: Batched TIP-TIP kernel
 // Processes all TIP-TIP nodes in a single kernel launch.
-// collapse(2) over (node, pattern) — sequential state loop.
 // No scaling needed (cherry nodes always have scale_num = 0).
+//
+// O4+O5 optimization: collapse(3) over (op, p, s) for coalesced writes.
+// Single kernel (no scaling split needed — scale_num is always 0).
 // ==========================================================================
 static void batchedTipTip(
     size_t *offsets, int num_nodes,
@@ -208,21 +210,24 @@ static void batchedTipTip(
                 buffer_plh_base[0:buffer_size], \
                 tip_states_base[0:tip_states_size])
     {
-        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        #pragma acc parallel loop gang vector collapse(3) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
-                size_t dad_off       = offsets[op * 6 + 0];
-                size_t dad_scl_off   = offsets[op * 6 + 1];
-                size_t tlh_left_off  = offsets[op * 6 + 2];
-                size_t tlh_right_off = offsets[op * 6 + 3];
-                int left_nid         = (int)offsets[op * 6 + 4];
-                int right_nid        = (int)offsets[op * 6 + 5];
-
-                int sl = tip_states_base[(size_t)left_nid * nptn_stride + p];
-                int sr = tip_states_base[(size_t)right_nid * nptn_stride + p];
-
-                central_scl_base[dad_scl_off + p] = 0;
                 for (int s = 0; s < block_int; s++) {
+                    size_t dad_off       = offsets[op * 6 + 0];
+                    size_t dad_scl_off   = offsets[op * 6 + 1];
+                    size_t tlh_left_off  = offsets[op * 6 + 2];
+                    size_t tlh_right_off = offsets[op * 6 + 3];
+                    int left_nid         = (int)offsets[op * 6 + 4];
+                    int right_nid        = (int)offsets[op * 6 + 5];
+
+                    int sl = tip_states_base[(size_t)left_nid * nptn_stride + p];
+                    int sr = tip_states_base[(size_t)right_nid * nptn_stride + p];
+
+                    // Only first thread per (op,p) writes scale_num (always 0 for cherry nodes)
+                    if (s == 0)
+                        central_scl_base[dad_scl_off + p] = 0;
+
                     central_plh_base[dad_off + (size_t)p * block_int + s] =
                         buffer_plh_base[tlh_left_off + (size_t)sl * block_int + s] *
                         buffer_plh_base[tlh_right_off + (size_t)sr * block_int + s];
@@ -235,7 +240,10 @@ static void batchedTipTip(
 // ==========================================================================
 // P2: Batched TIP-INTERNAL kernel
 // Left child is a leaf (tip lookup), right child has partial likelihoods.
-// Fused computation + scaling in same kernel.
+//
+// O4+O5 optimization: Split into two kernels (same as INT-INT):
+//   Kernel 1 (collapse(3)): Compute — right child dot product + left tip lookup.
+//   Kernel 2 (collapse(2)): Scale propagation + scaling check.
 // ==========================================================================
 static void batchedTipInternal(
     size_t *offsets, int num_nodes,
@@ -259,24 +267,19 @@ static void batchedTipInternal(
                 tip_states_base[0:tip_states_size], \
                 local_tip_plh[0:tip_unknown_size])
     {
-        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
+        #pragma acc parallel loop gang vector collapse(3) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
-                size_t dad_off       = offsets[op * 8 + 0];
-                size_t dad_scl_off   = offsets[op * 8 + 1];
-                size_t right_plh_off = offsets[op * 8 + 2];
-                size_t right_scl_off = offsets[op * 8 + 3];
-                size_t eright_off    = offsets[op * 8 + 4];
-                size_t tlh_left_off  = offsets[op * 8 + 5];
-                int left_nid         = (int)offsets[op * 8 + 6];
-
-                int state_left = tip_states_base[(size_t)left_nid * nptn_stride + p];
-
-                // Scale_num from right child only (left is a leaf, no scaling)
-                central_scl_base[dad_scl_off + p] = central_scl_base[right_scl_off + p];
-
-                // Compute partial likelihoods
                 for (int s = 0; s < block_int; s++) {
+                    size_t dad_off       = offsets[op * 8 + 0];
+                    size_t right_plh_off = offsets[op * 8 + 2];
+                    size_t eright_off    = offsets[op * 8 + 4];
+                    size_t tlh_left_off  = offsets[op * 8 + 5];
+                    int left_nid         = (int)offsets[op * 8 + 6];
+
+                    int state_left = tip_states_base[(size_t)left_nid * nptn_stride + p];
+
                     int cat = s / nstates_int;
                     int state = s % nstates_int;
                     int emat_base = cat * nstatesqr_int + state * nstates_int;
@@ -284,6 +287,7 @@ static void batchedTipInternal(
 
                     // Right child: dot product P(t) × partial_lh
                     double vright = 0.0;
+                    #pragma acc loop seq
                     for (int k = 0; k < nstates_int; k++) {
                         vright += buffer_plh_base[eright_off + emat_base + k]
                                 * central_plh_base[right_plh_off + plh_base + k];
@@ -292,8 +296,21 @@ static void batchedTipInternal(
                     double vleft_val = buffer_plh_base[tlh_left_off + state_left * block_int + s];
                     central_plh_base[dad_off + (size_t)p * block_int + s] = vleft_val * vright;
                 }
+            }
+        }
 
-                // Fused scaling check
+        // Kernel 2: Scale propagation + scaling check (collapse(2) — lightweight, per-pattern)
+        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        for (int op = 0; op < num_nodes; op++) {
+            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
+                size_t dad_off       = offsets[op * 8 + 0];
+                size_t dad_scl_off   = offsets[op * 8 + 1];
+                size_t right_scl_off = offsets[op * 8 + 3];
+
+                // Scale_num from right child only (left is a leaf, no scaling)
+                central_scl_base[dad_scl_off + p] = central_scl_base[right_scl_off + p];
+
+                // Scaling check
                 double lh_max = 0.0;
                 for (int s = 0; s < block_int; s++) {
                     double v = central_plh_base[dad_off + (size_t)p * block_int + s];
@@ -319,7 +336,19 @@ static void batchedTipInternal(
 // P2: Batched INTERNAL-INTERNAL kernel
 // Both children are internal nodes with partial likelihoods.
 // HOT PATH — two matrix-vector products + Hadamard product.
-// Fused computation + scaling in same kernel.
+//
+// O4+O5 optimization: Split into two kernels:
+//   Kernel 1 (collapse(3) over op,p,s): Compute partial likelihoods.
+//     - Each thread computes ONE output element dad_plh[p*block+s].
+//     - Consecutive threads (consecutive s) write to consecutive memory → coalesced.
+//     - All threads with same (op,p) read same child partial_lh values → broadcast.
+//     - Only 2 FP64 accumulators per thread → ~20-25 registers → high occupancy.
+//   Kernel 2 (collapse(2) over op,p): Scale propagation + scaling check.
+//     - Per-pattern: propagate child scale counts, check for underflow.
+//     - Lightweight (no dot products), so old coalescing pattern is acceptable.
+//
+// Before O4+O5: collapse(2) over (op,p), sequential for(s) → 73% memory waste,
+//               132 registers, 18.75% occupancy, scheduler idle 84%.
 // ==========================================================================
 static void batchedInternalInternal(
     size_t *offsets, int num_nodes,
@@ -341,29 +370,26 @@ static void batchedInternalInternal(
                 buffer_plh_base[0:buffer_size], \
                 local_tip_plh[0:tip_unknown_size])
     {
-        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
+        // Each thread computes ONE output value: dad_plh[p*block+s] = vleft * vright
+        // where vleft = dot(P_left[s,:], left_plh[p,:]), vright = dot(P_right[s,:], right_plh[p,:])
+        #pragma acc parallel loop gang vector collapse(3) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
-                size_t dad_off       = offsets[op * 8 + 0];
-                size_t dad_scl_off   = offsets[op * 8 + 1];
-                size_t left_plh_off  = offsets[op * 8 + 2];
-                size_t right_plh_off = offsets[op * 8 + 3];
-                size_t left_scl_off  = offsets[op * 8 + 4];
-                size_t right_scl_off = offsets[op * 8 + 5];
-                size_t eleft_off     = offsets[op * 8 + 6];
-                size_t eright_off    = offsets[op * 8 + 7];
-
-                // Propagate scale counts from both children
-                central_scl_base[dad_scl_off + p] =
-                    central_scl_base[left_scl_off + p] + central_scl_base[right_scl_off + p];
-
-                // Two matrix-vector products + Hadamard
                 for (int s = 0; s < block_int; s++) {
+                    size_t dad_off       = offsets[op * 8 + 0];
+                    size_t left_plh_off  = offsets[op * 8 + 2];
+                    size_t right_plh_off = offsets[op * 8 + 3];
+                    size_t eleft_off     = offsets[op * 8 + 6];
+                    size_t eright_off    = offsets[op * 8 + 7];
+
                     int cat = s / nstates_int;
                     int state = s % nstates_int;
                     int emat_base = cat * nstatesqr_int + state * nstates_int;
                     int plh_base = p * block_int + cat * nstates_int;
+
                     double vleft = 0.0, vright = 0.0;
+                    #pragma acc loop seq
                     for (int k = 0; k < nstates_int; k++) {
                         vleft  += buffer_plh_base[eleft_off + emat_base + k]
                                 * central_plh_base[left_plh_off + plh_base + k];
@@ -372,8 +398,23 @@ static void batchedInternalInternal(
                     }
                     central_plh_base[dad_off + (size_t)p * block_int + s] = vleft * vright;
                 }
+            }
+        }
 
-                // Fused scaling check
+        // Kernel 2: Scale propagation + scaling check (collapse(2) — lightweight, per-pattern)
+        #pragma acc parallel loop gang vector collapse(2) vector_length(128)
+        for (int op = 0; op < num_nodes; op++) {
+            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
+                size_t dad_off       = offsets[op * 8 + 0];
+                size_t dad_scl_off   = offsets[op * 8 + 1];
+                size_t left_scl_off  = offsets[op * 8 + 4];
+                size_t right_scl_off = offsets[op * 8 + 5];
+
+                // Propagate scale counts from both children
+                central_scl_base[dad_scl_off + p] =
+                    central_scl_base[left_scl_off + p] + central_scl_base[right_scl_off + p];
+
+                // Scaling check
                 double lh_max = 0.0;
                 for (int s = 0; s < block_int; s++) {
                     double v = central_plh_base[dad_off + (size_t)p * block_int + s];
