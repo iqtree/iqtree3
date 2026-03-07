@@ -126,6 +126,7 @@ set (iqtree_VERSION_PATCH ".1")
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 option(USE_CUDA "Enable CUDA support" OFF)
 option(USE_OPENACC "Enable OpenACC support" OFF)
+option(USE_OPENACC_PROFILE "Enable profiling instrumentation in OpenACC kernels" OFF)
 
 if (CMAKE_C_COMPILER MATCHES "mpic")
     set(IQTREE_FLAGS "${IQTREE_FLAGS} mpi")
@@ -518,7 +519,19 @@ if (USE_OPENACC STREQUAL "ON")
     message("OpenACC       : NONE")
 endif()
 
-
+if (USE_OPENACC_PROFILE STREQUAL "ON")
+    if (NOT USE_OPENACC STREQUAL "ON")
+        message(FATAL_ERROR "USE_OPENACC_PROFILE requires USE_OPENACC=ON")
+    endif()
+    add_definitions(-DUSE_OPENACC_PROFILE)
+    # Replace -O3 -fast with -O2 -g for debuggable profiling builds
+    string(REPLACE "-O3" "-O2" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REPLACE "-fast" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+    message("OpenACC Prof  : Yes (-O2 -g, debug symbols enabled)")
+else()
+    message("OpenACC Prof  : No")
+endif()
 
 # enable link time optimization
 if (IQTREE_FLAGS MATCHES "lto")

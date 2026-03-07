@@ -18,6 +18,9 @@
 #include "vectorclass/vectorf64.h" // Vec1d (pure C++ scalar wrapper, no x86 intrinsics)
 #include "model/modelsubst.h"    // computeTransMatrixEqualRate(), ModelSubst
 #include "utils/tools.h"         // Params (for kernel_nonrev flag)
+#ifdef USE_OPENACC_PROFILE
+#include "utils/timeutil.h"      // getRealTime() for profiling
+#endif
 
 #include <cmath>
 #include <iostream>
@@ -27,6 +30,82 @@
 #include <openacc.h>            // Step 12: acc_is_present (future dynamic checks)
 
 using namespace std;
+
+#ifdef USE_OPENACC_PROFILE
+// ==========================================================================
+// Profiling instrumentation — accumulates timing across all calls.
+// Compile with: cmake -DUSE_OPENACC=ON -DUSE_OPENACC_PROFILE=ON ..
+// Runtime:      IQTREE_OPENACC_PROFILE=1 to activate timing
+// Interval:     IQTREE_OPENACC_PROFILE_INTERVAL (default: 10 calls)
+// ==========================================================================
+static struct OpenACCProfile {
+    bool enabled = false;
+    bool initialized = false;
+    int  call_count = 0;
+
+    // Phase accumulators (seconds)
+    double t_traversal_info = 0.0;
+    double t_buffer_upload = 0.0;
+    double t_persistent_upload = 0.0;
+    double t_trans_mat_setup = 0.0;
+    double t_offset_build = 0.0;
+    double t_kernel_tip_tip = 0.0;
+    double t_kernel_tip_int = 0.0;
+    double t_kernel_int_int = 0.0;
+    double t_reduction = 0.0;
+    double t_d2h_pattern_lh = 0.0;
+    double t_buffer_delete = 0.0;
+    double t_host_postproc = 0.0;
+    double t_total = 0.0;
+
+    // Kernel launch counts
+    int n_kernel_tip_tip = 0;
+    int n_kernel_tip_int = 0;
+    int n_kernel_int_int = 0;
+    int n_reduction = 0;
+    int total_levels = 0;
+    int total_nodes_tip_tip = 0;
+    int total_nodes_tip_int = 0;
+    int total_nodes_int_int = 0;
+
+    void print_summary() {
+        if (call_count == 0 || t_total == 0.0) return;
+        double t_kernels = t_kernel_tip_tip + t_kernel_tip_int + t_kernel_int_int;
+        double t_accounted = t_traversal_info + t_buffer_upload +
+            t_persistent_upload + t_trans_mat_setup + t_offset_build +
+            t_kernels + t_reduction + t_d2h_pattern_lh + t_buffer_delete +
+            t_host_postproc;
+        double t_other = t_total - t_accounted;
+        auto pct = [&](double t) { return 100.0 * t / t_total; };
+
+        cout << "\n===== OpenACC Profiling Summary (" << call_count << " calls) =====" << endl;
+        cout << fixed;
+        cout << "  Total wall time:      " << t_total << " s" << endl;
+        cout << "  ---" << endl;
+        cout << "  computeTraversalInfo: " << t_traversal_info << " s (" << pct(t_traversal_info) << "%)" << endl;
+        cout << "  buffer_plh upload:    " << t_buffer_upload << " s (" << pct(t_buffer_upload) << "%)" << endl;
+        cout << "  persistent upload:    " << t_persistent_upload << " s (" << pct(t_persistent_upload) << "%)" << endl;
+        cout << "  trans_mat setup:      " << t_trans_mat_setup << " s (" << pct(t_trans_mat_setup) << "%)" << endl;
+        cout << "  offset build:         " << t_offset_build << " s (" << pct(t_offset_build) << "%)" << endl;
+        cout << "  --- GPU Kernels ---" << endl;
+        cout << "  TIP-TIP kernels:      " << t_kernel_tip_tip << " s (" << pct(t_kernel_tip_tip) << "%) ["
+             << n_kernel_tip_tip << " launches, " << total_nodes_tip_tip << " nodes]" << endl;
+        cout << "  TIP-INT kernels:      " << t_kernel_tip_int << " s (" << pct(t_kernel_tip_int) << "%) ["
+             << n_kernel_tip_int << " launches, " << total_nodes_tip_int << " nodes]" << endl;
+        cout << "  INT-INT kernels:      " << t_kernel_int_int << " s (" << pct(t_kernel_int_int) << "%) ["
+             << n_kernel_int_int << " launches, " << total_nodes_int_int << " nodes]" << endl;
+        cout << "  Reduction kernel:     " << t_reduction << " s (" << pct(t_reduction) << "%) ["
+             << n_reduction << " launches]" << endl;
+        cout << "  ---" << endl;
+        cout << "  D->H pattern_lh:      " << t_d2h_pattern_lh << " s (" << pct(t_d2h_pattern_lh) << "%)" << endl;
+        cout << "  buffer_plh delete:    " << t_buffer_delete << " s (" << pct(t_buffer_delete) << "%)" << endl;
+        cout << "  Host post-proc:       " << t_host_postproc << " s (" << pct(t_host_postproc) << "%)" << endl;
+        cout << "  Unaccounted:          " << t_other << " s (" << pct(t_other) << "%)" << endl;
+        cout << "  Avg levels/call:      " << (double)total_levels / call_count << endl;
+        cout << "=============================================" << endl;
+    }
+} acc_profile;
+#endif // USE_OPENACC_PROFILE
 
 // ==========================================================================
 // P2: Level-based node batching — helper structures and batched kernels
@@ -787,6 +866,23 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         openacc_kernel_printed = true;
     }
 
+#ifdef USE_OPENACC_PROFILE
+    // Profiling: initialize from env var on first call, start total timer
+    double prof_t0 = 0.0, prof_t1 = 0.0;
+    if (!acc_profile.initialized) {
+        const char *env = getenv("IQTREE_OPENACC_PROFILE");
+        acc_profile.enabled = (env && env[0] != '0');
+        acc_profile.initialized = true;
+        if (acc_profile.enabled)
+            cout << "OpenACC: Profiling ENABLED (IQTREE_OPENACC_PROFILE=1)" << endl;
+    }
+    bool profiling = acc_profile.enabled;
+    if (profiling) {
+        prof_t0 = getRealTime();
+        acc_profile.call_count++;
+    }
+#endif
+
     ASSERT(rooted);
 
     PhyloNode *node = (PhyloNode*) dad_branch->node;
@@ -803,15 +899,30 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     }
 
     // Build traversal order and precompute P(t) / tip lookup tables.
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) prof_t1 = getRealTime();
+#endif
     Params::getInstance().kernel_nonrev = true;
     computeTraversalInfo<Vec1d>(node, dad, false);
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) acc_profile.t_traversal_info += getRealTime() - prof_t1;
+#endif
 
     // P2: Batch upload buffer_partial_lh — contains all per-node P(t) matrices
     // and tip lookup tables, already filled by computeTraversalInfo().
     // One upload replaces ~98 per-node copyin calls.
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) prof_t1 = getRealTime();
+#endif
     gpu_buffer_plh_size = getBufferPartialLhSize();
     double *local_buffer_plh = buffer_partial_lh;
     #pragma acc enter data copyin(local_buffer_plh[0:gpu_buffer_plh_size])
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) {
+        #pragma acc wait
+        acc_profile.t_buffer_upload += getRealTime() - prof_t1;
+    }
+#endif
 
     double tree_lh = 0.0;
     size_t nstates = aln->num_states;
@@ -827,6 +938,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     vector<size_t> limits;
     computeBounds<Vec1d>(num_threads, num_packets, nptn, limits);
 
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) prof_t1 = getRealTime();
+#endif
     double *trans_mat = new double[block*nstates];
     for (c = 0; c < ncat; c++) {
         double len = site_rate->getRate(c)*dad_branch->length;
@@ -860,6 +974,14 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     double *local_pattern_lh_cat = _pattern_lh_cat;
 
     if (!gpu_data_resident) {
+#ifdef USE_OPENACC_PROFILE
+        // Profiling: end trans_mat segment 1 (trans_mat computation + local captures)
+        // before timing the persistent upload separately
+        if (profiling) {
+            acc_profile.t_trans_mat_setup += getRealTime() - prof_t1;
+            prof_t1 = getRealTime();
+        }
+#endif
         size_t nptn_safe = get_safe_upper_limit(aln->size())
             + max(get_safe_upper_limit(nstates),
                   get_safe_upper_limit(model_factory->unobserved_ptns.size()));
@@ -918,6 +1040,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                  << (total_lh_entries * sizeof(double) + total_scale_entries * sizeof(UBYTE)
                      + tip_states_total * sizeof(int)) / (1024*1024)
                  << " MB)" << endl;
+#ifdef USE_OPENACC_PROFILE
+        if (profiling) {
+            #pragma acc wait
+            acc_profile.t_persistent_upload += getRealTime() - prof_t1;
+            prof_t1 = getRealTime(); // restart for trans_mat segment 2
+        }
+#endif
     }
 
     double prob_const = 0.0;
@@ -952,6 +1081,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 }
             }
         }
+#ifdef USE_OPENACC_PROFILE
+        if (profiling) acc_profile.t_trans_mat_setup += getRealTime() - prof_t1;
+#endif
 
         // now do the real computation
         for (int packet_id = 0; packet_id < num_packets; packet_id++) {
@@ -977,8 +1109,14 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                         computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
                 } else {
 
+#ifdef USE_OPENACC_PROFILE
+                if (profiling) prof_t1 = getRealTime();
+#endif
                 int max_level = 0;
                 vector<LevelBatch> level_batches = groupByLevelAndType(traversal_info, max_level);
+#ifdef USE_OPENACC_PROFILE
+                if (profiling) acc_profile.total_levels += max_level + 1;
+#endif
 
                 // Precompute values needed by all batched kernels
                 int ptn_lower_int = (int)ptn_lower;
@@ -1028,12 +1166,28 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*6 + 4] = (size_t)left_b->node->id;
                             offsets[bi*6 + 5] = (size_t)right_b->node->id;
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedTipTip(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
                             gpu_total_lh_entries, gpu_total_scale_entries,
                             gpu_buffer_plh_size, gpu_tip_states_size,
                             ptn_lower_int, ptn_upper_int, block_int_b, nptn_stride);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_tip_tip += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_tip_tip++;
+                            acc_profile.total_nodes_tip_tip += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
 
@@ -1070,6 +1224,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*8 + 6] = (size_t)left_b->node->id;
                             offsets[bi*8 + 7] = 0; // padding
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedTipInternal(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
@@ -1080,6 +1241,15 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             ptn_lower_int, ptn_upper_int,
                             block_int_b, nstates_int_b, nstatesqr_int_b,
                             nptn_stride, state_unknown_b);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_tip_int += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_tip_int++;
+                            acc_profile.total_nodes_tip_int += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
 
@@ -1109,6 +1279,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*8 + 6] = (size_t)(eleft_b - buffer_partial_lh);
                             offsets[bi*8 + 7] = (size_t)(eright_b - buffer_partial_lh);
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedInternalInternal(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh,
@@ -1119,9 +1296,22 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             ptn_lower_int, ptn_upper_int,
                             block_int_b, nstates_int_b, nstatesqr_int_b,
                             state_unknown_b);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_int_int += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_int_int++;
+                            acc_profile.total_nodes_int_int += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
                 } // for lev
+#ifdef USE_OPENACC_PROFILE
+                // Profiling: end offset_build for remaining CPU work after last kernel
+                if (profiling) acc_profile.t_offset_build += getRealTime() - prof_t1;
+#endif
 
                 } // end else (bifurcating batched path)
             } // end P2 batched computation
@@ -1143,6 +1333,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             // TIP-INTERNAL case: dad is a leaf, node is internal.
             // partial_lh_node[state*block+s] is precomputed (trans_mat × tip_lh).
             // Reduction: gang over patterns, reduction(+:) for total lnL.
+#ifdef USE_OPENACC_PROFILE
+            if (profiling) prof_t1 = getRealTime();
+#endif
             {
                 size_t plh_node_size = (aln->STATE_UNKNOWN + 1) * block;
                 size_t plh_offset = ptn_lower * block;
@@ -1197,11 +1390,22 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                     } // FOR p
                 } // end acc data
             }
+#ifdef USE_OPENACC_PROFILE
+            if (profiling) {
+                #pragma acc wait
+                acc_profile.t_reduction += getRealTime() - prof_t1;
+                acc_profile.n_reduction++;
+            }
+#endif
 
             delete [] states_dad;
         } // FOR packet_id
         delete [] partial_lh_node;
     } else {
+#ifdef USE_OPENACC_PROFILE
+        // Profiling: end trans_mat segment 2 (Path B: no partial_lh_node precomp)
+        if (profiling) acc_profile.t_trans_mat_setup += getRealTime() - prof_t1;
+#endif
 
         // both dad and node are internal nodes
         // A1: Extract raw pointers (__restrict__ for no-alias optimization)
@@ -1228,8 +1432,14 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                         computePartialLikelihood(*it, ptn_lower, ptn_upper, packet_id);
                 } else {
 
+#ifdef USE_OPENACC_PROFILE
+                if (profiling) prof_t1 = getRealTime();
+#endif
                 int max_level = 0;
                 vector<LevelBatch> level_batches = groupByLevelAndType(traversal_info, max_level);
+#ifdef USE_OPENACC_PROFILE
+                if (profiling) acc_profile.total_levels += max_level + 1;
+#endif
 
                 int ptn_lower_int = (int)ptn_lower;
                 int ptn_upper_int = (int)ptn_upper;
@@ -1275,12 +1485,28 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*6 + 4] = (size_t)left_b->node->id;
                             offsets[bi*6 + 5] = (size_t)right_b->node->id;
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedTipTip(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
                             gpu_total_lh_entries, gpu_total_scale_entries,
                             gpu_buffer_plh_size, gpu_tip_states_size,
                             ptn_lower_int, ptn_upper_int, block_int_b, nptn_stride);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_tip_tip += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_tip_tip++;
+                            acc_profile.total_nodes_tip_tip += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
                     if (!level_batches[lev].tip_internal.empty()) {
@@ -1312,6 +1538,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*8 + 6] = (size_t)left_b->node->id;
                             offsets[bi*8 + 7] = 0;
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedTipInternal(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
@@ -1322,6 +1555,15 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             ptn_lower_int, ptn_upper_int,
                             block_int_b, nstates_int_b, nstatesqr_int_b,
                             nptn_stride, state_unknown_b);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_tip_int += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_tip_int++;
+                            acc_profile.total_nodes_tip_int += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
                     if (!level_batches[lev].internal_internal.empty()) {
@@ -1348,6 +1590,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             offsets[bi*8 + 6] = (size_t)(eleft_b - buffer_partial_lh);
                             offsets[bi*8 + 7] = (size_t)(eright_b - buffer_partial_lh);
                         }
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            acc_profile.t_offset_build += getRealTime() - prof_t1;
+                            #pragma acc wait
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         batchedInternalInternal(offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh,
@@ -1358,9 +1607,22 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             ptn_lower_int, ptn_upper_int,
                             block_int_b, nstates_int_b, nstatesqr_int_b,
                             state_unknown_b);
+#ifdef USE_OPENACC_PROFILE
+                        if (profiling) {
+                            #pragma acc wait
+                            acc_profile.t_kernel_int_int += getRealTime() - prof_t1;
+                            acc_profile.n_kernel_int_int++;
+                            acc_profile.total_nodes_int_int += num_nodes;
+                            prof_t1 = getRealTime();
+                        }
+#endif
                         delete[] offsets;
                     }
                 } // for lev
+#ifdef USE_OPENACC_PROFILE
+                // Profiling: end offset_build for remaining CPU work after last kernel
+                if (profiling) acc_profile.t_offset_build += getRealTime() - prof_t1;
+#endif
 
                 } // end else (bifurcating batched path)
             } // end P2 batched computation
@@ -1370,6 +1632,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             // For each pattern: compute trans_mat × node_partial_lh, dot with
             // dad_partial_lh, take log + scaling correction, accumulate weighted sum.
             // Matches PoC: gang over patterns, reduction(+:logLikelihood).
+#ifdef USE_OPENACC_PROFILE
+            if (profiling) prof_t1 = getRealTime();
+#endif
             {
                 size_t trans_mat_size = block * nstates;
                 size_t plh_offset = ptn_lower * block;
@@ -1426,6 +1691,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                     } // FOR p
                 } // end acc data
             }
+#ifdef USE_OPENACC_PROFILE
+            if (profiling) {
+                #pragma acc wait
+                acc_profile.t_reduction += getRealTime() - prof_t1;
+                acc_profile.n_reduction++;
+            }
+#endif
         } // FOR packet_id
     }
 
@@ -1434,8 +1706,18 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     // IQ-TREE callers). All other GPU data stays resident — no download of
     // central_partial_lh or central_scale_num needed since they remain
     // present() for subsequent calls.
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) prof_t1 = getRealTime();
+#endif
     #pragma acc update self(local_pattern_lh[0:nptn])
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) {
+        #pragma acc wait
+        acc_profile.t_d2h_pattern_lh += getRealTime() - prof_t1;
+    }
 
+    if (profiling) prof_t1 = getRealTime();
+#endif
     if (std::isnan(tree_lh) || std::isinf(tree_lh)) {
         cout << "WARNING: Numerical underflow caused by alignment sites";
         i = aln->getNSite();
@@ -1477,9 +1759,34 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     }
 
     ASSERT(!std::isnan(tree_lh) && !std::isinf(tree_lh));
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) acc_profile.t_host_postproc += getRealTime() - prof_t1;
+#endif
 
     // P2: Release buffer_partial_lh from GPU
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) prof_t1 = getRealTime();
+#endif
     #pragma acc exit data delete(local_buffer_plh[0:gpu_buffer_plh_size])
+#ifdef USE_OPENACC_PROFILE
+    if (profiling) {
+        #pragma acc wait
+        acc_profile.t_buffer_delete += getRealTime() - prof_t1;
+    }
+#endif
+
+#ifdef USE_OPENACC_PROFILE
+    // Profiling: accumulate total time and print summary at configured interval
+    if (profiling) {
+        acc_profile.t_total += getRealTime() - prof_t0;
+        const char *interval_env = getenv("IQTREE_OPENACC_PROFILE_INTERVAL");
+        int interval = interval_env ? atoi(interval_env) : 10;
+        if (interval <= 0) interval = 10;
+        if (acc_profile.call_count % interval == 0) {
+            acc_profile.print_summary();
+        }
+    }
+#endif
 
     delete [] trans_mat;
     return tree_lh;
