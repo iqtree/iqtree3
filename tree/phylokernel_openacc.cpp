@@ -1070,39 +1070,101 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         gpu_pattern_lh_cat_ptr = local_pattern_lh_cat;
         gpu_data_resident = true;
 
-        // P2: Build and upload tip_states_flat — alignment state for each leaf × pattern
+        // P2: Build tip_states_flat — alignment state for each leaf × pattern
         // Used by batched kernels to avoid per-node states_left/states_right copyin.
+        // O7: Flatten alignment on CPU (pattern-major, 1M pointer chases vs 50M),
+        // upload flat array to GPU, transpose to leaf-major via GPU kernel.
+        // Original sequential (nid, p) loop took ~1,456ms (79-93% of eval time).
         tip_states_flat = new int[(size_t)leafNum * nptn];
-        for (int nid = 0; nid < (int)leafNum; nid++) {
-            int *row = &tip_states_flat[(size_t)nid * nptn];
-            if (nid == root->id) {
-                // Root node always gets state 0 (rooted tree convention)
-                memset(row, 0, nptn * sizeof(int));
-            } else {
-                for (size_t p = 0; p < orig_nptn; p++)
-                    row[p] = (aln->at(p))[nid];
-                for (size_t p = orig_nptn; p < nptn; p++)
-                    row[p] = model_factory->unobserved_ptns[p - orig_nptn][nid];
-            }
+        int root_id = root->id;
+        int local_leafNum = (int)leafNum;
+        size_t local_nptn = nptn;
+        size_t local_orig_nptn = orig_nptn;
+
+        // Step 1: Flatten alignment into contiguous pattern-major array on CPU.
+        // Each pattern vector is accessed once (1M pointer chases, not 50M).
+        size_t aln_flat_size = (size_t)orig_nptn * leafNum;
+        int *aln_flat = new int[aln_flat_size];
+        for (size_t p = 0; p < orig_nptn; p++) {
+            const auto &pattern = aln->at(p);
+            int *dst = &aln_flat[p * leafNum];
+            for (int nid = 0; nid < local_leafNum; nid++)
+                dst[nid] = pattern[nid];
         }
+
+        // Step 2: Allocate tip_states_flat on GPU (create = no upload needed)
         int *local_tip_states = tip_states_flat;
         size_t tip_states_total = (size_t)leafNum * nptn;
-        #pragma acc enter data copyin(local_tip_states[0:tip_states_total])
+        #pragma acc enter data create(local_tip_states[0:tip_states_total])
+
+        // Step 3: Upload flat alignment, transpose on GPU, then free flat array
+        #pragma acc enter data copyin(aln_flat[0:aln_flat_size])
+
+        #pragma acc parallel loop collapse(2) gang vector \
+            present(local_tip_states, aln_flat)
+        for (int nid = 0; nid < local_leafNum; nid++) {
+            for (size_t p = 0; p < local_orig_nptn; p++) {
+                if (nid == root_id)
+                    local_tip_states[(size_t)nid * local_nptn + p] = 0;
+                else
+                    local_tip_states[(size_t)nid * local_nptn + p] =
+                        aln_flat[p * local_leafNum + nid];
+            }
+        }
+
+        #pragma acc exit data delete(aln_flat[0:aln_flat_size])
+        delete[] aln_flat;
+
+        // Handle unobserved patterns (usually very few, e.g. <100)
+        size_t num_unobs = nptn - orig_nptn;
+        if (num_unobs > 0) {
+            size_t unobs_flat_size = num_unobs * leafNum;
+            int *unobs_flat = new int[unobs_flat_size];
+            for (size_t p = 0; p < num_unobs; p++) {
+                const auto &unobs = model_factory->unobserved_ptns[p];
+                int *dst = &unobs_flat[p * leafNum];
+                for (int nid = 0; nid < local_leafNum; nid++)
+                    dst[nid] = unobs[nid];
+            }
+
+            #pragma acc enter data copyin(unobs_flat[0:unobs_flat_size])
+
+            #pragma acc parallel loop collapse(2) gang vector \
+                present(local_tip_states, unobs_flat)
+            for (int nid = 0; nid < local_leafNum; nid++) {
+                for (size_t p = 0; p < num_unobs; p++) {
+                    size_t dst_p = local_orig_nptn + p;
+                    if (nid == root_id)
+                        local_tip_states[(size_t)nid * local_nptn + dst_p] = 0;
+                    else
+                        local_tip_states[(size_t)nid * local_nptn + dst_p] =
+                            unobs_flat[p * local_leafNum + nid];
+                }
+            }
+
+            #pragma acc exit data delete(unobs_flat[0:unobs_flat_size])
+            delete[] unobs_flat;
+        }
+
+        // Zero out padding beyond nptn for root row (root gets state 0 everywhere)
+        // Already handled: both kernels above set root row to 0 for all pattern positions.
+
         gpu_tip_states_ptr = local_tip_states;
         gpu_tip_states_size = tip_states_total;
 
         if (verbose_mode >= VB_MED) {
             size_t uploaded_bytes = tip_alloc_size * sizeof(double)
-                + nptn * sizeof(double) * 2  // ptn_freq + ptn_invar
-                + tip_states_total * sizeof(int);
+                + nptn * sizeof(double) * 2;  // ptn_freq + ptn_invar
             size_t allocated_bytes = total_lh_entries * sizeof(double)
-                + total_scale_entries * sizeof(UBYTE);
+                + total_scale_entries * sizeof(UBYTE)
+                + tip_states_total * sizeof(int);  // tip_states built on GPU
+            size_t aln_upload = aln_flat_size * sizeof(int);
             cout << "OpenACC: GPU persistent data — allocated "
-                 << allocated_bytes / (1024*1024) << " MB (create, no upload), "
-                 << "uploaded " << uploaded_bytes / (1024*1024) << " MB "
-                 << "(tip_partial_lh=" << tip_alloc_size * sizeof(double) << " B, "
-                 << "ptn_freq/invar=" << nptn * sizeof(double) * 2 / (1024*1024) << " MB, "
-                 << "tip_states=" << tip_states_total * sizeof(int) / (1024*1024) << " MB)"
+                 << allocated_bytes / (1024*1024) << " MB (create), "
+                 << "uploaded " << uploaded_bytes / (1024*1024) << " MB, "
+                 << "tip_states built on GPU via transpose kernel "
+                 << "(" << tip_states_total * sizeof(int) / (1024*1024) << " MB, "
+                 << "from " << aln_upload / (1024*1024) << " MB flat upload)"
                  << endl;
         }
 #ifdef USE_OPENACC_PROFILE
