@@ -5961,19 +5961,6 @@ void PhyloTree::convertToUnrooted() {
     // keep rooted tree if running AliSim without inference mode
     if (Params::getInstance().alisim_active && !Params::getInstance().alisim_inference_mode)
         return;
-#ifdef USE_OPENACC
-    // OpenACC GPU kernels require a rooted tree.
-    // The kernels use (node == root) to identify the virtual root leaf and
-    // handle state frequencies at the root.  If the tree is converted to
-    // unrooted, root becomes a regular taxon and those checks break:
-    //   1. All patterns for the root taxon get state=0 (ignoring alignment)
-    //   2. The state_freq multiplication for unrooted trees is missing
-    // Keep the tree rooted — the non-rev state-space kernel handles rooted
-    // trees correctly via isRootLeaf() / (dad == root) checks.
-    if (verbose_mode >= VB_MED)
-        cout << "Keeping rooted tree for OpenACC GPU kernels" << endl;
-    return;
-#endif
     forceConvertingToUnrooted();
 }
     
