@@ -124,6 +124,9 @@ set (iqtree_VERSION_MINOR 0)
 set (iqtree_VERSION_PATCH ".1")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
+option(USE_CUDA "Enable CUDA support" OFF)
+option(USE_OPENACC "Enable OpenACC support" OFF)
+option(USE_OPENACC_PROFILE "Enable profiling instrumentation in OpenACC kernels" OFF)
 
 if (CMAKE_C_COMPILER MATCHES "mpic")
     set(IQTREE_FLAGS "${IQTREE_FLAGS} mpi")
@@ -449,9 +452,85 @@ if (MSVC)
 endif()
 
 if (NVHPC)
+
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -noswitcherror")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -cuda") # to disable AVX512 intrinsics
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -cuda") # to disable AVX512 intrinsics
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Minfo=accel")
+endif()
+if (USE_CUDA)
+    message("CUDA : Yes")
+    enable_language(CUDA)
+    add_definitions(-DUSE_CUDA)
+    set(CMAKE_CUDA_STANDARD 14)
+
+    # Set CUDA architectures if not already specified
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+    endif()
+
+    # Manual CUDA runtime detection — avoids FindCUDAToolkit's Threads dependency
+    # enable_language(CUDA) already found nvcc and set CMAKE_CUDA_* variables.
+    find_library(CUDART_LIBRARY cudart
+        HINTS ${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}
+              ENV CUDA_HOME
+              ENV CUDA_PATH
+              ENV CUDAToolkit_ROOT
+        PATH_SUFFIXES lib64 lib lib/x86_64-linux-gnu)
+    if (CUDART_LIBRARY)
+        message(STATUS "Found cudart: ${CUDART_LIBRARY}")
+    else()
+        message(FATAL_ERROR "Could not find cudart library. Set CUDA_HOME or pass -DCMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES=<cuda>/lib64")
+    endif()
+
+    if (NVHPC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_CUDA")
+    endif()
+
+    if (CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
+        include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    endif()
+    if (CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES)
+        link_directories(${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES})
+    endif()
+else ()
+    message("CUDA : No")
+endif()
+
+if (USE_OPENACC STREQUAL "ON")
+    message("OpenACC       : Yes")
+    add_definitions(-DUSE_OPENACC)
+    if (GCC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenacc -O3")
+    elseif (NVHPC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -acc -O3 -fast -Minfo=accel")
+        # Target specific GPU architecture for optimal code generation.
+        # -gpu=ccXX generates arch-specific instructions instead of generic PTX.
+        # Examples: cc70 (V100), cc80 (A100), cc89 (RTX 4090), cc90 (H100)
+        # Multiple targets: -DGPU_ARCH="cc70,cc80,cc90"
+        if (DEFINED GPU_ARCH)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gpu=${GPU_ARCH}")
+            message("OpenACC GPU   : ${GPU_ARCH}")
+        else()
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gpu=cc70,cc80,cc90")
+            message("OpenACC GPU   : cc70,cc80,cc90 (default)")
+        endif()
+    endif()
+    else()
+    message("OpenACC       : NONE")
+endif()
+
+if (USE_OPENACC_PROFILE STREQUAL "ON")
+    if (NOT USE_OPENACC STREQUAL "ON")
+        message(FATAL_ERROR "USE_OPENACC_PROFILE requires USE_OPENACC=ON")
+    endif()
+    add_definitions(-DUSE_OPENACC_PROFILE)
+    # Replace -O3 -fast with -O2 -g for debuggable profiling builds
+    string(REPLACE "-O3" "-O2" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REPLACE "-fast" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+    message("OpenACC Prof  : Yes (-O2 -g, debug symbols enabled)")
+else()
+    message("OpenACC Prof  : No")
 endif()
 
 # enable link time optimization
@@ -1006,6 +1085,11 @@ endif()
 # basic linking librararies
 target_link_libraries(iqtree3 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
     gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
+
+# CUDA libraries
+if (USE_CUDA)
+    target_link_libraries(iqtree3 ${CUDART_LIBRARY})
+endif()
 
 LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/pll/libpll.a" "${PROJECT_BINARY_DIR}/ncl/libncl.a" "${PROJECT_BINARY_DIR}/nclextra/libnclextra.a" "${PROJECT_BINARY_DIR}/utils/libutils.a" "${PROJECT_BINARY_DIR}/pda/libpda.a" "${PROJECT_BINARY_DIR}/lbfgsb/liblbfgsb.a" "${PROJECT_BINARY_DIR}/whtest/libwhtest.a" "${PROJECT_BINARY_DIR}/sprng/libsprng.a" "${PROJECT_BINARY_DIR}/vectorclass/libvectorclass.a" "${PROJECT_BINARY_DIR}/model/libmodel.a" "${PROJECT_BINARY_DIR}/gsl/libgsl.a" "${PROJECT_BINARY_DIR}/alignment/libalignment.a" "${PROJECT_BINARY_DIR}/tree/libtree.a" "${PROJECT_BINARY_DIR}/simulator/libsimulator.a" "${PROJECT_BINARY_DIR}/terrace/libterrace.a" "${PROJECT_BINARY_DIR}/yaml-cpp/libyaml-cpp.a" "${PROJECT_BINARY_DIR}/phylo-yaml/libphyloYAML.a" "${PROJECT_BINARY_DIR}/main/libmain.a")
 

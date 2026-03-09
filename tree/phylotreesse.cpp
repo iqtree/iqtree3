@@ -142,14 +142,29 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
 #endif
         return;
     }
+
+#ifdef USE_OPENACC
+    // OpenACC GPU-offloaded kernels.
+    // Always use state-space (non-eigenspace) kernels, matching the PoC prototype.
+    // Both reversible and non-reversible models use direct P(t) matrices.
+    // Data preparation is forced to non-rev mode inside the branch likelihood
+    // function (via temporary kernel_nonrev=true before computeTraversalInfo).
+    computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericOpenACC;
+    computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericOpenACC;
+    computeLikelihoodDervPointer = NULL;  // not needed for -blfix (fixed branch lengths)
+    computeLikelihoodDervMixlenPointer = NULL;
+    computeLikelihoodFromBufferPointer = NULL;
+    return;
+#endif
+
 //    if (model_factory && !model_factory->model->isReversible()) {
 //        // if nonreversible model
 //        computeLikelihoodBranchPointer = &PhyloTree::computeNonrevLikelihoodBranch;
 //        computeLikelihoodDervPointer = &PhyloTree::computeNonrevLikelihoodDerv;
 //        computePartialLikelihoodPointer = &PhyloTree::computeNonrevPartialLikelihood;
 //        computeLikelihoodFromBufferPointer = NULL;
-//        return;        
-//    }    
+//        return;
+//    }
 
     //--- SIMD kernel ---
     if (lk >= LK_SSE2) {
@@ -226,6 +241,12 @@ double PhyloTree::computeLikelihoodBranch(PhyloNeighbor *dad_branch, PhyloNode *
 }
 
 void PhyloTree::computeLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf) {
+#ifdef USE_OPENACC
+    if (computeLikelihoodDervPointer == NULL) {
+        outError("OpenACC kernels do not support likelihood derivatives.\n"
+                 "Please use -blfix for fixed branch lengths.");
+    }
+#endif
 	(this->*computeLikelihoodDervPointer)(dad_branch, dad, df, ddf);
 }
 

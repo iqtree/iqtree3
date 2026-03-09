@@ -60,4 +60,15 @@ phylokernelgpu.h
 phylotreegpu.cpp
 )
 
+# Conditionally add OpenACC source files
+if (USE_OPENACC)
+    target_sources(tree PRIVATE
+        phylokernel_openacc.h
+        phylokernel_openacc.cpp
+        phylokernel_openacc_test.h
+        phylokernel_openacc_test.cpp
+    )
+    message("tree library: OpenACC sources added")
+endif()
+
 target_link_libraries(tree pll model alignment)

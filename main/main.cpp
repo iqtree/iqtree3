@@ -57,6 +57,14 @@
 #include "tree/ncbitree.h"
 #include "pda/ecopd.h"
 #include "tree/upperbounds.h"
+
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
+#ifdef USE_OPENACC
+#include <openacc.h>
+#include "tree/phylokernel_openacc_test.h"
+#endif
 #include "terraceanalysis.h"
 #include "pda/ecopdmtreeset.h"
 #include "pda/gurobiwrapper.h"
@@ -2392,6 +2400,57 @@ int main(int argc, char *argv[]) {
 //    cout << (int)(((getMemorySize()/1000.0)/1000)/1000) << " GB RAM)" << endl;
 //#endif
 
+#ifdef USE_CUDA
+    {
+        int gpu_count = 0;
+        cudaError_t err = cudaGetDeviceCount(&gpu_count);
+        if (err != cudaSuccess || gpu_count == 0) {
+            cout << "GPU:     None detected (CUDA error: " << cudaGetErrorString(err) << ")" << endl;
+        } else {
+            int device_id = 0;
+            cudaGetDevice(&device_id);
+            cudaDeviceProp prop;
+            cudaGetDeviceProperties(&prop, device_id);
+            cout << "GPU:     " << prop.name
+                 << " (compute " << prop.major << "." << prop.minor
+                 << ", " << (prop.totalGlobalMem / (1024*1024)) << " MB"
+                 << ", " << prop.multiProcessorCount << " SMs)" << endl;
+        }
+    }
+#endif
+#ifdef USE_OPENACC
+    {
+        int acc_count = acc_get_num_devices(acc_device_nvidia);
+        if (acc_count == 0) {
+            cout << "GPU:     None detected (OpenACC)" << endl;
+        } else {
+            int device_id = 0;
+            acc_device_t device_type = acc_device_nvidia;
+            acc_set_device_type(device_type);
+            acc_set_device_num(device_id, device_type);
+            cout << "GPU:     Device " << device_id
+                 << " (OpenACC, " << acc_count << " device(s) available";
+#if _OPENACC >= 201711
+            // OpenACC 2.7+: use acc_get_property to query device name and memory
+            size_t gpu_mem = acc_get_property(device_id, device_type, acc_property_memory);
+            const char *dev_name = acc_get_property_string(device_id, device_type, acc_property_name);
+            if (dev_name && dev_name[0] != '\0')
+                cout << ", " << dev_name;
+            if (gpu_mem > 0)
+                cout << ", " << (gpu_mem / (1024*1024)) << " MB";
+#endif
+            cout << ")" << endl;
+        }
+    }
+    // OpenACC self-tests (Steps 2-7) — commented out after validation
+    // testJCTransMatrix();          // Step 2: JC P(t) matrix
+    // testTipOneHot();              // Step 3: Tip one-hot vectors
+    // testTipTipInternal();         // Step 4: TIP-TIP cherry node
+    // testTipInternalInternal();    // Step 5: TIP-INTERNAL + INTERNAL-INTERNAL
+    // testScaling();                // Step 6: Underflow scaling
+    // testLogLikelihoodRoot();      // Step 7: Log-likelihood at root
+#endif
+
     cout << "Command:";
     int i;
     for (i = 0; i < argc; i++)
@@ -2420,6 +2479,9 @@ int main(int argc, char *argv[]) {
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    cout << "GPU";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -2438,6 +2500,7 @@ int main(int argc, char *argv[]) {
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {
@@ -2451,11 +2514,13 @@ int main(int argc, char *argv[]) {
         cout << Params::getInstance().num_threads  << " threads";
     else
         cout << "auto-detect threads";
+#ifndef USE_OPENACC
     cout << " (" << max_procs << " CPU cores detected)";
     if (Params::getInstance().num_threads  > max_procs) {
         cout << endl;
         outError("You have specified more threads than CPU cores available");
     }
+#endif
     // omp_set_nested(false); // don't allow nested OpenMP parallelism
     omp_set_max_active_levels(1);
 #else
@@ -3574,6 +3639,9 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    cout << "OpenACC (GPU-offloaded)";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -3592,6 +3660,7 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {

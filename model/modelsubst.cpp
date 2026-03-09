@@ -60,15 +60,19 @@ void ModelSubst::restoreCheckpoint() {
 
 // here the simplest Juke-Cantor model is implemented, valid for all kind of data (DNA, AA,...)
 void ModelSubst::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
+#ifdef USE_OPENACC
+	computeTransMatrixEqualRate(time, num_states, trans_matrix);
+#else
 	double non_diagonal = (1.0 - exp(-time*num_states/(num_states - 1))) / num_states;
 	double diagonal = 1.0 - non_diagonal * (num_states - 1);
 	int nstates_sqr = num_states * num_states;
 
 	for (int i = 0; i < nstates_sqr; i++)
-		if (i % (num_states+1) == 0) 
-			trans_matrix[i] = diagonal; 
-		else 
+		if (i % (num_states+1) == 0)
+			trans_matrix[i] = diagonal;
+		else
 			trans_matrix[i] = non_diagonal;
+ #endif
 }
 
 

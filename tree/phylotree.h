@@ -930,6 +930,46 @@ public:
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
     void computeNonrevPartialLikelihoodSIMD(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
+#ifdef USE_OPENACC
+    /** OpenACC: scalar (plain C) partial likelihood kernel.
+        State-space computation with direct P(t) matrices — used for all models.
+        GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
+    void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
+
+    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models (UNUSED).
+        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
+        Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
+    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
+
+    /** Free all OpenACC device data (called before host buffers are freed). */
+    void freeOpenACCData();
+
+    // --- Persistent GPU data tracking ---
+    // When true, central_partial_lh/scale_num and read-only arrays are resident
+    // on the GPU device.  Data is uploaded once on first call to
+    // computeLikelihoodBranchGenericOpenACC and stays until freeOpenACCData().
+    bool gpu_data_resident = false;
+    // Saved sizes and pointers to match exit data delete with enter data copyin
+    size_t gpu_total_lh_entries = 0;
+    size_t gpu_total_scale_entries = 0;
+    size_t gpu_nptn = 0;
+    size_t gpu_nptn_ncat = 0;
+    double *gpu_central_plh_ptr = nullptr;
+    UBYTE  *gpu_central_scl_ptr = nullptr;
+    double *gpu_ptn_freq_ptr = nullptr;
+    double *gpu_ptn_invar_ptr = nullptr;
+    double *gpu_pattern_lh_ptr = nullptr;
+    double *gpu_pattern_lh_cat_ptr = nullptr;
+
+    // P2: Persistent tip state array for batched kernels
+    // tip_states_flat[node_id * nptn + pattern] = alignment state for leaf node
+    int *tip_states_flat = nullptr;
+    size_t gpu_tip_states_size = 0;
+    int *gpu_tip_states_ptr = nullptr;
+    // P2: Saved buffer_partial_lh size for batch upload/delete
+    size_t gpu_buffer_plh_size = 0;
+#endif
+
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
     void computePartialLikelihoodSIMD(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int thread_id);
 
@@ -982,6 +1022,18 @@ public:
     double computeNonrevLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
     template<class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
     double computeNonrevLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+#ifdef USE_OPENACC
+    /** OpenACC: scalar (plain C) branch likelihood kernel.
+        State-space computation with direct P(t) matrices — used for all models.
+        GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
+    double computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models (UNUSED).
+        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i].
+        Kept as dead code — dispatch always uses computeLikelihoodBranchGenericOpenACC. */
+    double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+#endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
     double computeLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);

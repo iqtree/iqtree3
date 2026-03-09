@@ -13,6 +13,7 @@
 #define SUBSTMODEL_H
 
 #include <string>
+#include <cmath>
 #include "utils/tools.h"
 #include "utils/optimization.h"
 #include "utils/checkpoint.h"
@@ -22,6 +23,39 @@ using namespace std;
 
 const char OPEN_BRACKET = '{';
 const char CLOSE_BRACKET = '}';
+
+#ifdef USE_OPENACC
+// ==========================================================================
+// Standalone JC/equal-rate transition matrix computation
+// Compatible with both CPU and OpenACC GPU
+//
+// This is the Jukes-Cantor formula extracted as a free function so that:
+//   - ModelSubst::computeTransMatrix() delegates to it (CPU path)
+//   - OpenACC kernels can call it directly on GPU (no virtual dispatch)
+//   - The math lives in exactly ONE place
+//
+// For DNA (num_states=4):
+//   P_ii(t) = 1/4 + 3/4 * exp(-4t/3)
+//   P_ij(t) = 1/4 - 1/4 * exp(-4t/3)
+// Generalized for any num_states:
+//   P_ii(t) = 1/n + (n-1)/n * exp(-nt/(n-1))
+//   P_ij(t) = 1/n - 1/n * exp(-nt/(n-1))
+// ==========================================================================
+
+#pragma acc routine seq
+inline void computeTransMatrixEqualRate(double time, int num_states, double *trans_matrix) {
+    double non_diagonal = (1.0 - exp(-time * num_states / (num_states - 1))) / num_states;
+    double diagonal = 1.0 - non_diagonal * (num_states - 1);
+    int nstates_sqr = num_states * num_states;
+
+    for (int i = 0; i < nstates_sqr; i++) {
+        if (i % (num_states + 1) == 0)
+            trans_matrix[i] = diagonal;
+        else
+            trans_matrix[i] = non_diagonal;
+    }
+}
+#endif // USE_OPENACC
 
 class PhyloTree;
 

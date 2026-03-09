@@ -1573,12 +1573,17 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
     if (verbose_mode >= VB_DEBUG) p = cout.precision(17);
 
     // PRINT Log-Likelihood
+#ifdef USE_OPENACC
+    cout << "1. Initial log-likelihood: " << cur_lh << " (took " <<
+        (getRealTime() - optimizeStartTime) << " wall-clock sec)" << endl;
+#else
     if (verbose_mode >= VB_MED) {
         cout << "1. Initial log-likelihood: " << cur_lh << " (took " <<
         (getRealTime() - optimizeStartTime) << " wall-clock sec)" << endl;
     } else {
         cout << "1. Initial log-likelihood: " << cur_lh << endl;
     }
+#endif
         
     // RESTORE previous precision
     if (verbose_mode >= VB_DEBUG) cout.precision(p);
