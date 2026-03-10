@@ -1012,6 +1012,23 @@ void Alignment::integrateSiteSpecWeights()
     }
 }
 
+void Alignment::createBayesBootWeights(DoubleVector &site_weights, int *rstream)
+{
+    size_t nsite = getNSite();
+    site_weights.resize(nsite);
+    double sum = 0.0;
+    // Draw n independent Exponential(1) samples — this gives a
+    // Dirichlet(1,...,1) distribution after normalization (Rubin 1981).
+    for (size_t i = 0; i < nsite; ++i) {
+        site_weights[i] = random_double_exponential_distribution(1.0, rstream);
+        sum += site_weights[i];
+    }
+    // Normalize so weights sum to nsite (expected weight per site = 1.0)
+    const double scale = (double)nsite / sum;
+    for (size_t i = 0; i < nsite; ++i)
+        site_weights[i] *= scale;
+}
+
 Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model) : vector<Pattern>() {
     name = "Noname";
     this->model_name = model;
@@ -4274,7 +4291,12 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
     }
     STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(nsite, -1);
+    // For Bayesian bootstrap we keep the original site→pattern mapping unchanged;
+    // all other modes start with site_pattern filled with -1 (unassigned).
+    if (spec && strncmp(spec, "BAYES", 5) == 0)
+        site_pattern = aln->site_pattern;
+    else
+        site_pattern.resize(nsite, -1);
     clear();
     pattern_index.clear();
 
@@ -4296,7 +4318,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         if (aln->site_state_freq.size() != aln->getNPattern() || spec)
             outError("Unsupported bootstrap feature, pls contact the developers");
     }
-    
+
     if (Params::getInstance().jackknife_prop > 0.0 && spec) {
         outError((string)"Unsupported jackknife with sampling " + spec);
     }
@@ -4325,6 +4347,28 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         }
         if (added_sites < nsite)
             site_pattern.resize(added_sites);
+    } else if (strncmp(spec, "BAYES", 5) == 0) {
+        // Bayesian bootstrap (Rubin 1981): Dirichlet(1,...,1) site weights.
+        // Float weights → ML via pattern_weight[]; scaled integer frequencies → parsimony.
+        int pars_scale = (spec[5] == ':') ? max(1, convert_int(spec + 6)) : 10;
+        const size_t nptn = aln->getNPattern();
+        DoubleVector site_weights;
+        createBayesBootWeights(site_weights);
+        // Accumulate per-pattern float weights
+        vector<double> ptn_float_weight(nptn, 0.0);
+        for (size_t i = 0; i < nsite; ++i)
+            ptn_float_weight[aln->getPatternID(i)] += site_weights[i];
+        // Per-pattern integer frequencies for parsimony (min 1 so no site is silenced)
+        for (size_t ptn = 0; ptn < nptn; ++ptn) {
+            Pattern pat = aln->at(ptn);
+            pat.frequency = max(1, (int)round(ptn_float_weight[ptn] * pars_scale));
+            push_back(pat);
+            pattern_index[pat] = ptn;
+        }
+        // Float weights for ML (picked up by PhyloTree::computePtnFreq)
+        pattern_weight.assign(ptn_float_weight.begin(), ptn_float_weight.end());
+        // NOTE: do NOT set total_site_float_weight — getNSite() returns it when > 0
+        // and floating-point truncation (e.g. 1997.9999...) would give wrong site count.
     } else if (strncmp(spec, "GENESITE,", 9) == 0) {
 		// resampling genes, then resampling sites within resampled genes
 		convert_int_vec(spec+9, site_vec);
@@ -4400,6 +4444,13 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     }
     verbose_mode = save_mode;
     countConstSite();
+    // countConstSite() sums scaled frequencies, making frac_const/invariant_sites
+    // proportional to pars_scale rather than to the true site count.  Restore the
+    // original fractions from the source alignment so downstream code stays correct.
+    if (spec && strncmp(spec, "BAYES", 5) == 0) {
+        frac_const_sites     = aln->frac_const_sites;
+        frac_invariant_sites = aln->frac_invariant_sites;
+    }
 //    buildSeqStates();
 }
 

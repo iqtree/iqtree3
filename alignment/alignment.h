@@ -1089,6 +1089,15 @@ public:
      */
     void readSiteSpecFloatWeights();
 
+    /**
+     * Draw per-site Dirichlet(1,...,1) weights for Bayesian bootstrap.
+     * Samples getNSite() Exponential(1) values and normalizes so they sum
+     * to getNSite() (expected weight per site = 1.0).
+     * @param site_weights [OUT] per-site weights, length = getNSite()
+     * @param rstream      optional random stream (NULL = global randstream)
+     */
+    void createBayesBootWeights(DoubleVector &site_weights, int *rstream = NULL);
+
 protected:
 
 
