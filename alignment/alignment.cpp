@@ -4293,7 +4293,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     STATE_UNKNOWN = aln->STATE_UNKNOWN;
     // For Bayesian bootstrap we keep the original site→pattern mapping unchanged;
     // all other modes start with site_pattern filled with -1 (unassigned).
-    if (spec && strncmp(spec, "BAYES", 5) == 0)
+    if (spec && strncasecmp(spec, "BAYES", 5) == 0)
         site_pattern = aln->site_pattern;
     else
         site_pattern.resize(nsite, -1);
@@ -4347,7 +4347,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         }
         if (added_sites < nsite)
             site_pattern.resize(added_sites);
-    } else if (strncmp(spec, "BAYES", 5) == 0) {
+    } else if (strncasecmp(spec, "BAYES", 5) == 0) {
         // Bayesian bootstrap (Rubin 1981): Dirichlet(1,...,1) site weights.
         // Float weights → ML via pattern_weight[]; scaled integer frequencies → parsimony.
         int pars_scale = (spec[5] == ':') ? max(1, convert_int(spec + 6)) : 10;
@@ -4447,7 +4447,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     // countConstSite() sums scaled frequencies, making frac_const/invariant_sites
     // proportional to pars_scale rather than to the true site count.  Restore the
     // original fractions from the source alignment so downstream code stays correct.
-    if (spec && strncmp(spec, "BAYES", 5) == 0) {
+    if (spec && strncasecmp(spec, "BAYES", 5) == 0) {
         frac_const_sites     = aln->frac_const_sites;
         frac_invariant_sites = aln->frac_invariant_sites;
     }

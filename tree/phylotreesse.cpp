@@ -540,9 +540,9 @@ void PhyloTree::computePtnFreq() {
 	size_t nptn = aln->getNPattern();
 	size_t maxptn = get_safe_upper_limit(nptn)+get_safe_upper_limit(model_factory->unobserved_ptns.size());
 	int ptn;
-    const bool bayes_boot = (params->num_bootstrap_samples > 0 &&
+    const bool bayes_boot = (params->num_bootstrap_samples > 0 && 
                              params->bootstrap_spec &&
-                             strncmp(params->bootstrap_spec, "BAYES", 5) == 0);
+                             strncasecmp(params->bootstrap_spec, "BAYES", 5) == 0);
     if (bayes_boot && aln->pattern_weight.size() == nptn) {
         // Bayesian bootstrap: use pre-populated Dirichlet float weights
         for (ptn = 0; ptn < nptn; ptn++)
