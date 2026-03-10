@@ -4034,7 +4034,7 @@ void parseArg(int argc, char *argv[], Params &params) {
                     if (looks_like_bayes)
                         outError("Invalid -bsam spec '", string(s) +
                                  "'. For Bayesian bootstrap use: -bsam BAYES or -bsam BAYES:<scale>");
-                    if (is_valid_bayes && s[5] == ':' && !isdigit((unsigned char)s[6]))
+                    if (is_valid_bayes && s[5] == ':' && (s[6] == '\0' || !isdigit((unsigned char)s[6])))
                         outError("Invalid -bsam spec '", string(s) +
                                  "': scale factor after ':' must be a positive integer (e.g., -bsam BAYES:10)");
                 }
