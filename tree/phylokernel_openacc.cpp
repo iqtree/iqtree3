@@ -538,7 +538,7 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
                 if (child->node->isLeaf()) {
                     // external node — A3: precompute state
                     int state_child;
-                    if (child->node == root)
+                    if (isRootLeaf(child->node))
                         state_child = 0;
                     else
                         state_child = (ptn < orig_ntn) ? (aln->at(ptn))[child->node->id] : model_factory->unobserved_ptns[ptn-orig_ntn][child->node->id];
@@ -597,7 +597,7 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
         double * __restrict__ tip_lh_left = partial_lh_leaves;
         double * __restrict__ tip_lh_right = partial_lh_leaves + (aln->STATE_UNKNOWN+1)*block;
 
-        if (right->node == root) {
+        if (isRootLeaf(right->node)) {
             // swap so that left node is the root
             PhyloNeighbor *tmp = left;
             left = right;
@@ -614,7 +614,7 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
         size_t nptn_range = ptn_upper - ptn_lower;
         int *states_left  = new int[nptn_range];
         int *states_right = new int[nptn_range];
-        bool left_is_root = (left->node == root);
+        bool left_is_root = isRootLeaf(left->node);
         int left_node_id  = left->node->id;
         int right_node_id = right->node->id;
 
@@ -685,7 +685,7 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
         // A3: Precompute per-pattern tip states (CPU side, before GPU region)
         size_t nptn_range = ptn_upper - ptn_lower;
         int *states_left = new int[nptn_range];
-        bool left_is_root = (left->node == root);
+        bool left_is_root = isRootLeaf(left->node);
         int left_node_id = left->node->id;
 
         for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
@@ -924,13 +924,13 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     }
 #endif
 
-    ASSERT(rooted);
+    // Supports both rooted and unrooted trees
 
     PhyloNode *node = (PhyloNode*) dad_branch->node;
     PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
     if (!central_partial_lh)
         initializeAllPartialLh();
-    if (node->isLeaf() || (dad_branch->direction == AWAYFROM_ROOT && dad != root)) {
+    if (node->isLeaf() || (dad_branch->direction == AWAYFROM_ROOT && !isRootLeaf(dad))) {
         PhyloNode *tmp_node = dad;
         dad = node;
         node = tmp_node;
@@ -990,6 +990,20 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         model->computeTransMatrix(len, this_trans_mat);
         for (i = 0; i < nstatesqr; i++)
             this_trans_mat[i] *= prop;
+    }
+    if (!rooted) {
+        // For unrooted trees, pre-multiply state frequencies into transition matrix
+        // at the virtual root edge (matches CPU pattern in phylokernelnonrev.h:1121-1130)
+        double state_freq[64]; // max states: codon=61, AA=20, DNA=4
+        model->getStateFrequency(state_freq);
+        for (c = 0; c < ncat; c++) {
+            double *this_trans_mat = &trans_mat[c*nstatesqr];
+            for (i = 0; i < nstates; i++) {
+                for (x = 0; x < nstates; x++)
+                    this_trans_mat[x] *= state_freq[i];
+                this_trans_mat += nstates;
+            }
+        }
     }
 
     // ====== Persistent GPU data management ======
@@ -1077,6 +1091,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
         // Original sequential (nid, p) loop took ~1,456ms (79-93% of eval time).
         tip_states_flat = new int[(size_t)leafNum * nptn];
         int root_id = root->id;
+        bool local_rooted = rooted;  // for GPU: only treat root specially when tree is rooted
         int local_leafNum = (int)leafNum;
         size_t local_nptn = nptn;
         size_t local_orig_nptn = orig_nptn;
@@ -1104,7 +1119,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             present(local_tip_states, aln_flat)
         for (int nid = 0; nid < local_leafNum; nid++) {
             for (size_t p = 0; p < local_orig_nptn; p++) {
-                if (nid == root_id)
+                if (local_rooted && nid == root_id)
                     local_tip_states[(size_t)nid * local_nptn + p] = 0;
                 else
                     local_tip_states[(size_t)nid * local_nptn + p] =
@@ -1134,7 +1149,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             for (int nid = 0; nid < local_leafNum; nid++) {
                 for (size_t p = 0; p < num_unobs; p++) {
                     size_t dst_p = local_orig_nptn + p;
-                    if (nid == root_id)
+                    if (local_rooted && nid == root_id)
                         local_tip_states[(size_t)nid * local_nptn + dst_p] = 0;
                     else
                         local_tip_states[(size_t)nid * local_nptn + dst_p] =
@@ -1185,7 +1200,8 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     if (dad->isLeaf()) {
         // special treatment for TIP-INTERNAL NODE case
         double *partial_lh_node = new double[(aln->STATE_UNKNOWN+1)*block];
-        if (dad == root) {
+        if (isRootLeaf(dad)) {
+            // Rooted tree: apply state frequencies at root (unrooted never enters here)
             for (c = 0; c < ncat; c++) {
                 double *lh_node = partial_lh_node + c*nstates;
                 model->getStateFrequency(lh_node);
@@ -1272,10 +1288,10 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                                 if (!left_b) left_b = (PhyloNeighbor*)(*it3);
                                 else right_b = (PhyloNeighbor*)(*it3);
                             }
-                            // Swap logic: if right child is root, swap so left is root
-                            // (matches original TIP-TIP kernel behavior)
+                            // Swap logic: if right child is root leaf, swap so left is root
+                            // (matches original TIP-TIP kernel behavior; only for rooted trees)
                             bool swapped_tt = false;
-                            if (right_b->node == root) {
+                            if (isRootLeaf(right_b->node)) {
                                 PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
                                 swapped_tt = true;
                             }
@@ -1446,7 +1462,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             // A3: Precompute per-pattern dad states (CPU side, before GPU region)
             size_t nptn_range = ptn_upper - ptn_lower;
             int *states_dad = new int[nptn_range];
-            bool dad_is_root = (dad == root);
+            bool dad_is_root = isRootLeaf(dad);
             int dad_node_id = dad->id;
             for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
                 size_t idx = ptn - ptn_lower;
@@ -1594,7 +1610,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                                 else right_b = (PhyloNeighbor*)(*it3);
                             }
                             bool swapped_tt = false;
-                            if (right_b->node == root) {
+                            if (isRootLeaf(right_b->node)) {
                                 PhyloNeighbor *tmp = left_b; left_b = right_b; right_b = tmp;
                                 swapped_tt = true;
                             }
