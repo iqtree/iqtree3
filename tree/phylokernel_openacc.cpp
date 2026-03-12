@@ -2173,25 +2173,43 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 int ncat_int = (int)ncat;
                 int orig_nptn_int = (int)orig_nptn;
 
-                #pragma acc parallel loop gang default(present) \
+                // D6: Vector parallelism on TIP-INTERNAL derivative kernel.
+                // Same pattern as D5 (INT-INT): flatten (cc, ii) → single s loop,
+                // distribute across vector threads with vector reduction.
+                //
+                // Simpler than D5: no inner xx dot-product loop — the tip lookup
+                // tables (partial_lh_node/derv1/derv2) were pre-computed on CPU
+                // with the matrix-vector product already baked in. Each vector
+                // thread does just 3 multiplies + 3 adds.
+                //
+                // tip_idx = state_dad * block + s (coalesced for fixed state_dad)
+                // dad_val = dad_partial_lh_base[p * block + s] (coalesced across
+                // vector threads)
+                //
+                // vector_length(32) = 1 warp: reduction uses fast warp shuffles
+                // (no cross-warp shared memory barrier). DNA block=16 → 16/32
+                // active; Protein block=80 → each thread handles ~3 iterations.
+                #pragma acc parallel loop gang vector_length(32) default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
                     int state_dad = local_tip_states[tip_dad_offset + p];
-                    double lh_ptn  = local_ptn_invar[p];
+                    double lh_ptn  = 0.0;
                     double df_ptn  = 0.0;
                     double ddf_ptn = 0.0;
 
-                    for (int cc = 0; cc < ncat_int; cc++) {
-                        for (int ii = 0; ii < nstates_int; ii++) {
-                            int tip_idx = state_dad * block_int + cc * nstates_int + ii;
-                            double dad_val = dad_partial_lh_base[p * block_int + cc * nstates_int + ii];
-                            lh_ptn  += partial_lh_node[tip_idx]  * dad_val;
-                            df_ptn  += partial_lh_derv1[tip_idx] * dad_val;
-                            ddf_ptn += partial_lh_derv2[tip_idx] * dad_val;
-                        }
+                    #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                    for (int s = 0; s < block_int; s++) {
+                        int tip_idx = state_dad * block_int + s;
+                        double dad_val = dad_partial_lh_base[p * block_int + s];
+                        lh_ptn  += partial_lh_node[tip_idx]  * dad_val;
+                        df_ptn  += partial_lh_derv1[tip_idx] * dad_val;
+                        ddf_ptn += partial_lh_derv2[tip_idx] * dad_val;
                     }
 
-                    // Normalize and accumulate
+                    // Add invariant site contribution AFTER vector reduction
+                    lh_ptn += local_ptn_invar[p];
+
+                    // Normalize and accumulate (gang-level reduction)
                     if (p < orig_nptn_int) {
                         double inv_lh = 1.0 / fabs(lh_ptn);
                         double df_frac  = df_ptn * inv_lh;
@@ -2259,16 +2277,20 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 // Vector: distributes s=0..block-1 across threads in each warp
                 //         (vector reduction on lh_ptn, df_ptn, ddf_ptn)
                 //
-                // DNA (4 states, 4 cats):  block=16,  16/128 threads active
-                // Protein (20 states, 4 cats): block=80, 80/128 threads active
+                // DNA (4 states, 4 cats):  block=16,  16/32 threads active
+                // Protein (20 states, 4 cats): block=80, ~3 iters/thread, all 32 active
                 //
                 // The inner xx loop (nstates FMAs × 3 matrices) remains sequential
                 // per vector thread — each thread does one dot-product row.
                 //
+                // vector_length(32) = 1 warp: reduction uses fast warp shuffles
+                // (no cross-warp shared memory barrier). vector_length(128) caused
+                // ~1s regression due to 4-warp shared-memory reduction overhead.
+                //
                 // IMPORTANT: lh_ptn must be initialized to 0 (not ptn_invar[p])
                 // inside the vector reduction. The invariant contribution is added
                 // AFTER the reduction to avoid summing it across all vector threads.
-                #pragma acc parallel loop gang vector_length(128) default(present) \
+                #pragma acc parallel loop gang vector_length(32) default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
                     double lh_ptn  = 0.0;
