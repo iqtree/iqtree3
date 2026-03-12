@@ -1936,6 +1936,348 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
 }
 
 // ==========================================================================
+// OpenACC Derivative Kernel for Branch Length Optimization
+//
+// Computes first and second derivatives of log-likelihood w.r.t. branch
+// length t, using partial likelihoods already resident on GPU.
+//
+// Math (per pattern p, summed over rate categories c and states i):
+//   ℓ_p   = Σ_c Σ_i L^dad[i,p] · Σ_x P̃_c[i,x]   · L^node[x,p]
+//   dℓ_p  = Σ_c Σ_i L^dad[i,p] · Σ_x P̃'_c[i,x]  · L^node[x,p]
+//   d²ℓ_p = Σ_c Σ_i L^dad[i,p] · Σ_x P̃''_c[i,x] · L^node[x,p]
+//
+// Normalization (quotient rule on log ℓ):
+//   g_p  = dℓ_p / ℓ_p
+//   h_p  = d²ℓ_p / ℓ_p − g_p²
+//   df  += f_p · g_p,    ddf += f_p · h_p
+// ==========================================================================
+
+void PhyloTree::computeLikelihoodDervGenericOpenACC(
+    PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf)
+{
+    PhyloNode *node = (PhyloNode*) dad_branch->node;
+    PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
+    if (!central_partial_lh)
+        initializeAllPartialLh();
+    if (node->isLeaf() || (dad_branch->direction == AWAYFROM_ROOT && !isRootLeaf(dad))) {
+        PhyloNode *tmp_node = dad;
+        dad = node;
+        node = tmp_node;
+        PhyloNeighbor *tmp_nei = dad_branch;
+        dad_branch = node_branch;
+        node_branch = tmp_nei;
+    }
+
+    // Force state-space kernel (same as likelihood kernel)
+    Params::getInstance().kernel_nonrev = true;
+    computeTraversalInfo<Vec1d>(node, dad, false);
+
+    // Recompute any stale partial likelihoods on GPU.
+    // During optimizeAllBranches, changing one branch length invalidates
+    // partials at adjacent nodes (clearReversePartialLh). computeTraversalInfo
+    // populates traversal_info with the stale entries. The CPU nonrev kernel
+    // iterates over these and calls computePartialLikelihood for each; we
+    // must do the same, otherwise the derivative uses stale GPU data.
+    if (!traversal_info.empty()) {
+        size_t buf_plh_size = getBufferPartialLhSize();
+        double *local_buffer_plh = buffer_partial_lh;
+        #pragma acc enter data copyin(local_buffer_plh[0:buf_plh_size])
+        for (auto it = traversal_info.begin(); it != traversal_info.end(); it++)
+            computePartialLikelihood(*it, 0, aln->size() + model_factory->unobserved_ptns.size(), 0);
+        #pragma acc exit data delete(local_buffer_plh[0:buf_plh_size])
+    }
+
+    size_t nstates = aln->num_states;
+    size_t nstatesqr = nstates * nstates;
+    size_t ncat = site_rate->getNRate();
+    size_t block = ncat * nstates;
+    size_t orig_nptn = aln->size();
+    size_t nptn = aln->size() + model_factory->unobserved_ptns.size();
+
+    // Compute 3 transition matrices on host: P̃_c, P̃'_c, P̃''_c
+    size_t mat_size = block * nstates;
+    double *trans_mat   = new double[mat_size];
+    double *trans_derv1 = new double[mat_size];
+    double *trans_derv2 = new double[mat_size];
+
+    for (size_t c = 0; c < ncat; c++) {
+        double cat_rate = site_rate->getRate(c);
+        double len = cat_rate * dad_branch->length;
+        double prop = site_rate->getProp(c);
+        double *this_trans_mat   = &trans_mat[c * nstatesqr];
+        double *this_trans_derv1 = &trans_derv1[c * nstatesqr];
+        double *this_trans_derv2 = &trans_derv2[c * nstatesqr];
+
+        model->computeTransDerv(len, this_trans_mat, this_trans_derv1, this_trans_derv2);
+
+        double prop_rate   = prop * cat_rate;       // w_c · r_c
+        double prop_rate_2 = prop_rate * cat_rate;   // w_c · r_c²
+        for (size_t i = 0; i < nstatesqr; i++) {
+            this_trans_mat[i]   *= prop;
+            this_trans_derv1[i] *= prop_rate;
+            this_trans_derv2[i] *= prop_rate_2;
+        }
+    }
+
+    if (!rooted) {
+        // Pre-multiply state frequencies into all 3 matrices (unrooted virtual root)
+        double state_freq[64];
+        model->getStateFrequency(state_freq);
+        for (size_t c = 0; c < ncat; c++) {
+            double *tm  = &trans_mat[c * nstatesqr];
+            double *td1 = &trans_derv1[c * nstatesqr];
+            double *td2 = &trans_derv2[c * nstatesqr];
+            for (size_t i = 0; i < nstates; i++) {
+                for (size_t x = 0; x < nstates; x++) {
+                    tm[x]  *= state_freq[i];
+                    td1[x] *= state_freq[i];
+                    td2[x] *= state_freq[i];
+                }
+                tm  += nstates;
+                td1 += nstates;
+                td2 += nstates;
+            }
+        }
+    }
+
+    // GPU data: partial likelihoods already resident (gpu_data_resident == true).
+    // Only trans_mat/derv1/derv2 need copyin (small: 3 × ncat × S² doubles).
+    // No buffer_partial_lh upload needed — we don't recompute partials.
+    ASSERT(gpu_data_resident && "Derivative kernel requires GPU data from prior likelihood call");
+
+    // Capture class member pointers for OpenACC (avoid mapping 'this')
+    double *local_ptn_freq  = ptn_freq;
+    double *local_ptn_invar = ptn_invar;
+
+    double my_df = 0.0, my_ddf = 0.0;
+    double prob_const = 0.0, df_const = 0.0, ddf_const = 0.0;
+
+    // Extract raw pointers for the branch
+    double * __restrict__ dad_partial_lh_base = dad_branch->partial_lh;
+    UBYTE  * __restrict__ dad_scale_num_base  = dad_branch->scale_num;
+
+    if (dad->isLeaf()) {
+        // ---- TIP-INTERNAL path ----
+        // Precompute lookup tables for all 3 matrices × all possible tip states
+        size_t plh_tip_size = (aln->STATE_UNKNOWN + 1) * block;
+        double *partial_lh_node  = new double[plh_tip_size];
+        double *partial_lh_derv1 = new double[plh_tip_size];
+        double *partial_lh_derv2 = new double[plh_tip_size];
+
+        if (isRootLeaf(dad)) {
+            for (size_t c = 0; c < ncat; c++) {
+                double *lh_node  = partial_lh_node  + c * nstates;
+                double *lh_derv1 = partial_lh_derv1 + c * nstates;
+                double *lh_derv2 = partial_lh_derv2 + c * nstates;
+                double prop = site_rate->getProp(c);
+                model->getStateFrequency(lh_node);
+                for (size_t i = 0; i < nstates; i++) {
+                    lh_node[i]  *= prop;
+                    lh_derv1[i] = 0.0;
+                    lh_derv2[i] = 0.0;
+                }
+            }
+        } else {
+            double *local_tip_plh = tip_partial_lh;
+            for (int state = 0; state <= aln->STATE_UNKNOWN; state++) {
+                double *lh_tip = local_tip_plh + state * nstates;
+                for (size_t c = 0; c < ncat; c++) {
+                    for (size_t i = 0; i < nstates; i++) {
+                        double val  = 0.0;
+                        double val1 = 0.0;
+                        double val2 = 0.0;
+                        for (size_t x = 0; x < nstates; x++) {
+                            val  += trans_mat[c * nstatesqr + i * nstates + x]   * lh_tip[x];
+                            val1 += trans_derv1[c * nstatesqr + i * nstates + x] * lh_tip[x];
+                            val2 += trans_derv2[c * nstatesqr + i * nstates + x] * lh_tip[x];
+                        }
+                        partial_lh_node [state * block + c * nstates + i] = val;
+                        partial_lh_derv1[state * block + c * nstates + i] = val1;
+                        partial_lh_derv2[state * block + c * nstates + i] = val2;
+                    }
+                }
+            }
+        }
+
+        // GPU kernel: TIP-INTERNAL derivative reduction
+        {
+            size_t plh_offset = 0;  // ptn_lower * block
+            size_t plh_count  = nptn * block;
+            size_t scl_count  = nptn;
+
+            // Precompute dad states on CPU
+            size_t nptn_range = nptn;
+            int *states_dad = new int[nptn_range];
+            bool dad_is_root = isRootLeaf(dad);
+            int dad_node_id = dad->id;
+            for (size_t ptn = 0; ptn < nptn; ptn++) {
+                if (dad_is_root)
+                    states_dad[ptn] = 0;
+                else
+                    states_dad[ptn] = (ptn < orig_nptn)
+                        ? (aln->at(ptn))[dad_node_id]
+                        : model_factory->unobserved_ptns[ptn - orig_nptn][dad_node_id];
+            }
+
+            #pragma acc data \
+                copyin(states_dad[0:nptn_range], \
+                       partial_lh_node[0:plh_tip_size], \
+                       partial_lh_derv1[0:plh_tip_size], \
+                       partial_lh_derv2[0:plh_tip_size]) \
+                present(dad_partial_lh_base[plh_offset:plh_count], \
+                        dad_scale_num_base[0:scl_count], \
+                        local_ptn_invar[0:scl_count], \
+                        local_ptn_freq[0:scl_count])
+            {
+                int block_int = (int)block;
+                int nstates_int = (int)nstates;
+                int ncat_int = (int)ncat;
+                int orig_nptn_int = (int)orig_nptn;
+
+                #pragma acc parallel loop gang \
+                    reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+                for (int p = 0; p < (int)nptn; p++) {
+                    int state_dad = states_dad[p];
+                    double lh_ptn  = local_ptn_invar[p];
+                    double df_ptn  = 0.0;
+                    double ddf_ptn = 0.0;
+
+                    for (int cc = 0; cc < ncat_int; cc++) {
+                        for (int ii = 0; ii < nstates_int; ii++) {
+                            int tip_idx = state_dad * block_int + cc * nstates_int + ii;
+                            double dad_val = dad_partial_lh_base[p * block_int + cc * nstates_int + ii];
+                            lh_ptn  += partial_lh_node[tip_idx]  * dad_val;
+                            df_ptn  += partial_lh_derv1[tip_idx] * dad_val;
+                            ddf_ptn += partial_lh_derv2[tip_idx] * dad_val;
+                        }
+                    }
+
+                    // Normalize and accumulate
+                    if (p < orig_nptn_int) {
+                        double inv_lh = 1.0 / fabs(lh_ptn);
+                        double df_frac  = df_ptn * inv_lh;
+                        double ddf_frac = ddf_ptn * inv_lh;
+                        my_df  += df_frac * local_ptn_freq[p];
+                        my_ddf += (ddf_frac - df_frac * df_frac) * local_ptn_freq[p];
+                    } else {
+                        if (dad_scale_num_base[p] >= 1) {
+                            lh_ptn  *= SCALING_THRESHOLD;
+                            df_ptn  *= SCALING_THRESHOLD;
+                            ddf_ptn *= SCALING_THRESHOLD;
+                        }
+                        prob_const += lh_ptn;
+                        df_const   += df_ptn;
+                        ddf_const  += ddf_ptn;
+                    }
+                } // FOR p
+            } // end acc data
+
+            delete[] states_dad;
+        }
+
+        delete[] partial_lh_node;
+        delete[] partial_lh_derv1;
+        delete[] partial_lh_derv2;
+
+    } else {
+        // ---- INTERNAL-INTERNAL path ----
+        double * __restrict__ node_partial_lh_base = node_branch->partial_lh;
+        UBYTE  * __restrict__ node_scale_num_base  = node_branch->scale_num;
+
+        {
+            size_t plh_offset = 0;
+            size_t plh_count  = nptn * block;
+            size_t scl_count  = nptn;
+
+            #pragma acc data \
+                copyin(trans_mat[0:mat_size], \
+                       trans_derv1[0:mat_size], \
+                       trans_derv2[0:mat_size]) \
+                present(dad_partial_lh_base[plh_offset:plh_count], \
+                        node_partial_lh_base[plh_offset:plh_count], \
+                        dad_scale_num_base[0:scl_count], \
+                        node_scale_num_base[0:scl_count], \
+                        local_ptn_invar[0:scl_count], \
+                        local_ptn_freq[0:scl_count])
+            {
+                int block_int = (int)block;
+                int nstates_int = (int)nstates;
+                int nstatesqr_int = (int)nstatesqr;
+                int ncat_int = (int)ncat;
+                int orig_nptn_int = (int)orig_nptn;
+
+                #pragma acc parallel loop gang \
+                    reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+                for (int p = 0; p < (int)nptn; p++) {
+                    double lh_ptn  = local_ptn_invar[p];
+                    double df_ptn  = 0.0;
+                    double ddf_ptn = 0.0;
+
+                    for (int cc = 0; cc < ncat_int; cc++) {
+                        for (int ii = 0; ii < nstates_int; ii++) {
+                            double lh_state  = 0.0;
+                            double df_state  = 0.0;
+                            double ddf_state = 0.0;
+                            for (int xx = 0; xx < nstates_int; xx++) {
+                                int mat_idx = cc * nstatesqr_int + ii * nstates_int + xx;
+                                double plh = node_partial_lh_base[p * block_int + cc * nstates_int + xx];
+                                lh_state  += trans_mat[mat_idx]   * plh;
+                                df_state  += trans_derv1[mat_idx] * plh;
+                                ddf_state += trans_derv2[mat_idx] * plh;
+                            }
+                            double dad_val = dad_partial_lh_base[p * block_int + cc * nstates_int + ii];
+                            lh_ptn  += dad_val * lh_state;
+                            df_ptn  += dad_val * df_state;
+                            ddf_ptn += dad_val * ddf_state;
+                        }
+                    }
+
+                    // Normalize and accumulate
+                    if (p < orig_nptn_int) {
+                        double inv_lh = 1.0 / fabs(lh_ptn);
+                        double df_frac  = df_ptn * inv_lh;
+                        double ddf_frac = ddf_ptn * inv_lh;
+                        my_df  += df_frac * local_ptn_freq[p];
+                        my_ddf += (ddf_frac - df_frac * df_frac) * local_ptn_freq[p];
+                    } else {
+                        if ((dad_scale_num_base[p] + node_scale_num_base[p]) >= 1) {
+                            lh_ptn  *= SCALING_THRESHOLD;
+                            df_ptn  *= SCALING_THRESHOLD;
+                            ddf_ptn *= SCALING_THRESHOLD;
+                        }
+                        prob_const += lh_ptn;
+                        df_const   += df_ptn;
+                        ddf_const  += ddf_ptn;
+                    }
+                } // FOR p
+            } // end acc data
+        }
+    }
+
+    // Ascertainment bias correction (on host)
+    if (orig_nptn < nptn) {
+        prob_const = 1.0 - prob_const;
+        double df_frac  = df_const / prob_const;
+        double ddf_frac = ddf_const / prob_const;
+        size_t nsites = aln->getNSite();
+        my_df  += nsites * df_frac;
+        my_ddf += nsites * (ddf_frac + df_frac * df_frac);
+    }
+
+    *df  = my_df;
+    *ddf = my_ddf;
+
+    if (!std::isfinite(*df) || !std::isfinite(*ddf)) {
+        cout << "WARNING: Numerical underflow for OpenACC lh-derivative" << endl;
+        *df = *ddf = 0.0;
+    }
+
+    delete[] trans_mat;
+    delete[] trans_derv1;
+    delete[] trans_derv2;
+}
+
+// ==========================================================================
 // Step 13: Reversible Partial Likelihood Kernel (OpenACC)
 //
 // Same Felsenstein pruning as non-rev, but:

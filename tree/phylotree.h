@@ -1033,6 +1033,11 @@ public:
         Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i].
         Kept as dead code — dispatch always uses computeLikelihoodBranchGenericOpenACC. */
     double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    /** OpenACC: GPU-offloaded derivative kernel for branch length optimization.
+        Computes first and second derivatives of log-likelihood w.r.t. branch length.
+        Uses pre-computed partial likelihoods already resident on GPU. */
+    void computeLikelihoodDervGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf);
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>

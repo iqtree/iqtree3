@@ -151,7 +151,7 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
     // function (via temporary kernel_nonrev=true before computeTraversalInfo).
     computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericOpenACC;
     computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericOpenACC;
-    computeLikelihoodDervPointer = NULL;  // not needed for -blfix (fixed branch lengths)
+    computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericOpenACC;
     computeLikelihoodDervMixlenPointer = NULL;
     computeLikelihoodFromBufferPointer = NULL;
     return;
@@ -242,9 +242,9 @@ double PhyloTree::computeLikelihoodBranch(PhyloNeighbor *dad_branch, PhyloNode *
 
 void PhyloTree::computeLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf) {
 #ifdef USE_OPENACC
+    // todo: remove after implementation is verifyied
     if (computeLikelihoodDervPointer == NULL) {
-        outError("OpenACC kernels do not support likelihood derivatives.\n"
-                 "Please use -blfix for fixed branch lengths.");
+        ASSERT(0 && "BUG: computeLikelihoodDervPointer is NULL under OpenACC");
     }
 #endif
 	(this->*computeLikelihoodDervPointer)(dad_branch, dad, df, ddf);

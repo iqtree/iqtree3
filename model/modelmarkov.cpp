@@ -828,6 +828,38 @@ void ModelMarkov::computeTransDerv(double time, double *trans_matrix,
         return;
     }
 
+#ifdef USE_OPENACC
+    // Under OpenACC, compute derivatives in state-space form using Q·P(t).
+    // This is consistent with computeTransMatrix's OpenACC path and the
+    // non-reversible derivative path (lines 796-828).
+    //
+    // For reversible models, rate_matrix (member) is NULL, so reconstruct
+    // Q̃ = V·diag(λ)·V⁻¹ from the eigendecomposition.
+    //
+    // Math: P'(t) = Q̃·P(t),  P''(t) = Q̃·P'(t) = Q̃²·P(t)
+    {
+        computeTransMatrix(time, trans_matrix);
+
+        // Reconstruct Q̃ = V · diag(λ) · V⁻¹
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> evectors(eigenvectors, num_states, num_states);
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> inv_evectors(inv_eigenvectors, num_states, num_states);
+        ArrayXd eval = Map<ArrayXd>(eigenvalues, num_states);
+        MatrixXd Q_tilde = evectors * eval.matrix().asDiagonal() * inv_evectors;
+
+        // P'(t) = Q̃ · P(t)
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> trans_mat(trans_matrix, num_states, num_states);
+        MatrixXd prod = Q_tilde * trans_mat;
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> derv1_mat(trans_derv1, num_states, num_states);
+        derv1_mat = prod;
+
+        // P''(t) = Q̃ · P'(t)
+        prod = Q_tilde * prod;
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> derv2_mat(trans_derv2, num_states, num_states);
+        derv2_mat = prod;
+        return;
+    }
+#endif
+
 	double evol_time = time / total_num_subst;
 
 #if !defined(__ARM_NEON)
