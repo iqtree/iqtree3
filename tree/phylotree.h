@@ -936,10 +936,8 @@ public:
         GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
     void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
 
-    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models (UNUSED).
-        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
-        Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
-    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
+    // computeRevPartialLikelihoodOpenACC — REMOVED (dead code, eigenspace path
+    // never used under OpenACC which forces kernel_nonrev = true).
 
     /** Free all OpenACC device data (called before host buffers are freed). */
     void freeOpenACCData();
@@ -1029,10 +1027,8 @@ public:
         GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
     double computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 
-    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models (UNUSED).
-        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i].
-        Kept as dead code — dispatch always uses computeLikelihoodBranchGenericOpenACC. */
-    double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+    // computeRevLikelihoodBranchOpenACC — REMOVED (dead code, eigenspace path
+    // never used under OpenACC which forces kernel_nonrev = true).
 
     /** OpenACC: GPU-offloaded derivative kernel for branch length optimization.
         Computes first and second derivatives of log-likelihood w.r.t. branch length.
