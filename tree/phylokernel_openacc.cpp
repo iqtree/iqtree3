@@ -2134,7 +2134,7 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 int ncat_int = (int)ncat;
                 int orig_nptn_int = (int)orig_nptn;
 
-                #pragma acc parallel loop gang \
+                #pragma acc parallel loop gang default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
                     int state_dad = states_dad[p];
@@ -2206,7 +2206,7 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 int ncat_int = (int)ncat;
                 int orig_nptn_int = (int)orig_nptn;
 
-                #pragma acc parallel loop gang \
+                #pragma acc parallel loop gang default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
                     double lh_ptn  = local_ptn_invar[p];
