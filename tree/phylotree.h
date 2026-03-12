@@ -966,6 +966,10 @@ public:
     int *gpu_tip_states_ptr = nullptr;
     // P2: Saved buffer_partial_lh size for batch upload/delete
     size_t gpu_buffer_plh_size = 0;
+    // D3: Track whether buffer_partial_lh is currently resident on GPU
+    // to avoid redundant re-uploads during Newton iterations
+    bool gpu_buffer_plh_resident = false;
+    double *gpu_buffer_plh_ptr = nullptr;
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>

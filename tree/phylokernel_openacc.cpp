@@ -952,9 +952,16 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     // P2: Batch upload buffer_partial_lh — contains all per-node P(t) matrices
     // and tip lookup tables, already filled by computeTraversalInfo().
     // One upload replaces ~98 per-node copyin calls.
+    // D3: If buffer is already resident from a previous call, delete first
+    // (host may have refilled it with new traversal data).
 #ifdef USE_OPENACC_PROFILE
     if (profiling) prof_t1 = getRealTime();
 #endif
+    if (gpu_buffer_plh_resident && gpu_buffer_plh_ptr) {
+        #pragma acc exit data delete(gpu_buffer_plh_ptr[0:gpu_buffer_plh_size])
+        gpu_buffer_plh_resident = false;
+        gpu_buffer_plh_ptr = nullptr;
+    }
     gpu_buffer_plh_size = getBufferPartialLhSize();
     double *local_buffer_plh = buffer_partial_lh;
     #pragma acc enter data copyin(local_buffer_plh[0:gpu_buffer_plh_size])
@@ -1906,15 +1913,15 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     if (profiling) acc_profile.t_host_postproc += getRealTime() - prof_t1;
 #endif
 
-    // P2: Release buffer_partial_lh from GPU
-#ifdef USE_OPENACC_PROFILE
-    if (profiling) prof_t1 = getRealTime();
-#endif
-    #pragma acc exit data delete(local_buffer_plh[0:gpu_buffer_plh_size])
+    // D3: Keep buffer_partial_lh on GPU for derivative kernel reuse.
+    // During branch length optimization, the derivative kernel needs this buffer
+    // for stale partial recomputation. Keeping it resident avoids redundant
+    // re-uploads (~7-95 MB per derivative call).
+    gpu_buffer_plh_resident = true;
+    gpu_buffer_plh_ptr = local_buffer_plh;
 #ifdef USE_OPENACC_PROFILE
     if (profiling) {
-        #pragma acc wait
-        acc_profile.t_buffer_delete += getRealTime() - prof_t1;
+        acc_profile.t_buffer_delete += 0.0;  // no delete, kept resident
     }
 #endif
 
@@ -1978,13 +1985,27 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     // populates traversal_info with the stale entries. The CPU nonrev kernel
     // iterates over these and calls computePartialLikelihood for each; we
     // must do the same, otherwise the derivative uses stale GPU data.
+    //
+    // D3: buffer_partial_lh may already be GPU-resident from the likelihood
+    // kernel. If so, sync new content with update device() (avoids alloc/dealloc
+    // overhead) instead of full copyin. If not resident, do full copyin.
+    // When traversal_info is empty, no upload needed at all — partials are fresh.
     if (!traversal_info.empty()) {
         size_t buf_plh_size = getBufferPartialLhSize();
         double *local_buffer_plh = buffer_partial_lh;
-        #pragma acc enter data copyin(local_buffer_plh[0:buf_plh_size])
+        if (gpu_buffer_plh_resident) {
+            // Buffer allocation exists on GPU — just sync the new host content
+            #pragma acc update device(local_buffer_plh[0:buf_plh_size])
+        } else {
+            // First time — allocate and upload
+            #pragma acc enter data copyin(local_buffer_plh[0:buf_plh_size])
+            gpu_buffer_plh_resident = true;
+            gpu_buffer_plh_ptr = local_buffer_plh;
+            gpu_buffer_plh_size = buf_plh_size;
+        }
         for (auto it = traversal_info.begin(); it != traversal_info.end(); it++)
             computePartialLikelihood(*it, 0, aln->size() + model_factory->unobserved_ptns.size(), 0);
-        #pragma acc exit data delete(local_buffer_plh[0:buf_plh_size])
+        // D3: Keep buffer on GPU — don't delete here
     }
 
     size_t nstates = aln->num_states;
@@ -2300,6 +2321,13 @@ void PhyloTree::freeOpenACCData() {
                gpu_ptn_invar_ptr[0:gpu_nptn], \
                gpu_pattern_lh_ptr[0:gpu_nptn], \
                gpu_pattern_lh_cat_ptr[0:gpu_nptn_ncat])
+
+    // D3: Free buffer_partial_lh from GPU if still resident
+    if (gpu_buffer_plh_resident && gpu_buffer_plh_ptr) {
+        #pragma acc exit data delete(gpu_buffer_plh_ptr[0:gpu_buffer_plh_size])
+        gpu_buffer_plh_resident = false;
+        gpu_buffer_plh_ptr = nullptr;
+    }
 
     // P2: Free tip_states_flat from GPU and host
     if (gpu_tip_states_ptr) {
