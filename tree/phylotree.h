@@ -970,6 +970,32 @@ public:
     // to avoid redundant re-uploads during Newton iterations
     bool gpu_buffer_plh_resident = false;
     double *gpu_buffer_plh_ptr = nullptr;
+    // D4: Persistent transition matrices for derivative kernel
+    // Allocated once, reused across calls with update device()
+    double *gpu_trans_mat = nullptr;
+    double *gpu_trans_derv1 = nullptr;
+    double *gpu_trans_derv2 = nullptr;
+    size_t gpu_trans_mat_size = 0;
+    bool gpu_trans_mat_resident = false;
+
+    // E1: GPU-resident eigendecomposition for on-device P(t) computation.
+    // Uploaded once per model parameter change; reused across all branch
+    // length optimizations (eigendecomp is fixed while branch lengths vary).
+    // Formulas:
+    //   P(t)[i,j]   = Σ_k V[i,k] * exp(λ_k * t / total_num_subst) * V⁻¹[k,j]
+    //   P'(t)[i,j]  = Σ_k V[i,k] * (λ_k/tns) * exp(λ_k*t/tns) * V⁻¹[k,j]
+    //   P''(t)[i,j] = Σ_k V[i,k] * (λ_k/tns)² * exp(λ_k*t/tns) * V⁻¹[k,j]
+    double *gpu_eigenvalues = nullptr;       // [nstates] on device
+    double *gpu_eigenvectors = nullptr;      // [nstates*nstates] row-major
+    double *gpu_inv_eigenvectors = nullptr;  // [nstates*nstates] row-major
+    double gpu_total_num_subst = 1.0;
+    size_t gpu_eigen_nstates = 0;
+    bool gpu_eigen_resident = false;
+
+    /** Upload model eigendecomposition to GPU. Call after decomposeRateMatrix(). */
+    void uploadEigenToGPU();
+    /** Free GPU eigendecomposition data. */
+    void freeEigenFromGPU();
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>

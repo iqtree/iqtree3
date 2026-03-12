@@ -2015,11 +2015,28 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     size_t orig_nptn = aln->size();
     size_t nptn = aln->size() + model_factory->unobserved_ptns.size();
 
-    // Compute 3 transition matrices on host: P̃_c, P̃'_c, P̃''_c
+    // D4: Persistent transition matrices — allocate once, reuse across calls.
+    // Only the content changes (via update device), not the allocation.
     size_t mat_size = block * nstates;
-    double *trans_mat   = new double[mat_size];
-    double *trans_derv1 = new double[mat_size];
-    double *trans_derv2 = new double[mat_size];
+    if (!gpu_trans_mat || gpu_trans_mat_size < mat_size) {
+        // First call or size changed (e.g., model switch) — (re)allocate
+        if (gpu_trans_mat_resident) {
+            #pragma acc exit data delete(gpu_trans_mat[0:gpu_trans_mat_size], \
+                                         gpu_trans_derv1[0:gpu_trans_mat_size], \
+                                         gpu_trans_derv2[0:gpu_trans_mat_size])
+            gpu_trans_mat_resident = false;
+        }
+        delete[] gpu_trans_mat;
+        delete[] gpu_trans_derv1;
+        delete[] gpu_trans_derv2;
+        gpu_trans_mat   = new double[mat_size];
+        gpu_trans_derv1 = new double[mat_size];
+        gpu_trans_derv2 = new double[mat_size];
+        gpu_trans_mat_size = mat_size;
+    }
+    double *trans_mat   = gpu_trans_mat;
+    double *trans_derv1 = gpu_trans_derv1;
+    double *trans_derv2 = gpu_trans_derv2;
 
     for (size_t c = 0; c < ncat; c++) {
         double cat_rate = site_rate->getRate(c);
@@ -2062,9 +2079,18 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     }
 
     // GPU data: partial likelihoods already resident (gpu_data_resident == true).
-    // Only trans_mat/derv1/derv2 need copyin (small: 3 × ncat × S² doubles).
-    // No buffer_partial_lh upload needed — we don't recompute partials.
     ASSERT(gpu_data_resident && "Derivative kernel requires GPU data from prior likelihood call");
+
+    // D4: Upload transition matrices — create GPU allocation once, then update content
+    if (!gpu_trans_mat_resident) {
+        #pragma acc enter data create(trans_mat[0:mat_size], \
+                                      trans_derv1[0:mat_size], \
+                                      trans_derv2[0:mat_size])
+        gpu_trans_mat_resident = true;
+    }
+    #pragma acc update device(trans_mat[0:mat_size], \
+                              trans_derv1[0:mat_size], \
+                              trans_derv2[0:mat_size])
 
     // Capture class member pointers for OpenACC (avoid mapping 'this')
     double *local_ptn_freq  = ptn_freq;
@@ -2201,11 +2227,12 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
 
+            // D4: trans matrices already on GPU via update device above
             #pragma acc data \
-                copyin(trans_mat[0:mat_size], \
-                       trans_derv1[0:mat_size], \
-                       trans_derv2[0:mat_size]) \
-                present(dad_partial_lh_base[plh_offset:plh_count], \
+                present(trans_mat[0:mat_size], \
+                        trans_derv1[0:mat_size], \
+                        trans_derv2[0:mat_size], \
+                        dad_partial_lh_base[plh_offset:plh_count], \
                         node_partial_lh_base[plh_offset:plh_count], \
                         dad_scale_num_base[0:scl_count], \
                         node_scale_num_base[0:scl_count], \
@@ -2284,9 +2311,7 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         *df = *ddf = 0.0;
     }
 
-    delete[] trans_mat;
-    delete[] trans_derv1;
-    delete[] trans_derv2;
+    // D4: trans matrices are persistent — don't delete here
 }
 
 // ==========================================================================
@@ -2328,6 +2353,18 @@ void PhyloTree::freeOpenACCData() {
         gpu_buffer_plh_resident = false;
         gpu_buffer_plh_ptr = nullptr;
     }
+
+    // D4: Free persistent transition matrices from GPU and host
+    if (gpu_trans_mat_resident && gpu_trans_mat) {
+        #pragma acc exit data delete(gpu_trans_mat[0:gpu_trans_mat_size], \
+                                     gpu_trans_derv1[0:gpu_trans_mat_size], \
+                                     gpu_trans_derv2[0:gpu_trans_mat_size])
+        gpu_trans_mat_resident = false;
+    }
+    delete[] gpu_trans_mat;   gpu_trans_mat = nullptr;
+    delete[] gpu_trans_derv1; gpu_trans_derv1 = nullptr;
+    delete[] gpu_trans_derv2; gpu_trans_derv2 = nullptr;
+    gpu_trans_mat_size = 0;
 
     // P2: Free tip_states_flat from GPU and host
     if (gpu_tip_states_ptr) {
