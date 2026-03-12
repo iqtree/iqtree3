@@ -2105,26 +2105,18 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
 
-            // Precompute dad states on CPU
-            size_t nptn_range = nptn;
-            int *states_dad = new int[nptn_range];
-            bool dad_is_root = isRootLeaf(dad);
+            // D2: Reuse tip_states_flat (already GPU-resident from O7)
+            // Layout: tip_states_flat[node_id * nptn + ptn]
             int dad_node_id = dad->id;
-            for (size_t ptn = 0; ptn < nptn; ptn++) {
-                if (dad_is_root)
-                    states_dad[ptn] = 0;
-                else
-                    states_dad[ptn] = (ptn < orig_nptn)
-                        ? (aln->at(ptn))[dad_node_id]
-                        : model_factory->unobserved_ptns[ptn - orig_nptn][dad_node_id];
-            }
+            int *local_tip_states = tip_states_flat;
+            size_t tip_dad_offset = (size_t)dad_node_id * nptn;
 
             #pragma acc data \
-                copyin(states_dad[0:nptn_range], \
-                       partial_lh_node[0:plh_tip_size], \
+                copyin(partial_lh_node[0:plh_tip_size], \
                        partial_lh_derv1[0:plh_tip_size], \
                        partial_lh_derv2[0:plh_tip_size]) \
-                present(dad_partial_lh_base[plh_offset:plh_count], \
+                present(local_tip_states[tip_dad_offset:nptn], \
+                        dad_partial_lh_base[plh_offset:plh_count], \
                         dad_scale_num_base[0:scl_count], \
                         local_ptn_invar[0:scl_count], \
                         local_ptn_freq[0:scl_count])
@@ -2137,7 +2129,7 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 #pragma acc parallel loop gang default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
-                    int state_dad = states_dad[p];
+                    int state_dad = local_tip_states[tip_dad_offset + p];
                     double lh_ptn  = local_ptn_invar[p];
                     double df_ptn  = 0.0;
                     double ddf_ptn = 0.0;
@@ -2172,7 +2164,6 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 } // FOR p
             } // end acc data
 
-            delete[] states_dad;
         }
 
         delete[] partial_lh_node;
