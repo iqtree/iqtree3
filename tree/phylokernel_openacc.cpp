@@ -2245,33 +2245,62 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 int ncat_int = (int)ncat;
                 int orig_nptn_int = (int)orig_nptn;
 
-                #pragma acc parallel loop gang default(present) \
+                // D5: Vector parallelism — distribute (cc, ii) work across
+                // vector threads within each gang.
+                //
+                // Flatten (cc, ii) → single index s = cc*nstates + ii (= block
+                // elements). Each vector thread computes one row of the matrix-
+                // vector product: lh_state = Σ_xx P[cc,ii,xx] · node_plh[p,cc,xx],
+                // then multiplies by dad_plh[p,s] and accumulates via vector
+                // reduction into lh_ptn/df_ptn/ddf_ptn.
+                //
+                // Gang: distributes patterns p across warps (gang reduction on
+                //        my_df, my_ddf, prob_const, df_const, ddf_const)
+                // Vector: distributes s=0..block-1 across threads in each warp
+                //         (vector reduction on lh_ptn, df_ptn, ddf_ptn)
+                //
+                // DNA (4 states, 4 cats):  block=16,  16/128 threads active
+                // Protein (20 states, 4 cats): block=80, 80/128 threads active
+                //
+                // The inner xx loop (nstates FMAs × 3 matrices) remains sequential
+                // per vector thread — each thread does one dot-product row.
+                //
+                // IMPORTANT: lh_ptn must be initialized to 0 (not ptn_invar[p])
+                // inside the vector reduction. The invariant contribution is added
+                // AFTER the reduction to avoid summing it across all vector threads.
+                #pragma acc parallel loop gang vector_length(128) default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
-                    double lh_ptn  = local_ptn_invar[p];
+                    double lh_ptn  = 0.0;
                     double df_ptn  = 0.0;
                     double ddf_ptn = 0.0;
 
-                    for (int cc = 0; cc < ncat_int; cc++) {
-                        for (int ii = 0; ii < nstates_int; ii++) {
-                            double lh_state  = 0.0;
-                            double df_state  = 0.0;
-                            double ddf_state = 0.0;
-                            for (int xx = 0; xx < nstates_int; xx++) {
-                                int mat_idx = cc * nstatesqr_int + ii * nstates_int + xx;
-                                double plh = node_partial_lh_base[p * block_int + cc * nstates_int + xx];
-                                lh_state  += trans_mat[mat_idx]   * plh;
-                                df_state  += trans_derv1[mat_idx] * plh;
-                                ddf_state += trans_derv2[mat_idx] * plh;
-                            }
-                            double dad_val = dad_partial_lh_base[p * block_int + cc * nstates_int + ii];
-                            lh_ptn  += dad_val * lh_state;
-                            df_ptn  += dad_val * df_state;
-                            ddf_ptn += dad_val * ddf_state;
+                    #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                    for (int s = 0; s < block_int; s++) {
+                        int cc = s / nstates_int;
+                        int ii = s % nstates_int;
+
+                        double lh_state  = 0.0;
+                        double df_state  = 0.0;
+                        double ddf_state = 0.0;
+                        #pragma acc loop seq
+                        for (int xx = 0; xx < nstates_int; xx++) {
+                            int mat_idx = cc * nstatesqr_int + ii * nstates_int + xx;
+                            double plh = node_partial_lh_base[p * block_int + cc * nstates_int + xx];
+                            lh_state  += trans_mat[mat_idx]   * plh;
+                            df_state  += trans_derv1[mat_idx] * plh;
+                            ddf_state += trans_derv2[mat_idx] * plh;
                         }
+                        double dad_val = dad_partial_lh_base[p * block_int + s];
+                        lh_ptn  += dad_val * lh_state;
+                        df_ptn  += dad_val * df_state;
+                        ddf_ptn += dad_val * ddf_state;
                     }
 
-                    // Normalize and accumulate
+                    // Add invariant site contribution AFTER vector reduction
+                    lh_ptn += local_ptn_invar[p];
+
+                    // Normalize and accumulate (gang-level reduction)
                     if (p < orig_nptn_int) {
                         double inv_lh = 1.0 / fabs(lh_ptn);
                         double df_frac  = df_ptn * inv_lh;
