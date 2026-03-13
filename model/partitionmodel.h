@@ -127,8 +127,30 @@ public:
 
     /**
      compute the marginal log-likelihood for mAIC, mAICc, mBIC calculation.
+     Only works when all partitions have the same sequence type.
+     @param remove_empty_seq whether remove empty sequences when partition model estimation
+     @return marginal log-likelihood, or 1.0 if partitions have mixed data types
      */
-    virtual double computeMarginalLh();
+    virtual double computeMarginalLh(bool remove_empty_seq);
+
+    /**
+     compute the marginal log-likelihood for a subset of partitions.
+     All partitions in part_indices must have the same sequence type.
+     @param part_indices indices of partitions to include
+     @param remove_empty_seq whether remove empty sequences when partition model estimation
+     @return marginal log-likelihood for the given partitions
+     */
+    double computeMarginalLhForPartitions(vector<int> &part_indices, bool remove_empty_seq);
+
+    /**
+     compute the sum of mAIC scores across data type groups.
+     Groups partitions by sequence type, computes marginal log-likelihood
+     and mAIC for each group independently, and returns the sum.
+     Works for both single and mixed data type partition models.
+     @param remove_empty_seq whether remove empty sequences when partition model estimation
+     @return sum of mAIC scores across all data type groups
+     */
+    double computeMarginalAIC(bool remove_empty_seq);
 
     /**
      rescale the state frequencies

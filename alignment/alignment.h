@@ -543,8 +543,9 @@ public:
 
 	/**
 	 * return a new alignment if some sequence is totally gappy, or this if all sequence are okey
+	 * @param showMsg show extracting information in log file
 	 */
-	Alignment *removeGappySeq();
+	Alignment *removeGappySeq(bool showMsg = true);
 
     /**
             @return TRUE if seq_id contains only gaps or missing characters
@@ -567,8 +568,9 @@ public:
             @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
             @param min_taxa only keep alignment that has >= min_taxa sequences
             @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+            @param showMsg show extracting information in log file
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = nullptr);
+    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = nullptr, bool showMsg = true);
 
     /**
             extract a sub-set of patterns
@@ -1125,5 +1127,7 @@ void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt
  */
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name);
 
+/***/
+Alignment *createSUAlignment(Params &params,Alignment *alignment = NULL);
 
 #endif

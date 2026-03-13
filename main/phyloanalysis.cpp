@@ -923,12 +923,12 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev) {
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED) {
         // compute mAIC/mBIC/mAICc if it is a partition model
         int ntrees; //mix_df;
         double mix_lh;
 
-        mix_lh = tree.getModelFactory()->computeMarginalLh();
+        mix_lh = tree.getModelFactory()->computeMarginalLh(params.remove_empty_seq);
         if (mix_lh < 0) {
             PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
             ntrees = stree->size();
@@ -944,8 +944,10 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
             //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
             //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
         } else {
+            // mixed data types: compute mAIC per data type group and sum
+            double mAIC = ((PartitionModel*)tree.getModelFactory())->computeMarginalAIC(params.remove_empty_seq);
             out << endl;
-            out << "mAIC calculation is skipped because not all partition sequence types are same" << endl;
+            out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << " (computed per data type)" << endl;
         }
     }
 
@@ -5184,11 +5186,13 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     /****************** read in alignment **********************/
     if (params.partition_file) {
         // Partition model analysis
-        if (!align_is_given)
-            if (params.partition_type == TOPO_UNLINKED)
+        if (!align_is_given) {
+            if (params.partition_type == TOPO_UNLINKED) {
                 alignment = new SuperAlignmentUnlinked(params);
-            else
+            } else {
                 alignment = new SuperAlignment(params);
+            }
+        }
     } else {
         if (!align_is_given)
             alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
@@ -6283,5 +6287,10 @@ void runRootstrap(Params &params) {
     else
         tree.computeRootstrapUnrooted(trees, params.root, false);
     cout << getRealTime() - start_time << " sec" << endl;
-    
+
+}
+
+void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
+    // TODO: implement ModelTamer analysis
+    outError("ModelTamer analysis is not yet implemented");
 }

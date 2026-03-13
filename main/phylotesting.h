@@ -404,6 +404,9 @@ struct ModelPair {
     string set_name;
     /* best model name */
     string model_name;
+    /* distance between two partition pairs */
+    //double distance;
+    //double score_bic;
 };
 
 class ModelPairSet : public multimap<double, ModelPair> {
@@ -477,10 +480,32 @@ private:
     bool test_merge;
     SuperAlignment *super_aln;
 
+    // variables for merging by mAIC
+    double lh_marginal;
+    double inf_score_maic;
+    ModelPairSet sorted_pairs;
+    SuperAlignment *cur_super_aln;
+    //vector<set<int> > cur_gene_sets;
 
     // retreive the answers from checkpoint
     // and remove those jobs from the array jobIDs
     void retreiveAnsFrChkpt(vector<pair<int,double> >& jobs, int job_type);
+
+    /**
+     * compute marginal LnL and AIC for merge scheme
+     * gene_sets : vector all merged subsets, each containing the ID of original partitions
+     * model_names : model names of corresponding merged subsets
+     * df : degree of freedom for partition model
+     * merge : whether merge partitions with input gene sets
+     * @return : mAIC score
+     */
+    double getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge);
+
+    /**
+     * get compatible partition pairs that improve mAIC
+     * @return : a set of compatible better pairs
+     */
+    ModelPairSet getBetterPairsmAIC();
 
     /**
      * compute and process the best model for partitions (without MPI)
@@ -565,7 +590,8 @@ public:
     int64_t total_num_model;
     int64_t num_model;
     vector<SubsetPair> closest_pairs;
-    vector<set<int> > gene_sets;
+    vector<set<int> > gene_sets; // vector all merged subsets, each containing the ID of original partitions
+    StrVector model_names;
     PhyloSuperTree* in_tree;
     size_t  ssize;
     Params *params;
@@ -841,5 +867,10 @@ bool isRateTypeNested(string rate_type1, string rate_type2);
  * build the nest relationships of all candidate Q matrices
  */
 map<string, vector<string> > generateNestNetwork(StrVector model_names, StrVector freq_names);
+
+/**
+ * generate model set, freq set and rate model by user input model string
+ */
+void generateModelLists(string input_model_str, StrVector& model_list, StrVector& freq_list, string& input_rate);
 
 #endif /* PHYLOTESTING_H_ */

@@ -55,7 +55,7 @@ SuperAlignment::SuperAlignment(Params &params) : Alignment()
 {
     readFromParams(params);
     
-    init();
+    init(nullptr, params.marginal_lh_aic);
     
     // only show Degree of missing data if AliSim is inactive or an input alignment is supplied
     if (!(Params::getInstance().alisim_active && !Params::getInstance().alisim_inference_mode)) {
@@ -178,7 +178,7 @@ void SuperAlignment::readFromParams(Params &params) {
     }
 }
 
-void SuperAlignment::init(StrVector *sequence_names) {
+void SuperAlignment::init(StrVector *sequence_names, bool keep_order) {
     // start original code
     
     max_num_states = 0;
@@ -192,6 +192,53 @@ void SuperAlignment::init(StrVector *sequence_names) {
         taxa_index.resize(seq_names.size());
         for (auto i = taxa_index.begin(); i != taxa_index.end(); i++)
             i->resize(nsite, -1);
+    }
+
+    // 2025-12-9 Huaiyan: keep the sequence order in the superalignment same as partition alignments, do it once when applying mAIC to PartitionFinder.
+    if (keep_order) {
+        // use topollogical sorting with Kahn's Algorithm (BFS) to order the sequences
+        unordered_map<string, unordered_set<string> > graph;
+        unordered_map<string, int> indeg;
+        unordered_set<string> items;
+
+        for (auto it = partitions.begin(); it != partitions.end(); ++it) {
+            size_t nseq = (*it)->getNSeq();
+            for (size_t seq = 0; seq < nseq; ++seq) {
+                items.insert((*it)->getSeqName(seq));
+            }
+
+            for (size_t i = 0; i + 1 < nseq; i++) {
+                string& a = (*it)->getSeqName(i);
+                string& b = (*it)->getSeqName(i+1);
+
+                if (!graph[a].count(b)) {
+                    graph[a].insert(b);
+                    indeg[b]++;
+                }
+            }
+        }
+
+        vector<string> q;
+        for (auto &x : items) {
+            if (indeg[x] == 0) q.push_back(x);
+        }
+
+        size_t idx = 0;
+
+        while (idx < q.size()) {
+            string x = q[idx++];
+            seq_names.push_back(x);
+            IntVector vec(nsite, -1);
+            taxa_index.push_back(vec);
+
+            for (const string& y : graph[x]) {
+                if (--indeg[y] == 0)
+                    q.push_back(y);
+            }
+        }
+
+        if (seq_names.size() != items.size())
+            outError("Sequence orders are not same in different partitions, PartitionFinder with mAIC can't work properly.");
     }
 
     size_t site = 0;

@@ -49,6 +49,14 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint);
 */
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Alignment *&aln, bool align_is_given = false, ModelCheckpoint *model_info = NULL);
 
+/**
+ * Run ModelTamer analysis with model selection on each SU dataset
+ * Generates subsample-upsample alignments and performs model selection on each
+ * @param params program parameters
+ * @param checkpoint checkpoint for resuming analysis
+ */
+void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint);
+
 /*! \brief Run CMaple algorithm for phylogenetic inference (if suitable)
  *  @param params program parameters
  *  @return TRUE if CMaple algorithm is applicable for the input alignment
