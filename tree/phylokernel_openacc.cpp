@@ -648,26 +648,17 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
             tip_lh_right = etmp;
         }
 
-        // A3: Precompute per-pattern tip states into flat arrays (CPU side)
-        size_t nptn_range = ptn_upper - ptn_lower;
-        int *states_left  = new int[nptn_range];
-        int *states_right = new int[nptn_range];
-        bool left_is_root = isRootLeaf(left->node);
+        // P5: Use persistent tip_states_flat instead of per-call states_left/right.
+        // tip_states_flat[node_id * nptn + ptn] is already GPU-resident from O7.
         int left_node_id  = left->node->id;
         int right_node_id = right->node->id;
-
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-            size_t idx = ptn - ptn_lower;
-            if (left_is_root)
-                states_left[idx] = 0;
-            else
-                states_left[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[left_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][left_node_id];
-            states_right[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[right_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][right_node_id];
-        }
+        size_t local_nptn = aln->size() + model_factory->unobserved_ptns.size();
+        int *local_tip_states = tip_states_flat;
+        size_t tip_left_offset = (size_t)left_node_id * local_nptn;
+        size_t tip_right_offset = (size_t)right_node_id * local_nptn;
 
         // Step 9: TIP-TIP kernel offloaded to GPU via OpenACC
-        // Data flow: copyin states + tip lookup tables; partial_lh and
-        // scale_num are persistent on GPU (Step 12: present instead of copyout).
+        // Data flow: tip states and tip lookup tables are persistent on GPU.
         // Parallelism: gang over patterns, vector over states (matches PoC)
         {
             size_t tip_lh_size = (aln->STATE_UNKNOWN + 1) * block;
@@ -677,9 +668,10 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
             size_t scl_count  = ptn_upper - ptn_lower;
 
             #pragma acc data \
-                copyin(states_left[0:nptn_range], states_right[0:nptn_range], \
-                       tip_lh_left[0:tip_lh_size], tip_lh_right[0:tip_lh_size]) \
-                present(dad_partial_lh[plh_offset:plh_count], \
+                present(local_tip_states[tip_left_offset:scl_count], \
+                        local_tip_states[tip_right_offset:scl_count], \
+                        tip_lh_left[0:tip_lh_size], tip_lh_right[0:tip_lh_size], \
+                        dad_partial_lh[plh_offset:plh_count], \
                         dad_scale_num[scl_offset:scl_count])
             {
                 // Zero scale_num for TIP-TIP (no scaling at cherry nodes)
@@ -691,9 +683,8 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
                 // Main TIP-TIP kernel: element-wise product of precomputed tip lookups
                 #pragma acc parallel loop gang
                 for (int p = (int)ptn_lower; p < (int)ptn_upper; p++) {
-                    int idx = p - (int)ptn_lower;
-                    int sl = states_left[idx];
-                    int sr = states_right[idx];
+                    int sl = local_tip_states[tip_left_offset + p];
+                    int sr = local_tip_states[tip_right_offset + p];
                     #pragma acc loop vector
                     for (int s = 0; s < block_int; s++) {
                         dad_partial_lh[p * block_int + s] =
@@ -702,9 +693,6 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
                  }
             } // end acc data
         }
-
-        delete [] states_left;
-        delete [] states_right;
 
     } else if (left->node->isLeaf() && !right->node->isLeaf()) {
 
@@ -720,19 +708,11 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
         UBYTE  * __restrict__ right_scale_num  = right->scale_num;
         double * __restrict__ tip_lh_left = partial_lh_leaves;
 
-        // A3: Precompute per-pattern tip states (CPU side, before GPU region)
-        size_t nptn_range = ptn_upper - ptn_lower;
-        int *states_left = new int[nptn_range];
-        bool left_is_root = isRootLeaf(left->node);
+        // P5: Use persistent tip_states_flat instead of per-call states_left.
         int left_node_id = left->node->id;
-
-        for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-            size_t idx = ptn - ptn_lower;
-            if (left_is_root)
-                states_left[idx] = 0;
-            else
-                states_left[idx] = (ptn < orig_ntn) ? (aln->at(ptn))[left_node_id] : model_factory->unobserved_ptns[ptn-orig_ntn][left_node_id];
-        }
+        size_t local_nptn = aln->size() + model_factory->unobserved_ptns.size();
+        int *local_tip_states = tip_states_flat;
+        size_t tip_left_offset = (size_t)left_node_id * local_nptn;
 
         // Data sizes for OpenACC transfers
         {
@@ -751,12 +731,13 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
             size_t state_unknown = aln->STATE_UNKNOWN;
             double *local_tip_plh = tip_partial_lh;
 
-            // Step 12: persistent data uses present(); per-node data uses copyin.
+            // P5: All data persistent on GPU — tip states, tip lookups, P(t) matrix,
+            // partial likelihoods, and scale counts are all present().
             #pragma acc data \
-                copyin(states_left[0:nptn_range], \
-                       tip_lh_left[0:tip_lh_size], \
-                       eright[0:eright_size]) \
-                present(right_partial_lh[plh_offset:plh_count], \
+                present(local_tip_states[tip_left_offset:scl_count], \
+                        tip_lh_left[0:tip_lh_size], \
+                        eright[0:eright_size], \
+                        right_partial_lh[plh_offset:plh_count], \
                         right_scale_num[scl_offset:scl_count], \
                         local_tip_plh[0:tip_unknown_size], \
                         dad_partial_lh[plh_offset:plh_count], \
@@ -770,8 +751,7 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
                 int nstatesqr_int = (int)nstatesqr_local;
                 #pragma acc parallel loop gang
                 for (int p = (int)ptn_lower; p < (int)ptn_upper; p++) {
-                    int idx = p - (int)ptn_lower;
-                    int state_left = states_left[idx];
+                    int state_left = local_tip_states[tip_left_offset + p];
 
                     // Copy scale_num from right child
                     dad_scale_num[p] = right_scale_num[p];
@@ -820,8 +800,6 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
                 }
             } // end acc data
         }
-
-        delete [] states_left;
 
     } else {
 
@@ -1504,18 +1482,12 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 } // end else (bifurcating batched path)
             } // end P2 batched computation
 
-            // A3: Precompute per-pattern dad states (CPU side, before GPU region)
-            size_t nptn_range = ptn_upper - ptn_lower;
-            int *states_dad = new int[nptn_range];
-            bool dad_is_root = isRootLeaf(dad);
+            // P5: Use persistent tip_states_flat instead of per-call states_dad allocation.
+            // tip_states_flat[node_id * nptn + ptn] is already GPU-resident from O7.
+            // This eliminates ~760 × 3.81 MB = 3.0 GB of redundant H2D transfers per AA run.
             int dad_node_id = dad->id;
-            for (ptn = ptn_lower; ptn < ptn_upper; ptn++) {
-                size_t idx = ptn - ptn_lower;
-                if (dad_is_root)
-                    states_dad[idx] = 0;
-                else
-                    states_dad[idx] = (ptn < orig_nptn) ? (aln->at(ptn))[dad_node_id] : model_factory->unobserved_ptns[ptn-orig_nptn][dad_node_id];
-            }
+            int *local_tip_states = tip_states_flat;
+            size_t tip_dad_offset = (size_t)dad_node_id * nptn;
 
             // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
             // TIP-INTERNAL case: dad is a leaf, node is internal.
@@ -1534,9 +1506,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 // enter data; persistent data uses present() instead of copyin/copyout.
 
                 #pragma acc data \
-                    copyin(states_dad[0:nptn_range], \
-                           partial_lh_node[0:plh_node_size]) \
-                    present(dad_partial_lh_base[plh_offset:plh_count], \
+                    copyin(partial_lh_node[0:plh_node_size]) \
+                    present(local_tip_states[tip_dad_offset:scl_count], \
+                            dad_partial_lh_base[plh_offset:plh_count], \
                             dad_scale_num_base[scl_offset:scl_count], \
                             local_ptn_invar[ptn_lower:scl_count], \
                             local_ptn_freq[ptn_lower:scl_count], \
@@ -1549,8 +1521,7 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                     int orig_nptn_int = (int)orig_nptn;
                     #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
                     for (int p = (int)ptn_lower; p < (int)ptn_upper; p++) {
-                        int idx = p - (int)ptn_lower;
-                        int state_dad = states_dad[idx];
+                        int state_dad = local_tip_states[tip_dad_offset + p];
                         double lh_ptn = local_ptn_invar[p];
 
                         // Dot product: partial_lh_node[state] · dad_partial_lh[p]
@@ -1586,7 +1557,6 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             }
 #endif
 
-            delete [] states_dad;
         } // FOR packet_id
         delete [] partial_lh_node;
     } else {
