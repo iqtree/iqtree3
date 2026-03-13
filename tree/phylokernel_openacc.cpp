@@ -279,9 +279,10 @@ static void batchedTipTip(
 // P2: Batched TIP-INTERNAL kernel
 // Left child is a leaf (tip lookup), right child has partial likelihoods.
 //
-// O4+O5 optimization: Split into two kernels (same as INT-INT):
-//   Kernel 1 (collapse(3)): Compute — right child dot product + left tip lookup.
-//   Kernel 2 (collapse(2)): Scale propagation + scaling check.
+// O4+O5 optimization: Split into two kernels (same as INT-INT).
+// P6 optimization: Kernel 1 changed from collapse(3) VL=128 to gang-per-(op,p) VL=32.
+//   Kernel 1 (gang per (op,p), vector per s, VL=32): Compute — right child dot product + left tip lookup.
+//   Kernel 2 (collapse(2)): Scale propagation + scaling check (unchanged).
 // ==========================================================================
 static void batchedTipInternal(
     size_t *offsets, int num_nodes,
@@ -305,19 +306,34 @@ static void batchedTipInternal(
                 tip_states_base[0:tip_states_size], \
                 local_tip_plh[0:tip_unknown_size])
     {
-        // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
-        #pragma acc parallel loop gang vector collapse(3) vector_length(128)
-        for (int op = 0; op < num_nodes; op++) {
-            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
-                for (int s = 0; s < block_int; s++) {
-                    size_t dad_off       = offsets[op * 8 + 0];
-                    size_t right_plh_off = offsets[op * 8 + 2];
-                    size_t eright_off    = offsets[op * 8 + 4];
-                    size_t tlh_left_off  = offsets[op * 8 + 5];
-                    int left_nid         = (int)offsets[op * 8 + 6];
+        // P6v2: Gang per (op, pattern-group), vector over tiled (pattern × state).
+        // Tiles ceil(32/block) patterns per gang to fill the warp.
+        //   DNA (block=16): 2 patterns/gang → 32 vector items = full warp
+        //   AA  (block=80): 1 pattern/gang  → 80 vector items, 83% utilization
+        // P6v1 (1 pattern/gang, VL=32) caused 50% idle threads for DNA → 31% regression.
+        int ptns_per_gang_ti = (32 + block_int - 1) / block_int;  // ceil(32/block)
+        int vec_items_ti = ptns_per_gang_ti * block_int;
+        int nptn_range_ti = ptn_upper_int - ptn_lower_int;
+        int nptn_groups_ti = (nptn_range_ti + ptns_per_gang_ti - 1) / ptns_per_gang_ti;
+        int total_work_ti = num_nodes * nptn_groups_ti;
+        #pragma acc parallel loop gang vector_length(32)
+        for (int work_idx = 0; work_idx < total_work_ti; work_idx++) {
+            int op = work_idx / nptn_groups_ti;
+            int group_start = ptn_lower_int + (work_idx % nptn_groups_ti) * ptns_per_gang_ti;
 
+            size_t dad_off       = offsets[op * 8 + 0];
+            size_t right_plh_off = offsets[op * 8 + 2];
+            size_t eright_off    = offsets[op * 8 + 4];
+            size_t tlh_left_off  = offsets[op * 8 + 5];
+            int left_nid         = (int)offsets[op * 8 + 6];
+
+            #pragma acc loop vector
+            for (int vs = 0; vs < vec_items_ti; vs++) {
+                int local_p = vs / block_int;
+                int s       = vs % block_int;
+                int p       = group_start + local_p;
+                if (p < ptn_upper_int) {
                     int state_left = tip_states_base[(size_t)left_nid * nptn_stride + p];
-
                     int cat = s / nstates_int;
                     int state = s % nstates_int;
                     int emat_base = cat * nstatesqr_int + state * nstates_int;
@@ -375,18 +391,17 @@ static void batchedTipInternal(
 // Both children are internal nodes with partial likelihoods.
 // HOT PATH — two matrix-vector products + Hadamard product.
 //
-// O4+O5 optimization: Split into two kernels:
-//   Kernel 1 (collapse(3) over op,p,s): Compute partial likelihoods.
-//     - Each thread computes ONE output element dad_plh[p*block+s].
-//     - Consecutive threads (consecutive s) write to consecutive memory → coalesced.
-//     - All threads with same (op,p) read same child partial_lh values → broadcast.
-//     - Only 2 FP64 accumulators per thread → ~20-25 registers → high occupancy.
+// O4+O5 optimization: Split into two kernels.
+// P6 optimization: Kernel 1 changed from collapse(3) VL=128 to gang-per-(op,p) VL=32.
+//   Kernel 1 (gang per (op,p), vector per s, VL=32): Compute partial likelihoods.
+//     - Each vector thread computes ONE output element dad_plh[p*block+s].
+//     - All 32 threads in a warp process same (op,p) → child reads broadcast.
+//     - Consecutive vector threads (consecutive s) write to consecutive memory → coalesced.
+//     - Before P6: collapse(3) VL=128 caused warps to straddle patterns → 26.7
+//       sectors/request (3.5× bandwidth waste from NCU). P6 fixes this to ~7.5.
 //   Kernel 2 (collapse(2) over op,p): Scale propagation + scaling check.
 //     - Per-pattern: propagate child scale counts, check for underflow.
-//     - Lightweight (no dot products), so old coalescing pattern is acceptable.
-//
-// Before O4+O5: collapse(2) over (op,p), sequential for(s) → 73% memory waste,
-//               132 registers, 18.75% occupancy, scheduler idle 84%.
+//     - Lightweight (no dot products), coalescing is fine as-is.
 // ==========================================================================
 static void batchedInternalInternal(
     size_t *offsets, int num_nodes,
@@ -408,19 +423,33 @@ static void batchedInternalInternal(
                 buffer_plh_base[0:buffer_size], \
                 local_tip_plh[0:tip_unknown_size])
     {
-        // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
-        // Each thread computes ONE output value: dad_plh[p*block+s] = vleft * vright
-        // where vleft = dot(P_left[s,:], left_plh[p,:]), vright = dot(P_right[s,:], right_plh[p,:])
-        #pragma acc parallel loop gang vector collapse(3) vector_length(128)
-        for (int op = 0; op < num_nodes; op++) {
-            for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
-                for (int s = 0; s < block_int; s++) {
-                    size_t dad_off       = offsets[op * 8 + 0];
-                    size_t left_plh_off  = offsets[op * 8 + 2];
-                    size_t right_plh_off = offsets[op * 8 + 3];
-                    size_t eleft_off     = offsets[op * 8 + 6];
-                    size_t eright_off    = offsets[op * 8 + 7];
+        // P6v2: Gang per (op, pattern-group), vector over tiled (pattern × state).
+        // Tiles ceil(32/block) patterns per gang to fill the warp.
+        //   DNA (block=16): 2 patterns/gang → 32 vector items = full warp
+        //   AA  (block=80): 1 pattern/gang  → 80 vector items, 83% utilization
+        // P6v1 (1 pattern/gang, VL=32) caused 50% idle threads for DNA → 31% regression.
+        int ptns_per_gang_ii = (32 + block_int - 1) / block_int;  // ceil(32/block)
+        int vec_items_ii = ptns_per_gang_ii * block_int;
+        int nptn_range_ii = ptn_upper_int - ptn_lower_int;
+        int nptn_groups_ii = (nptn_range_ii + ptns_per_gang_ii - 1) / ptns_per_gang_ii;
+        int total_work_ii = num_nodes * nptn_groups_ii;
+        #pragma acc parallel loop gang vector_length(32)
+        for (int work_idx = 0; work_idx < total_work_ii; work_idx++) {
+            int op = work_idx / nptn_groups_ii;
+            int group_start = ptn_lower_int + (work_idx % nptn_groups_ii) * ptns_per_gang_ii;
 
+            size_t dad_off       = offsets[op * 8 + 0];
+            size_t left_plh_off  = offsets[op * 8 + 2];
+            size_t right_plh_off = offsets[op * 8 + 3];
+            size_t eleft_off     = offsets[op * 8 + 6];
+            size_t eright_off    = offsets[op * 8 + 7];
+
+            #pragma acc loop vector
+            for (int vs = 0; vs < vec_items_ii; vs++) {
+                int local_p = vs / block_int;
+                int s       = vs % block_int;
+                int p       = group_start + local_p;
+                if (p < ptn_upper_int) {
                     int cat = s / nstates_int;
                     int state = s % nstates_int;
                     int emat_base = cat * nstatesqr_int + state * nstates_int;
