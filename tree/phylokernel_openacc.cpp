@@ -68,6 +68,19 @@ static struct OpenACCProfile {
     int total_nodes_tip_int = 0;
     int total_nodes_int_int = 0;
 
+    // D7: Derivative kernel profiling
+    int    deriv_call_count = 0;
+    double t_deriv_total = 0.0;
+    double t_deriv_traversal = 0.0;     // computeTraversalInfo + stale partial recomp
+    double t_deriv_trans_mat = 0.0;     // host-side P(t)/dP/d²P computation + freq scaling
+    double t_deriv_trans_upload = 0.0;  // D4 update device() to GPU
+    double t_deriv_tip_setup = 0.0;     // tip lookup table build + copyin (TIP-INT only)
+    double t_deriv_kernel = 0.0;        // GPU derivative kernel execution
+    double t_deriv_postproc = 0.0;      // ASC bias correction on host
+    int    n_deriv_tip_int = 0;         // calls that took TIP-INT path
+    int    n_deriv_int_int = 0;         // calls that took INT-INT path
+    int    n_deriv_stale_recomp = 0;    // calls with non-empty traversal_info
+
     void print_summary() {
         if (call_count == 0 || t_total == 0.0) return;
         double t_kernels = t_kernel_tip_tip + t_kernel_tip_int + t_kernel_int_int;
@@ -102,6 +115,31 @@ static struct OpenACCProfile {
         cout << "  Host post-proc:       " << t_host_postproc << " s (" << pct(t_host_postproc) << "%)" << endl;
         cout << "  Unaccounted:          " << t_other << " s (" << pct(t_other) << "%)" << endl;
         cout << "  Avg levels/call:      " << (double)total_levels / call_count << endl;
+
+        // D7: Derivative kernel profiling summary
+        if (deriv_call_count > 0) {
+            double t_deriv_accounted = t_deriv_traversal + t_deriv_trans_mat +
+                t_deriv_trans_upload + t_deriv_tip_setup + t_deriv_kernel +
+                t_deriv_postproc;
+            double t_deriv_other = t_deriv_total - t_deriv_accounted;
+            auto dpct = [&](double t) { return 100.0 * t / t_deriv_total; };
+
+            cout << "\n--- Derivative Kernel (" << deriv_call_count << " calls) ---" << endl;
+            cout << "  Total deriv time:     " << t_deriv_total << " s" << endl;
+            cout << "  Avg per call:         " << (t_deriv_total / deriv_call_count * 1e6) << " us" << endl;
+            cout << "  ---" << endl;
+            cout << "  Traversal+stale:      " << t_deriv_traversal << " s (" << dpct(t_deriv_traversal) << "%) ["
+                 << n_deriv_stale_recomp << " stale recomps]" << endl;
+            cout << "  Trans mat compute:    " << t_deriv_trans_mat << " s (" << dpct(t_deriv_trans_mat) << "%)" << endl;
+            cout << "  Trans mat upload:     " << t_deriv_trans_upload << " s (" << dpct(t_deriv_trans_upload) << "%)" << endl;
+            cout << "  Tip table setup:      " << t_deriv_tip_setup << " s (" << dpct(t_deriv_tip_setup) << "%) ["
+                 << n_deriv_tip_int << " TIP-INT calls]" << endl;
+            cout << "  GPU deriv kernel:     " << t_deriv_kernel << " s (" << dpct(t_deriv_kernel) << "%) ["
+                 << n_deriv_tip_int << " TIP-INT, " << n_deriv_int_int << " INT-INT]" << endl;
+            cout << "  Host post-proc:       " << t_deriv_postproc << " s (" << dpct(t_deriv_postproc) << "%)" << endl;
+            cout << "  Unaccounted:          " << t_deriv_other << " s (" << dpct(t_deriv_other) << "%)" << endl;
+        }
+
         cout << "=============================================" << endl;
     }
 } acc_profile;
@@ -1977,6 +2015,17 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
 
     // Force state-space kernel (same as likelihood kernel)
     Params::getInstance().kernel_nonrev = true;
+
+#ifdef USE_OPENACC_PROFILE
+    bool deriv_profiling = acc_profile.enabled;
+    double deriv_prof_t0 = 0.0, deriv_prof_t1 = 0.0;
+    if (deriv_profiling) {
+        deriv_prof_t0 = getRealTime();
+        deriv_prof_t1 = deriv_prof_t0;
+        acc_profile.deriv_call_count++;
+    }
+#endif
+
     computeTraversalInfo<Vec1d>(node, dad, false);
 
     // Recompute any stale partial likelihoods on GPU.
@@ -2007,6 +2056,15 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
             computePartialLikelihood(*it, 0, aln->size() + model_factory->unobserved_ptns.size(), 0);
         // D3: Keep buffer on GPU — don't delete here
     }
+
+#ifdef USE_OPENACC_PROFILE
+    if (deriv_profiling) {
+        #pragma acc wait
+        acc_profile.t_deriv_traversal += getRealTime() - deriv_prof_t1;
+        if (!traversal_info.empty()) acc_profile.n_deriv_stale_recomp++;
+        deriv_prof_t1 = getRealTime();
+    }
+#endif
 
     size_t nstates = aln->num_states;
     size_t nstatesqr = nstates * nstates;
@@ -2078,6 +2136,13 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         }
     }
 
+#ifdef USE_OPENACC_PROFILE
+    if (deriv_profiling) {
+        acc_profile.t_deriv_trans_mat += getRealTime() - deriv_prof_t1;
+        deriv_prof_t1 = getRealTime();
+    }
+#endif
+
     // GPU data: partial likelihoods already resident (gpu_data_resident == true).
     ASSERT(gpu_data_resident && "Derivative kernel requires GPU data from prior likelihood call");
 
@@ -2091,6 +2156,14 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     #pragma acc update device(trans_mat[0:mat_size], \
                               trans_derv1[0:mat_size], \
                               trans_derv2[0:mat_size])
+
+#ifdef USE_OPENACC_PROFILE
+    if (deriv_profiling) {
+        #pragma acc wait
+        acc_profile.t_deriv_trans_upload += getRealTime() - deriv_prof_t1;
+        deriv_prof_t1 = getRealTime();
+    }
+#endif
 
     // Capture class member pointers for OpenACC (avoid mapping 'this')
     double *local_ptn_freq  = ptn_freq;
@@ -2145,6 +2218,14 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 }
             }
         }
+
+#ifdef USE_OPENACC_PROFILE
+        if (deriv_profiling) {
+            acc_profile.t_deriv_tip_setup += getRealTime() - deriv_prof_t1;
+            deriv_prof_t1 = getRealTime();
+            acc_profile.n_deriv_tip_int++;
+        }
+#endif
 
         // GPU kernel: TIP-INTERNAL derivative reduction
         {
@@ -2231,6 +2312,14 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
 
         }
 
+#ifdef USE_OPENACC_PROFILE
+        if (deriv_profiling) {
+            #pragma acc wait
+            acc_profile.t_deriv_kernel += getRealTime() - deriv_prof_t1;
+            deriv_prof_t1 = getRealTime();
+        }
+#endif
+
         delete[] partial_lh_node;
         delete[] partial_lh_derv1;
         delete[] partial_lh_derv2;
@@ -2240,7 +2329,13 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         double * __restrict__ node_partial_lh_base = node_branch->partial_lh;
         UBYTE  * __restrict__ node_scale_num_base  = node_branch->scale_num;
 
-        {
+{
+#ifdef USE_OPENACC_PROFILE
+            if (deriv_profiling) {
+                acc_profile.n_deriv_int_int++;
+                deriv_prof_t1 = getRealTime();
+            }
+#endif
             size_t plh_offset = 0;
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
@@ -2342,6 +2437,13 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 } // FOR p
             } // end acc data
         }
+#ifdef USE_OPENACC_PROFILE
+        if (deriv_profiling) {
+            #pragma acc wait
+            acc_profile.t_deriv_kernel += getRealTime() - deriv_prof_t1;
+            deriv_prof_t1 = getRealTime();
+        }
+#endif
     }
 
     // Ascertainment bias correction (on host)
@@ -2363,6 +2465,13 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     }
 
     // D4: trans matrices are persistent — don't delete here
+
+#ifdef USE_OPENACC_PROFILE
+    if (deriv_profiling) {
+        acc_profile.t_deriv_postproc += getRealTime() - deriv_prof_t1;
+        acc_profile.t_deriv_total += getRealTime() - deriv_prof_t0;
+    }
+#endif
 }
 
 // ==========================================================================
