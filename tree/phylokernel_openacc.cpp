@@ -17,6 +17,7 @@
 #include "phylokernelnew.h"      // computeTraversalInfo<Vec1d>, computeBounds<Vec1d>, computePartialInfo<Vec1d>
 #include "vectorclass/vectorf64.h" // Vec1d (pure C++ scalar wrapper, no x86 intrinsics)
 #include "model/modelsubst.h"    // computeTransMatrixEqualRate(), ModelSubst
+#include "model/modelmarkov.h"   // P0: ModelMarkov (inherits EigenDecomposition for total_num_subst)
 #include "utils/tools.h"         // Params (for kernel_nonrev flag)
 #ifdef USE_OPENACC_PROFILE
 #include "utils/timeutil.h"      // getRealTime() for profiling
@@ -1967,6 +1968,273 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
 //   df  += f_p · g_p,    ddf += f_p · h_p
 // ==========================================================================
 
+// ==========================================================================
+// P0: GPU-side eigenvalue P(t) computation
+//
+// Computes P(t), P'(t), P''(t) directly on GPU from eigendecomposition:
+//   P(t)[i,j]   = Σ_k V[i,k] * exp(λ_k * t/tns) * V⁻¹[k,j]
+//   P'(t)[i,j]  = Σ_k V[i,k] * λ_k * exp(λ_k * t/tns) * V⁻¹[k,j]
+//   P''(t)[i,j] = Σ_k V[i,k] * λ_k² * exp(λ_k * t/tns) * V⁻¹[k,j]
+//
+// Includes rate category scaling (prop, prop*rate, prop*rate²) and
+// optional state frequency pre-multiplication (for unrooted trees).
+// Eliminates host-side model->computeTransDerv() + update device().
+// ==========================================================================
+
+/**
+ * P0: Upload model eigendecomposition and rate parameters to GPU.
+ *
+ * Uploads: eigenvalues, eigenvectors, inv_eigenvectors, rate categories,
+ * rate proportions, state frequencies. All are small arrays (total < 15 KB
+ * even for AA/20 states). Called at the start of each derivative computation;
+ * allocates persistent GPU storage on first call, then just updates content.
+ */
+void PhyloTree::uploadEigenToGPU() {
+    size_t nstates = aln->num_states;
+    size_t nstatesqr = nstates * nstates;
+    size_t ncat = site_rate->getNRate();
+
+    // Get eigendecomposition from model (virtual getters on ModelSubst)
+    double *eigenvalues = model->getEigenvalues();
+    double *eigenvectors = model->getEigenvectors();
+    double *inv_eigenvectors = model->getInverseEigenvectors();
+
+    // Get total_num_subst via cast to EigenDecomposition
+    // (ModelMarkov inherits from both ModelSubst and EigenDecomposition)
+    ModelMarkov *markov_model = dynamic_cast<ModelMarkov*>(model);
+    ASSERT(markov_model && "P0 GPU P(t) requires a reversible (ModelMarkov) model");
+    double tns = markov_model->total_num_subst;
+
+    // (Re)allocate GPU arrays if size changed
+    bool need_realloc = !gpu_eigen_resident
+                     || gpu_eigen_nstates != nstates
+                     || gpu_eigen_ncat != ncat;
+
+    if (need_realloc) {
+        // Free old if exists
+        if (gpu_eigen_resident) {
+            freeEigenFromGPU();
+        }
+
+        gpu_eigen_nstates = nstates;
+        gpu_eigen_ncat = ncat;
+
+        gpu_eigenvalues = new double[nstates];
+        gpu_eigenvectors = new double[nstatesqr];
+        gpu_inv_eigenvectors = new double[nstatesqr];
+        gpu_rate_cats = new double[ncat];
+        gpu_rate_props = new double[ncat];
+        gpu_state_freq = new double[nstates];
+
+        #pragma acc enter data create( \
+            gpu_eigenvalues[0:nstates], \
+            gpu_eigenvectors[0:nstatesqr], \
+            gpu_inv_eigenvectors[0:nstatesqr], \
+            gpu_rate_cats[0:ncat], \
+            gpu_rate_props[0:ncat], \
+            gpu_state_freq[0:nstates])
+
+        gpu_eigen_resident = true;
+    }
+
+    // Copy data to host arrays
+    memcpy(gpu_eigenvalues, eigenvalues, nstates * sizeof(double));
+    memcpy(gpu_eigenvectors, eigenvectors, nstatesqr * sizeof(double));
+    memcpy(gpu_inv_eigenvectors, inv_eigenvectors, nstatesqr * sizeof(double));
+    gpu_total_num_subst = tns;
+
+    for (size_t c = 0; c < ncat; c++) {
+        gpu_rate_cats[c] = site_rate->getRate(c);
+        gpu_rate_props[c] = site_rate->getProp(c);
+    }
+
+    model->getStateFrequency(gpu_state_freq);
+
+    // Upload to GPU
+    #pragma acc update device( \
+        gpu_eigenvalues[0:nstates], \
+        gpu_eigenvectors[0:nstatesqr], \
+        gpu_inv_eigenvectors[0:nstatesqr], \
+        gpu_rate_cats[0:ncat], \
+        gpu_rate_props[0:ncat], \
+        gpu_state_freq[0:nstates])
+}
+
+/**
+ * P0: Free GPU eigendecomposition data.
+ */
+void PhyloTree::freeEigenFromGPU() {
+    if (!gpu_eigen_resident) return;
+
+    size_t ns = gpu_eigen_nstates;
+    size_t ns2 = ns * ns;
+    size_t nc = gpu_eigen_ncat;
+
+    #pragma acc exit data delete( \
+        gpu_eigenvalues[0:ns], \
+        gpu_eigenvectors[0:ns2], \
+        gpu_inv_eigenvectors[0:ns2], \
+        gpu_rate_cats[0:nc], \
+        gpu_rate_props[0:nc], \
+        gpu_state_freq[0:ns])
+
+    delete[] gpu_eigenvalues;      gpu_eigenvalues = nullptr;
+    delete[] gpu_eigenvectors;     gpu_eigenvectors = nullptr;
+    delete[] gpu_inv_eigenvectors; gpu_inv_eigenvectors = nullptr;
+    delete[] gpu_rate_cats;        gpu_rate_cats = nullptr;
+    delete[] gpu_rate_props;       gpu_rate_props = nullptr;
+    delete[] gpu_state_freq;       gpu_state_freq = nullptr;
+
+    gpu_eigen_nstates = 0;
+    gpu_eigen_ncat = 0;
+    gpu_eigen_resident = false;
+}
+
+/**
+ * P0: Compute P(t), P'(t), P''(t) on GPU using eigendecomposition.
+ *
+ * Fused kernel: for each rate category c and each matrix element (i,j),
+ * computes all three matrices in a single pass over eigenvalues.
+ * Includes rate/proportion scaling and optional state frequency
+ * pre-multiplication for unrooted trees.
+ *
+ * Output is written directly to the GPU copy of trans_mat/derv1/derv2
+ * (which must already be GPU-resident via enter data create).
+ *
+ * @param trans_mat      [ncat*n*n] present on GPU (output)
+ * @param trans_derv1    [ncat*n*n] present on GPU (output)
+ * @param trans_derv2    [ncat*n*n] present on GPU (output)
+ * @param eigenvalues    [n] present on GPU
+ * @param eigenvectors   [n*n] present on GPU (V matrix, row-major)
+ * @param inv_eigenvectors [n*n] present on GPU (V⁻¹ matrix, row-major)
+ * @param rate_cats      [ncat] present on GPU
+ * @param rate_props     [ncat] present on GPU
+ * @param state_freq     [n] present on GPU (only used if pre_multiply_freq)
+ * @param total_num_subst  scalar normalization factor
+ * @param branch_length    branch length for P(t) = exp(Q*t)
+ * @param nstates          number of states (4 for DNA, 20 for AA)
+ * @param ncat             number of rate categories
+ * @param pre_multiply_freq  true for unrooted trees (multiply by state_freq[i])
+ */
+static void computeTransDerivOnGPU(
+    double *trans_mat,
+    double *trans_derv1,
+    double *trans_derv2,
+    double *eigenvalues,
+    double *eigenvectors,
+    double *inv_eigenvectors,
+    double *rate_cats,
+    double *rate_props,
+    double *state_freq,
+    double total_num_subst,
+    double branch_length,
+    int nstates,
+    int ncat,
+    bool pre_multiply_freq)
+{
+    int n2 = nstates * nstates;
+    int total_elems = ncat * n2;
+    double inv_tns = 1.0 / total_num_subst;
+
+    #pragma acc parallel loop gang vector collapse(2) \
+        present(trans_mat[0:total_elems], \
+                trans_derv1[0:total_elems], \
+                trans_derv2[0:total_elems], \
+                eigenvalues[0:nstates], \
+                eigenvectors[0:n2], \
+                inv_eigenvectors[0:n2], \
+                rate_cats[0:ncat], \
+                rate_props[0:ncat], \
+                state_freq[0:nstates])
+    for (int c = 0; c < ncat; c++) {
+        for (int ij = 0; ij < n2; ij++) {
+            int i = ij / nstates;
+            int j = ij % nstates;
+            double evol_time = rate_cats[c] * branch_length * inv_tns;
+
+            double sum  = 0.0;
+            double sum1 = 0.0;
+            double sum2 = 0.0;
+            for (int k = 0; k < nstates; k++) {
+                double exp_val = exp(eigenvalues[k] * evol_time);
+                double coeff = eigenvectors[i * nstates + k]
+                             * inv_eigenvectors[k * nstates + j]
+                             * exp_val;
+                double coeff_lam = coeff * eigenvalues[k];
+                sum  += coeff;
+                sum1 += coeff_lam;
+                sum2 += coeff_lam * eigenvalues[k];
+            }
+
+            // Clamp P(t) to non-negative (same as ModelGTR::computeTransDerv)
+            if (sum < 0.0) sum = 0.0;
+
+            // Scale by proportion and rate (same as host caller code)
+            double prop = rate_props[c];
+            double rate = rate_cats[c];
+            double freq = pre_multiply_freq ? state_freq[i] : 1.0;
+
+            int idx = c * n2 + ij;
+            trans_mat[idx]   = sum  * prop              * freq;
+            trans_derv1[idx] = sum1 * (prop * rate)     * freq;
+            trans_derv2[idx] = sum2 * (prop * rate * rate) * freq;
+        }
+    }
+}
+
+// ==========================================================================
+// P1: GPU-side tip lookup table computation
+//
+// For TIP-INTERNAL derivative kernel, we need lookup tables:
+//   tip_table[state, c, i] = Σ_x trans_mat[c,i,x] * tip_partial_lh[state,x]
+//
+// In P5 baseline, this was computed on host then uploaded via copyin().
+// P1 computes it directly on GPU from already-present trans_mat and
+// tip_partial_lh, eliminating host computation + PCIe transfer.
+// ==========================================================================
+
+static void computeTipDerivTablesOnGPU(
+    double *trans_mat,        // [ncat*n*n] present on GPU
+    double *trans_derv1,      // [ncat*n*n] present on GPU
+    double *trans_derv2,      // [ncat*n*n] present on GPU
+    double *tip_partial_lh,   // [(STATE_UNKNOWN+1)*nstates] present on GPU
+    double *tip_node,         // [(STATE_UNKNOWN+1)*block] present on GPU (output)
+    double *tip_derv1,        // [(STATE_UNKNOWN+1)*block] present on GPU (output)
+    double *tip_derv2,        // [(STATE_UNKNOWN+1)*block] present on GPU (output)
+    int nstates, int ncat, int num_tip_states)
+{
+    int block = ncat * nstates;
+    int n2 = nstates * nstates;
+    int mat_elems = ncat * n2;
+    int tip_plh_elems = num_tip_states * nstates;
+    int out_elems = num_tip_states * block;
+
+    #pragma acc parallel loop gang collapse(2) \
+        present(trans_mat[0:mat_elems], trans_derv1[0:mat_elems], trans_derv2[0:mat_elems], \
+                tip_partial_lh[0:tip_plh_elems], \
+                tip_node[0:out_elems], tip_derv1[0:out_elems], tip_derv2[0:out_elems])
+    for (int state = 0; state < num_tip_states; state++) {
+        for (int ci = 0; ci < block; ci++) {
+            int c = ci / nstates;
+            int i = ci % nstates;
+            double val  = 0.0;
+            double val1 = 0.0;
+            double val2 = 0.0;
+            for (int x = 0; x < nstates; x++) {
+                double tip_val = tip_partial_lh[state * nstates + x];
+                int mat_idx = c * n2 + i * nstates + x;
+                val  += trans_mat[mat_idx]   * tip_val;
+                val1 += trans_derv1[mat_idx] * tip_val;
+                val2 += trans_derv2[mat_idx] * tip_val;
+            }
+            int out_idx = state * block + ci;
+            tip_node[out_idx]  = val;
+            tip_derv1[out_idx] = val1;
+            tip_derv2[out_idx] = val2;
+        }
+    }
+}
+
 void PhyloTree::computeLikelihoodDervGenericOpenACC(
     PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf)
 {
@@ -2066,74 +2334,16 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
     double *trans_derv1 = gpu_trans_derv1;
     double *trans_derv2 = gpu_trans_derv2;
 
-    for (size_t c = 0; c < ncat; c++) {
-        double cat_rate = site_rate->getRate(c);
-        double len = cat_rate * dad_branch->length;
-        double prop = site_rate->getProp(c);
-        double *this_trans_mat   = &trans_mat[c * nstatesqr];
-        double *this_trans_derv1 = &trans_derv1[c * nstatesqr];
-        double *this_trans_derv2 = &trans_derv2[c * nstatesqr];
-
-        model->computeTransDerv(len, this_trans_mat, this_trans_derv1, this_trans_derv2);
-
-        double prop_rate   = prop * cat_rate;       // w_c · r_c
-        double prop_rate_2 = prop_rate * cat_rate;   // w_c · r_c²
-        for (size_t i = 0; i < nstatesqr; i++) {
-            this_trans_mat[i]   *= prop;
-            this_trans_derv1[i] *= prop_rate;
-            this_trans_derv2[i] *= prop_rate_2;
-        }
-    }
-
-    if (!rooted) {
-        // Pre-multiply state frequencies into all 3 matrices (unrooted virtual root)
-        double state_freq[64];
-        model->getStateFrequency(state_freq);
-        for (size_t c = 0; c < ncat; c++) {
-            double *tm  = &trans_mat[c * nstatesqr];
-            double *td1 = &trans_derv1[c * nstatesqr];
-            double *td2 = &trans_derv2[c * nstatesqr];
-            for (size_t i = 0; i < nstates; i++) {
-                for (size_t x = 0; x < nstates; x++) {
-                    tm[x]  *= state_freq[i];
-                    td1[x] *= state_freq[i];
-                    td2[x] *= state_freq[i];
-                }
-                tm  += nstates;
-                td1 += nstates;
-                td2 += nstates;
-            }
-        }
-    }
-
-#ifdef USE_OPENACC_PROFILE
-    if (deriv_profiling) {
-        acc_profile.t_deriv_trans_mat += getRealTime() - deriv_prof_t1;
-        deriv_prof_t1 = getRealTime();
-    }
-#endif
-
     // GPU data: partial likelihoods already resident (gpu_data_resident == true).
     ASSERT(gpu_data_resident && "Derivative kernel requires GPU data from prior likelihood call");
 
-    // D4: Upload transition matrices — create GPU allocation once, then update content
+    // D4: Ensure persistent GPU allocation for transition matrices
     if (!gpu_trans_mat_resident) {
         #pragma acc enter data create(trans_mat[0:mat_size], \
                                       trans_derv1[0:mat_size], \
                                       trans_derv2[0:mat_size])
         gpu_trans_mat_resident = true;
     }
-    #pragma acc update device(trans_mat[0:mat_size], \
-                              trans_derv1[0:mat_size], \
-                              trans_derv2[0:mat_size])
-
-#ifdef USE_OPENACC_PROFILE
-    if (deriv_profiling) {
-        #pragma acc wait
-        acc_profile.t_deriv_trans_upload += getRealTime() - deriv_prof_t1;
-        deriv_prof_t1 = getRealTime();
-    }
-#endif
 
     // Capture class member pointers for OpenACC (avoid mapping 'this')
     double *local_ptn_freq  = ptn_freq;
@@ -2148,17 +2358,92 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
 
     if (dad->isLeaf()) {
         // ---- TIP-INTERNAL path ----
-        // Precompute lookup tables for all 3 matrices × all possible tip states
+        // P0: Compute P(t) on HOST for TIP-INTERNAL branches.
+        // Tip table computation needs host-side trans_mat; computing P(t) on GPU
+        // would require an expensive update self() download back to host.
+        // Host P(t) is fast (small matrices) and avoids the GPU→host sync stall.
+        for (size_t c = 0; c < ncat; c++) {
+            double cat_rate = site_rate->getRate(c);
+            double len = cat_rate * dad_branch->length;
+            double prop = site_rate->getProp(c);
+            double *this_trans_mat   = &trans_mat[c * nstatesqr];
+            double *this_trans_derv1 = &trans_derv1[c * nstatesqr];
+            double *this_trans_derv2 = &trans_derv2[c * nstatesqr];
+
+            model->computeTransDerv(len, this_trans_mat, this_trans_derv1, this_trans_derv2);
+
+            double prop_rate   = prop * cat_rate;
+            double prop_rate_2 = prop_rate * cat_rate;
+            for (size_t i = 0; i < nstatesqr; i++) {
+                this_trans_mat[i]   *= prop;
+                this_trans_derv1[i] *= prop_rate;
+                this_trans_derv2[i] *= prop_rate_2;
+            }
+        }
+        if (!rooted) {
+            double state_freq[64];
+            model->getStateFrequency(state_freq);
+            for (size_t c = 0; c < ncat; c++) {
+                double *tm  = &trans_mat[c * nstatesqr];
+                double *td1 = &trans_derv1[c * nstatesqr];
+                double *td2 = &trans_derv2[c * nstatesqr];
+                for (size_t i = 0; i < nstates; i++) {
+                    for (size_t x = 0; x < nstates; x++) {
+                        tm[x]  *= state_freq[i];
+                        td1[x] *= state_freq[i];
+                        td2[x] *= state_freq[i];
+                    }
+                    tm  += nstates;
+                    td1 += nstates;
+                    td2 += nstates;
+                }
+            }
+        }
+        // Upload host-computed trans_mat to GPU for the derivative kernel
+        #pragma acc update device(trans_mat[0:mat_size], \
+                                  trans_derv1[0:mat_size], \
+                                  trans_derv2[0:mat_size])
+
+#ifdef USE_OPENACC_PROFILE
+        if (deriv_profiling) {
+            acc_profile.t_deriv_trans_mat += getRealTime() - deriv_prof_t1;
+            deriv_prof_t1 = getRealTime();
+            acc_profile.t_deriv_trans_upload += 0; // upload included in trans_mat time
+            deriv_prof_t1 = getRealTime();
+        }
+#endif
+
+        // P1: Persistent GPU tip table buffers with host-side computation.
+        // Eliminates per-call new[]/delete[] and copyin() overhead.
+        // Tables computed on host (same as P5), uploaded via update device.
         size_t plh_tip_size = (aln->STATE_UNKNOWN + 1) * block;
-        double *partial_lh_node  = new double[plh_tip_size];
-        double *partial_lh_derv1 = new double[plh_tip_size];
-        double *partial_lh_derv2 = new double[plh_tip_size];
+
+        // P1: Allocate persistent GPU tip tables (first call or size change)
+        if (!gpu_tip_derv_resident || gpu_tip_derv_size < plh_tip_size) {
+            if (gpu_tip_derv_resident) {
+                #pragma acc exit data delete(gpu_tip_derv_node[0:gpu_tip_derv_size], \
+                                             gpu_tip_derv_derv1[0:gpu_tip_derv_size], \
+                                             gpu_tip_derv_derv2[0:gpu_tip_derv_size])
+            }
+            delete[] gpu_tip_derv_node;
+            delete[] gpu_tip_derv_derv1;
+            delete[] gpu_tip_derv_derv2;
+            gpu_tip_derv_node  = new double[plh_tip_size];
+            gpu_tip_derv_derv1 = new double[plh_tip_size];
+            gpu_tip_derv_derv2 = new double[plh_tip_size];
+            #pragma acc enter data create(gpu_tip_derv_node[0:plh_tip_size], \
+                                          gpu_tip_derv_derv1[0:plh_tip_size], \
+                                          gpu_tip_derv_derv2[0:plh_tip_size])
+            gpu_tip_derv_size = plh_tip_size;
+            gpu_tip_derv_resident = true;
+        }
 
         if (isRootLeaf(dad)) {
+            // RootLeaf: trivially small, compute on host
             for (size_t c = 0; c < ncat; c++) {
-                double *lh_node  = partial_lh_node  + c * nstates;
-                double *lh_derv1 = partial_lh_derv1 + c * nstates;
-                double *lh_derv2 = partial_lh_derv2 + c * nstates;
+                double *lh_node  = gpu_tip_derv_node  + c * nstates;
+                double *lh_derv1 = gpu_tip_derv_derv1 + c * nstates;
+                double *lh_derv2 = gpu_tip_derv_derv2 + c * nstates;
                 double prop = site_rate->getProp(c);
                 model->getStateFrequency(lh_node);
                 for (size_t i = 0; i < nstates; i++) {
@@ -2168,6 +2453,8 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 }
             }
         } else {
+            // P1: Compute tip tables on host from host-resident trans_mat
+            // (no download needed — P(t) was computed on host for TIP-INT).
             double *local_tip_plh = tip_partial_lh;
             for (int state = 0; state <= aln->STATE_UNKNOWN; state++) {
                 double *lh_tip = local_tip_plh + state * nstates;
@@ -2181,16 +2468,21 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                             val1 += trans_derv1[c * nstatesqr + i * nstates + x] * lh_tip[x];
                             val2 += trans_derv2[c * nstatesqr + i * nstates + x] * lh_tip[x];
                         }
-                        partial_lh_node [state * block + c * nstates + i] = val;
-                        partial_lh_derv1[state * block + c * nstates + i] = val1;
-                        partial_lh_derv2[state * block + c * nstates + i] = val2;
+                        gpu_tip_derv_node [state * block + c * nstates + i] = val;
+                        gpu_tip_derv_derv1[state * block + c * nstates + i] = val1;
+                        gpu_tip_derv_derv2[state * block + c * nstates + i] = val2;
                     }
                 }
             }
         }
+        // Upload tip tables to GPU (persistent allocation, just update content)
+        #pragma acc update device(gpu_tip_derv_node[0:plh_tip_size], \
+                                  gpu_tip_derv_derv1[0:plh_tip_size], \
+                                  gpu_tip_derv_derv2[0:plh_tip_size])
 
 #ifdef USE_OPENACC_PROFILE
         if (deriv_profiling) {
+            #pragma acc wait
             acc_profile.t_deriv_tip_setup += getRealTime() - deriv_prof_t1;
             deriv_prof_t1 = getRealTime();
             acc_profile.n_deriv_tip_int++;
@@ -2198,22 +2490,29 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
 #endif
 
         // GPU kernel: TIP-INTERNAL derivative reduction
+        // P1: tip tables are now GPU-resident (present), no copyin needed
         {
             size_t plh_offset = 0;  // ptn_lower * block
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
 
             // D2: Reuse tip_states_flat (already GPU-resident from O7)
-            // Layout: tip_states_flat[node_id * nptn + ptn]
             int dad_node_id = dad->id;
             int *local_tip_states = tip_states_flat;
             size_t tip_dad_offset = (size_t)dad_node_id * nptn;
 
+            // P1: Capture class member pointers to locals for OpenACC
+            // (avoid accessing 'this' on GPU — matches pattern used throughout)
+            double *partial_lh_node  = gpu_tip_derv_node;
+            double *partial_lh_derv1 = gpu_tip_derv_derv1;
+            double *partial_lh_derv2 = gpu_tip_derv_derv2;
+
+            // P1: All tip tables are present() — no copyin transfer
             #pragma acc data \
-                copyin(partial_lh_node[0:plh_tip_size], \
-                       partial_lh_derv1[0:plh_tip_size], \
-                       partial_lh_derv2[0:plh_tip_size]) \
-                present(local_tip_states[tip_dad_offset:nptn], \
+                present(partial_lh_node[0:plh_tip_size], \
+                        partial_lh_derv1[0:plh_tip_size], \
+                        partial_lh_derv2[0:plh_tip_size], \
+                        local_tip_states[tip_dad_offset:nptn], \
                         dad_partial_lh_base[plh_offset:plh_count], \
                         dad_scale_num_base[0:scl_count], \
                         local_ptn_invar[0:scl_count], \
@@ -2225,21 +2524,6 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                 int orig_nptn_int = (int)orig_nptn;
 
                 // D6: Vector parallelism on TIP-INTERNAL derivative kernel.
-                // Same pattern as D5 (INT-INT): flatten (cc, ii) → single s loop,
-                // distribute across vector threads with vector reduction.
-                //
-                // Simpler than D5: no inner xx dot-product loop — the tip lookup
-                // tables (partial_lh_node/derv1/derv2) were pre-computed on CPU
-                // with the matrix-vector product already baked in. Each vector
-                // thread does just 3 multiplies + 3 adds.
-                //
-                // tip_idx = state_dad * block + s (coalesced for fixed state_dad)
-                // dad_val = dad_partial_lh_base[p * block + s] (coalesced across
-                // vector threads)
-                //
-                // vector_length(32) = 1 warp: reduction uses fast warp shuffles
-                // (no cross-warp shared memory barrier). DNA block=16 → 16/32
-                // active; Protein block=80 → each thread handles ~3 iterations.
                 #pragma acc parallel loop gang vector_length(32) default(present) \
                     reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
                 for (int p = 0; p < (int)nptn; p++) {
@@ -2279,7 +2563,6 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
                     }
                 } // FOR p
             } // end acc data
-
         }
 
 #ifdef USE_OPENACC_PROFILE
@@ -2290,12 +2573,28 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         }
 #endif
 
-        delete[] partial_lh_node;
-        delete[] partial_lh_derv1;
-        delete[] partial_lh_derv2;
-
     } else {
         // ---- INTERNAL-INTERNAL path ----
+        // P0: Compute P(t) on GPU for INTERNAL-INTERNAL branches.
+        // No host copy needed — derivative kernel runs entirely on GPU.
+        uploadEigenToGPU();
+        computeTransDerivOnGPU(
+            trans_mat, trans_derv1, trans_derv2,
+            gpu_eigenvalues, gpu_eigenvectors, gpu_inv_eigenvectors,
+            gpu_rate_cats, gpu_rate_props, gpu_state_freq,
+            gpu_total_num_subst, dad_branch->length,
+            (int)nstates, (int)ncat, !rooted);
+
+#ifdef USE_OPENACC_PROFILE
+        if (deriv_profiling) {
+            #pragma acc wait
+            acc_profile.t_deriv_trans_mat += getRealTime() - deriv_prof_t1;
+            deriv_prof_t1 = getRealTime();
+            acc_profile.t_deriv_trans_upload += 0; // P0: computed directly on GPU
+            deriv_prof_t1 = getRealTime();
+        }
+#endif
+
         double * __restrict__ node_partial_lh_base = node_branch->partial_lh;
         UBYTE  * __restrict__ node_scale_num_base  = node_branch->scale_num;
 
@@ -2310,7 +2609,7 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
 
-            // D4: trans matrices already on GPU via update device above
+            // P0: trans matrices computed on GPU via computeTransDerivOnGPU
             #pragma acc data \
                 present(trans_mat[0:mat_size], \
                         trans_derv1[0:mat_size], \
@@ -2495,6 +2794,21 @@ void PhyloTree::freeOpenACCData() {
     delete[] gpu_trans_derv1; gpu_trans_derv1 = nullptr;
     delete[] gpu_trans_derv2; gpu_trans_derv2 = nullptr;
     gpu_trans_mat_size = 0;
+
+    // P0: Free eigendecomposition data from GPU and host
+    freeEigenFromGPU();
+
+    // P1: Free tip derivative tables from GPU and host
+    if (gpu_tip_derv_resident) {
+        #pragma acc exit data delete(gpu_tip_derv_node[0:gpu_tip_derv_size], \
+                                     gpu_tip_derv_derv1[0:gpu_tip_derv_size], \
+                                     gpu_tip_derv_derv2[0:gpu_tip_derv_size])
+        gpu_tip_derv_resident = false;
+    }
+    delete[] gpu_tip_derv_node;  gpu_tip_derv_node = nullptr;
+    delete[] gpu_tip_derv_derv1; gpu_tip_derv_derv1 = nullptr;
+    delete[] gpu_tip_derv_derv2; gpu_tip_derv_derv2 = nullptr;
+    gpu_tip_derv_size = 0;
 
     // P2: Free tip_states_flat from GPU and host
     if (gpu_tip_states_ptr) {

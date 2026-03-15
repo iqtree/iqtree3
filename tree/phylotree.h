@@ -992,10 +992,26 @@ public:
     size_t gpu_eigen_nstates = 0;
     bool gpu_eigen_resident = false;
 
-    /** Upload model eigendecomposition to GPU. Call after decomposeRateMatrix(). */
+    // P0: Additional GPU-resident data for on-device P(t) computation.
+    // Rate categories and proportions from site_rate, state frequencies from model.
+    double *gpu_rate_cats = nullptr;    // [ncat] rate multiplier per category
+    double *gpu_rate_props = nullptr;   // [ncat] proportion per category
+    double *gpu_state_freq = nullptr;   // [nstates] equilibrium frequencies
+    size_t gpu_eigen_ncat = 0;
+
+    /** Upload model eigendecomposition + rates to GPU. Called at start of derivative computation. */
     void uploadEigenToGPU();
     /** Free GPU eigendecomposition data. */
     void freeEigenFromGPU();
+
+    // P1: GPU-resident tip lookup tables for TIP-INTERNAL derivative kernel.
+    // Computed on GPU from GPU-resident trans_mat and tip_partial_lh.
+    // Persistent across calls (allocated once, reused).
+    double *gpu_tip_derv_node  = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    double *gpu_tip_derv_derv1 = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    double *gpu_tip_derv_derv2 = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    size_t gpu_tip_derv_size = 0;
+    bool gpu_tip_derv_resident = false;
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
