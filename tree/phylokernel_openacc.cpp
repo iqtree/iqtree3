@@ -228,6 +228,20 @@ static vector<LevelBatch> groupByLevelAndType(
 }
 
 // ==========================================================================
+// T1: Compile-time template dispatch macro.
+// Selects NSTATES=4 (DNA), NSTATES=20 (AA), or NSTATES=0 (generic fallback)
+// at each call site based on runtime nstates value.
+// ==========================================================================
+#define OPENACC_DISPATCH_NSTATES(func, nstates_val, ...)  \
+    do {                                                   \
+        switch (nstates_val) {                             \
+            case 4:  func<4>(__VA_ARGS__); break;          \
+            case 20: func<20>(__VA_ARGS__); break;         \
+            default: func<0>(__VA_ARGS__); break;          \
+        }                                                  \
+    } while(0)
+
+// ==========================================================================
 // P2: Batched TIP-TIP kernel
 // Processes all TIP-TIP nodes in a single kernel launch.
 // No scaling needed (cherry nodes always have scale_num = 0).
@@ -284,6 +298,7 @@ static void batchedTipTip(
 //   Kernel 1 (collapse(3)): Compute — right child dot product + left tip lookup.
 //   Kernel 2 (collapse(2)): Scale propagation + scaling check.
 // ==========================================================================
+template<int NSTATES>
 static void batchedTipInternal(
     size_t *offsets, int num_nodes,
     double *central_plh_base, UBYTE *central_scl_base,
@@ -307,6 +322,7 @@ static void batchedTipInternal(
                 local_tip_plh[0:tip_unknown_size])
     {
         // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
+        // T1: Inner loop uses compile-time NSTATES for unrolling + div/mod optimization.
         #pragma acc parallel loop gang vector collapse(3) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
@@ -319,26 +335,42 @@ static void batchedTipInternal(
 
                     int state_left = tip_states_base[(size_t)left_nid * nptn_stride + p];
 
-                    int cat = s / nstates_int;
-                    int state = s % nstates_int;
-                    int emat_base = cat * nstatesqr_int + state * nstates_int;
-                    int plh_base = p * block_int + cat * nstates_int;
+                    if constexpr (NSTATES > 0) {
+                        // T1: Compile-time nstates — div/mod optimized, inner loop unrolled
+                        int cat = s / NSTATES;
+                        int state = s % NSTATES;
+                        int emat_base = cat * (NSTATES * NSTATES) + state * NSTATES;
+                        int plh_base = p * block_int + cat * NSTATES;
 
-                    // Right child: dot product P(t) × partial_lh
-                    double vright = 0.0;
-                    #pragma acc loop seq
-                    for (int k = 0; k < nstates_int; k++) {
-                        vright += buffer_plh_base[eright_off + emat_base + k]
-                                * central_plh_base[right_plh_off + plh_base + k];
+                        double vright = 0.0;
+                        for (int k = 0; k < NSTATES; k++) {
+                            vright += buffer_plh_base[eright_off + emat_base + k]
+                                    * central_plh_base[right_plh_off + plh_base + k];
+                        }
+                        double vleft_val = buffer_plh_base[tlh_left_off + state_left * block_int + s];
+                        central_plh_base[dad_off + (size_t)p * block_int + s] = vleft_val * vright;
+                    } else {
+                        // Generic fallback: runtime nstates
+                        int cat = s / nstates_int;
+                        int state = s % nstates_int;
+                        int emat_base = cat * nstatesqr_int + state * nstates_int;
+                        int plh_base = p * block_int + cat * nstates_int;
+
+                        double vright = 0.0;
+                        #pragma acc loop seq
+                        for (int k = 0; k < nstates_int; k++) {
+                            vright += buffer_plh_base[eright_off + emat_base + k]
+                                    * central_plh_base[right_plh_off + plh_base + k];
+                        }
+                        double vleft_val = buffer_plh_base[tlh_left_off + state_left * block_int + s];
+                        central_plh_base[dad_off + (size_t)p * block_int + s] = vleft_val * vright;
                     }
-                    // Left child: precomputed tip lookup
-                    double vleft_val = buffer_plh_base[tlh_left_off + state_left * block_int + s];
-                    central_plh_base[dad_off + (size_t)p * block_int + s] = vleft_val * vright;
                 }
             }
         }
 
         // Kernel 2: Scale propagation + scaling check (collapse(2) — lightweight, per-pattern)
+        // T1: Scaling loop uses compile-time nstates for s % nstates optimization.
         #pragma acc parallel loop gang vector collapse(2) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
@@ -356,9 +388,15 @@ static void batchedTipInternal(
                     if (v > lh_max) lh_max = v;
                 }
                 if (lh_max == 0.0) {
-                    for (int s = 0; s < block_int; s++)
-                        central_plh_base[dad_off + (size_t)p * block_int + s] =
-                            local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    if constexpr (NSTATES > 0) {
+                        for (int s = 0; s < block_int; s++)
+                            central_plh_base[dad_off + (size_t)p * block_int + s] =
+                                local_tip_plh[state_unknown * NSTATES + (s % NSTATES)];
+                    } else {
+                        for (int s = 0; s < block_int; s++)
+                            central_plh_base[dad_off + (size_t)p * block_int + s] =
+                                local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    }
                     central_scl_base[dad_scl_off + p] += 4;
                 } else if (lh_max < SCALING_THRESHOLD) {
                     for (int s = 0; s < block_int; s++)
@@ -389,6 +427,7 @@ static void batchedTipInternal(
 // Before O4+O5: collapse(2) over (op,p), sequential for(s) → 73% memory waste,
 //               132 registers, 18.75% occupancy, scheduler idle 84%.
 // ==========================================================================
+template<int NSTATES>
 static void batchedInternalInternal(
     size_t *offsets, int num_nodes,
     double *central_plh_base, UBYTE *central_scl_base,
@@ -410,8 +449,7 @@ static void batchedInternalInternal(
                 local_tip_plh[0:tip_unknown_size])
     {
         // Kernel 1: Compute partial likelihoods (collapse(3) — coalesced, low registers)
-        // Each thread computes ONE output value: dad_plh[p*block+s] = vleft * vright
-        // where vleft = dot(P_left[s,:], left_plh[p,:]), vright = dot(P_right[s,:], right_plh[p,:])
+        // T1: Inner loop uses compile-time NSTATES for unrolling + div/mod optimization.
         #pragma acc parallel loop gang vector collapse(3) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
@@ -422,25 +460,44 @@ static void batchedInternalInternal(
                     size_t eleft_off     = offsets[op * 8 + 6];
                     size_t eright_off    = offsets[op * 8 + 7];
 
-                    int cat = s / nstates_int;
-                    int state = s % nstates_int;
-                    int emat_base = cat * nstatesqr_int + state * nstates_int;
-                    int plh_base = p * block_int + cat * nstates_int;
+                    if constexpr (NSTATES > 0) {
+                        // T1: Compile-time nstates — div/mod optimized, inner loop unrolled
+                        int cat = s / NSTATES;
+                        int state = s % NSTATES;
+                        int emat_base = cat * (NSTATES * NSTATES) + state * NSTATES;
+                        int plh_base = p * block_int + cat * NSTATES;
 
-                    double vleft = 0.0, vright = 0.0;
-                    #pragma acc loop seq
-                    for (int k = 0; k < nstates_int; k++) {
-                        vleft  += buffer_plh_base[eleft_off + emat_base + k]
-                                * central_plh_base[left_plh_off + plh_base + k];
-                        vright += buffer_plh_base[eright_off + emat_base + k]
-                                * central_plh_base[right_plh_off + plh_base + k];
+                        double vleft = 0.0, vright = 0.0;
+                        for (int k = 0; k < NSTATES; k++) {
+                            vleft  += buffer_plh_base[eleft_off + emat_base + k]
+                                    * central_plh_base[left_plh_off + plh_base + k];
+                            vright += buffer_plh_base[eright_off + emat_base + k]
+                                    * central_plh_base[right_plh_off + plh_base + k];
+                        }
+                        central_plh_base[dad_off + (size_t)p * block_int + s] = vleft * vright;
+                    } else {
+                        // Generic fallback: runtime nstates
+                        int cat = s / nstates_int;
+                        int state = s % nstates_int;
+                        int emat_base = cat * nstatesqr_int + state * nstates_int;
+                        int plh_base = p * block_int + cat * nstates_int;
+
+                        double vleft = 0.0, vright = 0.0;
+                        #pragma acc loop seq
+                        for (int k = 0; k < nstates_int; k++) {
+                            vleft  += buffer_plh_base[eleft_off + emat_base + k]
+                                    * central_plh_base[left_plh_off + plh_base + k];
+                            vright += buffer_plh_base[eright_off + emat_base + k]
+                                    * central_plh_base[right_plh_off + plh_base + k];
+                        }
+                        central_plh_base[dad_off + (size_t)p * block_int + s] = vleft * vright;
                     }
-                    central_plh_base[dad_off + (size_t)p * block_int + s] = vleft * vright;
                 }
             }
         }
 
         // Kernel 2: Scale propagation + scaling check (collapse(2) — lightweight, per-pattern)
+        // T1: Scaling loop uses compile-time nstates for s % nstates optimization.
         #pragma acc parallel loop gang vector collapse(2) vector_length(128)
         for (int op = 0; op < num_nodes; op++) {
             for (int p = ptn_lower_int; p < ptn_upper_int; p++) {
@@ -460,9 +517,15 @@ static void batchedInternalInternal(
                     if (v > lh_max) lh_max = v;
                 }
                 if (lh_max == 0.0) {
-                    for (int s = 0; s < block_int; s++)
-                        central_plh_base[dad_off + (size_t)p * block_int + s] =
-                            local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    if constexpr (NSTATES > 0) {
+                        for (int s = 0; s < block_int; s++)
+                            central_plh_base[dad_off + (size_t)p * block_int + s] =
+                                local_tip_plh[state_unknown * NSTATES + (s % NSTATES)];
+                    } else {
+                        for (int s = 0; s < block_int; s++)
+                            central_plh_base[dad_off + (size_t)p * block_int + s] =
+                                local_tip_plh[state_unknown * nstates_int + (s % nstates_int)];
+                    }
                     central_scl_base[dad_scl_off + p] += 4;
                 } else if (lh_max < SCALING_THRESHOLD) {
                     for (int s = 0; s < block_int; s++)
@@ -1398,7 +1461,8 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             prof_t1 = getRealTime();
                         }
 #endif
-                        batchedTipInternal(offsets, num_nodes,
+                        OPENACC_DISPATCH_NSTATES(batchedTipInternal, nstates_int_b,
+                            offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
                             local_tip_plh_b,
@@ -1453,7 +1517,8 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             prof_t1 = getRealTime();
                         }
 #endif
-                        batchedInternalInternal(offsets, num_nodes,
+                        OPENACC_DISPATCH_NSTATES(batchedInternalInternal, nstates_int_b,
+                            offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh,
                             local_tip_plh_b,
@@ -1704,7 +1769,8 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             prof_t1 = getRealTime();
                         }
 #endif
-                        batchedTipInternal(offsets, num_nodes,
+                        OPENACC_DISPATCH_NSTATES(batchedTipInternal, nstates_int_b,
+                            offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh, local_tip_states_b,
                             local_tip_plh_b,
@@ -1756,7 +1822,8 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                             prof_t1 = getRealTime();
                         }
 #endif
-                        batchedInternalInternal(offsets, num_nodes,
+                        OPENACC_DISPATCH_NSTATES(batchedInternalInternal, nstates_int_b,
+                            offsets, num_nodes,
                             local_central_plh, local_central_scl,
                             local_buffer_plh,
                             local_tip_plh_b,
@@ -2235,6 +2302,376 @@ static void computeTipDerivTablesOnGPU(
     }
 }
 
+// ==========================================================================
+// T1: Template-specialized derivative kernel for TIP-INTERNAL branches.
+//
+// Extracted from inline code in computeLikelihoodDervGenericOpenACC.
+// NSTATES=4:  outer-loop vectorization (gang vector VL=128), each thread
+//             processes one full pattern sequentially → 100% utilization.
+// NSTATES=20: inner-loop vector reduction (gang + vector VL=32), compile-time
+//             loop unrolling → 62.5% utilization but faster per-thread.
+// NSTATES=0:  generic fallback with runtime nstates (original code).
+// ==========================================================================
+template<int NSTATES>
+static void derivKernelTipInt(
+    int *tip_states, size_t tip_dad_offset,
+    double *tip_node, double *tip_derv1, double *tip_derv2,
+    size_t plh_tip_size,
+    double *dad_plh, size_t plh_count,
+    UBYTE *dad_scl, size_t scl_count,
+    double *ptn_invar, double *ptn_freq,
+    int nptn, int block, int nstates, int ncat, int orig_nptn,
+    double &out_df, double &out_ddf,
+    double &out_prob_const, double &out_df_const, double &out_ddf_const)
+{
+    double my_df = 0.0, my_ddf = 0.0;
+    double prob_const = 0.0, df_const = 0.0, ddf_const = 0.0;
+
+    #pragma acc data \
+        present(tip_node[0:plh_tip_size], \
+                tip_derv1[0:plh_tip_size], \
+                tip_derv2[0:plh_tip_size], \
+                tip_states[tip_dad_offset:nptn], \
+                dad_plh[0:plh_count], \
+                dad_scl[0:scl_count], \
+                ptn_invar[0:scl_count], \
+                ptn_freq[0:scl_count])
+    {
+        if constexpr (NSTATES == 4) {
+            // T1: DNA outer-loop vectorization — each vector thread = one pattern.
+            // block = ncat * 4. Inner loop is sequential (4*ncat iterations).
+            // 128 threads all active → 100% utilization (vs 12.5% with VL=32).
+            int block4 = ncat * 4;
+            #pragma acc parallel loop gang vector vector_length(128) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                int state_dad = tip_states[tip_dad_offset + p];
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop seq
+                for (int s = 0; s < block4; s++) {
+                    int tip_idx = state_dad * block4 + s;
+                    double dad_val = dad_plh[p * block4 + s];
+                    lh_ptn  += tip_node[tip_idx]  * dad_val;
+                    df_ptn  += tip_derv1[tip_idx] * dad_val;
+                    ddf_ptn += tip_derv2[tip_idx] * dad_val;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if (dad_scl[p] >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        } else if constexpr (NSTATES == 20) {
+            // T1: AA inner-loop vector reduction with compile-time unrolling.
+            // block = ncat * 20. vector_length(32): 20/32 = 62.5% utilization.
+            // Compiler can fully unroll inner loop (20 iterations).
+            int block20 = ncat * 20;
+            #pragma acc parallel loop gang vector_length(32) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                int state_dad = tip_states[tip_dad_offset + p];
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                for (int s = 0; s < block20; s++) {
+                    int tip_idx = state_dad * block20 + s;
+                    double dad_val = dad_plh[p * block20 + s];
+                    lh_ptn  += tip_node[tip_idx]  * dad_val;
+                    df_ptn  += tip_derv1[tip_idx] * dad_val;
+                    ddf_ptn += tip_derv2[tip_idx] * dad_val;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if (dad_scl[p] >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        } else {
+            // Generic fallback: runtime nstates, original code.
+            int block_int = block;
+            #pragma acc parallel loop gang vector_length(32) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                int state_dad = tip_states[tip_dad_offset + p];
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                for (int s = 0; s < block_int; s++) {
+                    int tip_idx = state_dad * block_int + s;
+                    double dad_val = dad_plh[p * block_int + s];
+                    lh_ptn  += tip_node[tip_idx]  * dad_val;
+                    df_ptn  += tip_derv1[tip_idx] * dad_val;
+                    ddf_ptn += tip_derv2[tip_idx] * dad_val;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if (dad_scl[p] >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        }
+    } // end acc data
+
+    out_df += my_df;
+    out_ddf += my_ddf;
+    out_prob_const += prob_const;
+    out_df_const += df_const;
+    out_ddf_const += ddf_const;
+}
+
+// ==========================================================================
+// T1: Template-specialized derivative kernel for INTERNAL-INTERNAL branches.
+//
+// NSTATES=4:  outer-loop vectorization (gang vector VL=128), each thread
+//             processes one full pattern with sequential matrix-vector
+//             products → 100% utilization.
+// NSTATES=20: inner-loop vector reduction (gang + vector VL=32), compile-time
+//             loop unrolling + compile-time div/mod.
+// NSTATES=0:  generic fallback with runtime nstates (original code).
+// ==========================================================================
+template<int NSTATES>
+static void derivKernelIntInt(
+    double *trans_mat, double *trans_derv1, double *trans_derv2,
+    size_t mat_size,
+    double *dad_plh, double *node_plh,
+    size_t plh_count,
+    UBYTE *dad_scl, UBYTE *node_scl, size_t scl_count,
+    double *ptn_invar, double *ptn_freq,
+    int nptn, int block, int nstates, int nstatesqr, int ncat, int orig_nptn,
+    double &out_df, double &out_ddf,
+    double &out_prob_const, double &out_df_const, double &out_ddf_const)
+{
+    double my_df = 0.0, my_ddf = 0.0;
+    double prob_const = 0.0, df_const = 0.0, ddf_const = 0.0;
+
+    #pragma acc data \
+        present(trans_mat[0:mat_size], \
+                trans_derv1[0:mat_size], \
+                trans_derv2[0:mat_size], \
+                dad_plh[0:plh_count], \
+                node_plh[0:plh_count], \
+                dad_scl[0:scl_count], \
+                node_scl[0:scl_count], \
+                ptn_invar[0:scl_count], \
+                ptn_freq[0:scl_count])
+    {
+        if constexpr (NSTATES == 4) {
+            // T1: DNA outer-loop vectorization — each vector thread = one pattern.
+            // Inner loops: for(s=0..block-1) with for(xx=0..3) both sequential.
+            // Compile-time: s/4 → shift, s%4 → mask, inner loop unrolled.
+            int block4 = ncat * 4;
+            #pragma acc parallel loop gang vector vector_length(128) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop seq
+                for (int s = 0; s < block4; s++) {
+                    int cc = s >> 2;    // s / 4
+                    int ii = s & 3;     // s % 4
+
+                    double lh_state  = 0.0;
+                    double df_state  = 0.0;
+                    double ddf_state = 0.0;
+                    // Inner 4-element dot product — fully unrolled by compiler
+                    for (int xx = 0; xx < 4; xx++) {
+                        int mat_idx = cc * 16 + ii * 4 + xx;
+                        double plh = node_plh[p * block4 + cc * 4 + xx];
+                        lh_state  += trans_mat[mat_idx]   * plh;
+                        df_state  += trans_derv1[mat_idx] * plh;
+                        ddf_state += trans_derv2[mat_idx] * plh;
+                    }
+                    double dad_val = dad_plh[p * block4 + s];
+                    lh_ptn  += dad_val * lh_state;
+                    df_ptn  += dad_val * df_state;
+                    ddf_ptn += dad_val * ddf_state;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if ((dad_scl[p] + node_scl[p]) >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        } else if constexpr (NSTATES == 20) {
+            // T1: AA inner-loop vector reduction with compile-time constants.
+            // vector_length(32): 20/32 = 62.5% utilization.
+            // Compile-time: s/20, s%20 use multiply-shift, inner loop unrolled.
+            int block20 = ncat * 20;
+            #pragma acc parallel loop gang vector_length(32) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                for (int s = 0; s < block20; s++) {
+                    int cc = s / 20;
+                    int ii = s % 20;
+
+                    double lh_state  = 0.0;
+                    double df_state  = 0.0;
+                    double ddf_state = 0.0;
+                    for (int xx = 0; xx < 20; xx++) {
+                        int mat_idx = cc * 400 + ii * 20 + xx;
+                        double plh = node_plh[p * block20 + cc * 20 + xx];
+                        lh_state  += trans_mat[mat_idx]   * plh;
+                        df_state  += trans_derv1[mat_idx] * plh;
+                        ddf_state += trans_derv2[mat_idx] * plh;
+                    }
+                    double dad_val = dad_plh[p * block20 + s];
+                    lh_ptn  += dad_val * lh_state;
+                    df_ptn  += dad_val * df_state;
+                    ddf_ptn += dad_val * ddf_state;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if ((dad_scl[p] + node_scl[p]) >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        } else {
+            // Generic fallback: runtime nstates, original code.
+            int block_int = block;
+            int nstates_int = nstates;
+            int nstatesqr_int = nstatesqr;
+            #pragma acc parallel loop gang vector_length(32) default(present) \
+                reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
+            for (int p = 0; p < nptn; p++) {
+                double lh_ptn  = 0.0;
+                double df_ptn  = 0.0;
+                double ddf_ptn = 0.0;
+
+                #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
+                for (int s = 0; s < block_int; s++) {
+                    int cc = s / nstates_int;
+                    int ii = s % nstates_int;
+
+                    double lh_state  = 0.0;
+                    double df_state  = 0.0;
+                    double ddf_state = 0.0;
+                    #pragma acc loop seq
+                    for (int xx = 0; xx < nstates_int; xx++) {
+                        int mat_idx = cc * nstatesqr_int + ii * nstates_int + xx;
+                        double plh = node_plh[p * block_int + cc * nstates_int + xx];
+                        lh_state  += trans_mat[mat_idx]   * plh;
+                        df_state  += trans_derv1[mat_idx] * plh;
+                        ddf_state += trans_derv2[mat_idx] * plh;
+                    }
+                    double dad_val = dad_plh[p * block_int + s];
+                    lh_ptn  += dad_val * lh_state;
+                    df_ptn  += dad_val * df_state;
+                    ddf_ptn += dad_val * ddf_state;
+                }
+
+                lh_ptn += ptn_invar[p];
+
+                if (p < orig_nptn) {
+                    double inv_lh = 1.0 / fabs(lh_ptn);
+                    double df_frac  = df_ptn * inv_lh;
+                    double ddf_frac = ddf_ptn * inv_lh;
+                    my_df  += df_frac * ptn_freq[p];
+                    my_ddf += (ddf_frac - df_frac * df_frac) * ptn_freq[p];
+                } else {
+                    if ((dad_scl[p] + node_scl[p]) >= 1) {
+                        lh_ptn  *= SCALING_THRESHOLD;
+                        df_ptn  *= SCALING_THRESHOLD;
+                        ddf_ptn *= SCALING_THRESHOLD;
+                    }
+                    prob_const += lh_ptn;
+                    df_const   += df_ptn;
+                    ddf_const  += ddf_ptn;
+                }
+            }
+        }
+    } // end acc data
+
+    out_df += my_df;
+    out_ddf += my_ddf;
+    out_prob_const += prob_const;
+    out_df_const += df_const;
+    out_ddf_const += ddf_const;
+}
+
 void PhyloTree::computeLikelihoodDervGenericOpenACC(
     PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf)
 {
@@ -2489,80 +2926,26 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         }
 #endif
 
-        // GPU kernel: TIP-INTERNAL derivative reduction
-        // P1: tip tables are now GPU-resident (present), no copyin needed
+        // T1: Dispatch to template-specialized TIP-INTERNAL derivative kernel
         {
-            size_t plh_offset = 0;  // ptn_lower * block
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
-
-            // D2: Reuse tip_states_flat (already GPU-resident from O7)
             int dad_node_id = dad->id;
             int *local_tip_states = tip_states_flat;
             size_t tip_dad_offset = (size_t)dad_node_id * nptn;
-
-            // P1: Capture class member pointers to locals for OpenACC
-            // (avoid accessing 'this' on GPU — matches pattern used throughout)
             double *partial_lh_node  = gpu_tip_derv_node;
             double *partial_lh_derv1 = gpu_tip_derv_derv1;
             double *partial_lh_derv2 = gpu_tip_derv_derv2;
 
-            // P1: All tip tables are present() — no copyin transfer
-            #pragma acc data \
-                present(partial_lh_node[0:plh_tip_size], \
-                        partial_lh_derv1[0:plh_tip_size], \
-                        partial_lh_derv2[0:plh_tip_size], \
-                        local_tip_states[tip_dad_offset:nptn], \
-                        dad_partial_lh_base[plh_offset:plh_count], \
-                        dad_scale_num_base[0:scl_count], \
-                        local_ptn_invar[0:scl_count], \
-                        local_ptn_freq[0:scl_count])
-            {
-                int block_int = (int)block;
-                int nstates_int = (int)nstates;
-                int ncat_int = (int)ncat;
-                int orig_nptn_int = (int)orig_nptn;
-
-                // D6: Vector parallelism on TIP-INTERNAL derivative kernel.
-                #pragma acc parallel loop gang vector_length(32) default(present) \
-                    reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
-                for (int p = 0; p < (int)nptn; p++) {
-                    int state_dad = local_tip_states[tip_dad_offset + p];
-                    double lh_ptn  = 0.0;
-                    double df_ptn  = 0.0;
-                    double ddf_ptn = 0.0;
-
-                    #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
-                    for (int s = 0; s < block_int; s++) {
-                        int tip_idx = state_dad * block_int + s;
-                        double dad_val = dad_partial_lh_base[p * block_int + s];
-                        lh_ptn  += partial_lh_node[tip_idx]  * dad_val;
-                        df_ptn  += partial_lh_derv1[tip_idx] * dad_val;
-                        ddf_ptn += partial_lh_derv2[tip_idx] * dad_val;
-                    }
-
-                    // Add invariant site contribution AFTER vector reduction
-                    lh_ptn += local_ptn_invar[p];
-
-                    // Normalize and accumulate (gang-level reduction)
-                    if (p < orig_nptn_int) {
-                        double inv_lh = 1.0 / fabs(lh_ptn);
-                        double df_frac  = df_ptn * inv_lh;
-                        double ddf_frac = ddf_ptn * inv_lh;
-                        my_df  += df_frac * local_ptn_freq[p];
-                        my_ddf += (ddf_frac - df_frac * df_frac) * local_ptn_freq[p];
-                    } else {
-                        if (dad_scale_num_base[p] >= 1) {
-                            lh_ptn  *= SCALING_THRESHOLD;
-                            df_ptn  *= SCALING_THRESHOLD;
-                            ddf_ptn *= SCALING_THRESHOLD;
-                        }
-                        prob_const += lh_ptn;
-                        df_const   += df_ptn;
-                        ddf_const  += ddf_ptn;
-                    }
-                } // FOR p
-            } // end acc data
+            OPENACC_DISPATCH_NSTATES(derivKernelTipInt, (int)nstates,
+                local_tip_states, tip_dad_offset,
+                partial_lh_node, partial_lh_derv1, partial_lh_derv2,
+                plh_tip_size,
+                dad_partial_lh_base, plh_count,
+                dad_scale_num_base, scl_count,
+                local_ptn_invar, local_ptn_freq,
+                (int)nptn, (int)block, (int)nstates, (int)ncat, (int)orig_nptn,
+                my_df, my_ddf, prob_const, df_const, ddf_const);
         }
 
 #ifdef USE_OPENACC_PROFILE
@@ -2598,113 +2981,25 @@ void PhyloTree::computeLikelihoodDervGenericOpenACC(
         double * __restrict__ node_partial_lh_base = node_branch->partial_lh;
         UBYTE  * __restrict__ node_scale_num_base  = node_branch->scale_num;
 
-{
+        // T1: Dispatch to template-specialized INTERNAL-INTERNAL derivative kernel
+        {
 #ifdef USE_OPENACC_PROFILE
             if (deriv_profiling) {
                 acc_profile.n_deriv_int_int++;
                 deriv_prof_t1 = getRealTime();
             }
 #endif
-            size_t plh_offset = 0;
             size_t plh_count  = nptn * block;
             size_t scl_count  = nptn;
 
-            // P0: trans matrices computed on GPU via computeTransDerivOnGPU
-            #pragma acc data \
-                present(trans_mat[0:mat_size], \
-                        trans_derv1[0:mat_size], \
-                        trans_derv2[0:mat_size], \
-                        dad_partial_lh_base[plh_offset:plh_count], \
-                        node_partial_lh_base[plh_offset:plh_count], \
-                        dad_scale_num_base[0:scl_count], \
-                        node_scale_num_base[0:scl_count], \
-                        local_ptn_invar[0:scl_count], \
-                        local_ptn_freq[0:scl_count])
-            {
-                int block_int = (int)block;
-                int nstates_int = (int)nstates;
-                int nstatesqr_int = (int)nstatesqr;
-                int ncat_int = (int)ncat;
-                int orig_nptn_int = (int)orig_nptn;
-
-                // D5: Vector parallelism — distribute (cc, ii) work across
-                // vector threads within each gang.
-                //
-                // Flatten (cc, ii) → single index s = cc*nstates + ii (= block
-                // elements). Each vector thread computes one row of the matrix-
-                // vector product: lh_state = Σ_xx P[cc,ii,xx] · node_plh[p,cc,xx],
-                // then multiplies by dad_plh[p,s] and accumulates via vector
-                // reduction into lh_ptn/df_ptn/ddf_ptn.
-                //
-                // Gang: distributes patterns p across warps (gang reduction on
-                //        my_df, my_ddf, prob_const, df_const, ddf_const)
-                // Vector: distributes s=0..block-1 across threads in each warp
-                //         (vector reduction on lh_ptn, df_ptn, ddf_ptn)
-                //
-                // DNA (4 states, 4 cats):  block=16,  16/32 threads active
-                // Protein (20 states, 4 cats): block=80, ~3 iters/thread, all 32 active
-                //
-                // The inner xx loop (nstates FMAs × 3 matrices) remains sequential
-                // per vector thread — each thread does one dot-product row.
-                //
-                // vector_length(32) = 1 warp: reduction uses fast warp shuffles
-                // (no cross-warp shared memory barrier). vector_length(128) caused
-                // ~1s regression due to 4-warp shared-memory reduction overhead.
-                //
-                // IMPORTANT: lh_ptn must be initialized to 0 (not ptn_invar[p])
-                // inside the vector reduction. The invariant contribution is added
-                // AFTER the reduction to avoid summing it across all vector threads.
-                #pragma acc parallel loop gang vector_length(32) default(present) \
-                    reduction(+:my_df, my_ddf, prob_const, df_const, ddf_const)
-                for (int p = 0; p < (int)nptn; p++) {
-                    double lh_ptn  = 0.0;
-                    double df_ptn  = 0.0;
-                    double ddf_ptn = 0.0;
-
-                    #pragma acc loop vector reduction(+:lh_ptn, df_ptn, ddf_ptn)
-                    for (int s = 0; s < block_int; s++) {
-                        int cc = s / nstates_int;
-                        int ii = s % nstates_int;
-
-                        double lh_state  = 0.0;
-                        double df_state  = 0.0;
-                        double ddf_state = 0.0;
-                        #pragma acc loop seq
-                        for (int xx = 0; xx < nstates_int; xx++) {
-                            int mat_idx = cc * nstatesqr_int + ii * nstates_int + xx;
-                            double plh = node_partial_lh_base[p * block_int + cc * nstates_int + xx];
-                            lh_state  += trans_mat[mat_idx]   * plh;
-                            df_state  += trans_derv1[mat_idx] * plh;
-                            ddf_state += trans_derv2[mat_idx] * plh;
-                        }
-                        double dad_val = dad_partial_lh_base[p * block_int + s];
-                        lh_ptn  += dad_val * lh_state;
-                        df_ptn  += dad_val * df_state;
-                        ddf_ptn += dad_val * ddf_state;
-                    }
-
-                    // Add invariant site contribution AFTER vector reduction
-                    lh_ptn += local_ptn_invar[p];
-
-                    // Normalize and accumulate (gang-level reduction)
-                    if (p < orig_nptn_int) {
-                        double inv_lh = 1.0 / fabs(lh_ptn);
-                        double df_frac  = df_ptn * inv_lh;
-                        double ddf_frac = ddf_ptn * inv_lh;
-                        my_df  += df_frac * local_ptn_freq[p];
-                        my_ddf += (ddf_frac - df_frac * df_frac) * local_ptn_freq[p];
-                    } else {
-                        if ((dad_scale_num_base[p] + node_scale_num_base[p]) >= 1) {
-                            lh_ptn  *= SCALING_THRESHOLD;
-                            df_ptn  *= SCALING_THRESHOLD;
-                            ddf_ptn *= SCALING_THRESHOLD;
-                        }
-                        prob_const += lh_ptn;
-                        df_const   += df_ptn;
-                        ddf_const  += ddf_ptn;
-                    }
-                } // FOR p
-            } // end acc data
+            OPENACC_DISPATCH_NSTATES(derivKernelIntInt, (int)nstates,
+                trans_mat, trans_derv1, trans_derv2, mat_size,
+                dad_partial_lh_base, node_partial_lh_base,
+                plh_count,
+                dad_scale_num_base, node_scale_num_base, scl_count,
+                local_ptn_invar, local_ptn_freq,
+                (int)nptn, (int)block, (int)nstates, (int)nstatesqr, (int)ncat, (int)orig_nptn,
+                my_df, my_ddf, prob_const, df_const, ddf_const);
         }
 #ifdef USE_OPENACC_PROFILE
         if (deriv_profiling) {
