@@ -1059,19 +1059,23 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
     // P2: Batch upload buffer_partial_lh — contains all per-node P(t) matrices
     // and tip lookup tables, already filled by computeTraversalInfo().
     // One upload replaces ~98 per-node copyin calls.
-    // D3: If buffer is already resident from a previous call, delete first
-    // (host may have refilled it with new traversal data).
+    // B1: Persistent GPU allocation — first call does enter data copyin (alloc+upload),
+    // subsequent calls do update device (upload only, no GPU malloc/free cycle).
+    // Matches the derivative function's pattern (lines 2936-2948).
 #ifdef USE_OPENACC_PROFILE
     if (profiling) prof_t1 = getRealTime();
 #endif
-    if (gpu_buffer_plh_resident && gpu_buffer_plh_ptr) {
-        #pragma acc exit data delete(gpu_buffer_plh_ptr[0:gpu_buffer_plh_size])
-        gpu_buffer_plh_resident = false;
-        gpu_buffer_plh_ptr = nullptr;
-    }
-    gpu_buffer_plh_size = getBufferPartialLhSize();
     double *local_buffer_plh = buffer_partial_lh;
-    #pragma acc enter data copyin(local_buffer_plh[0:gpu_buffer_plh_size])
+    if (gpu_buffer_plh_resident) {
+        // Buffer allocation exists on GPU — just sync the new host content
+        #pragma acc update device(local_buffer_plh[0:gpu_buffer_plh_size])
+    } else {
+        // First call — allocate and upload
+        gpu_buffer_plh_size = getBufferPartialLhSize();
+        #pragma acc enter data copyin(local_buffer_plh[0:gpu_buffer_plh_size])
+        gpu_buffer_plh_resident = true;
+        gpu_buffer_plh_ptr = local_buffer_plh;
+    }
 #ifdef USE_OPENACC_PROFILE
     if (profiling) {
         #pragma acc wait
