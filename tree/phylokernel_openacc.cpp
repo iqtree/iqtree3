@@ -976,6 +976,33 @@ void PhyloTree::computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size
 //   - ASSERT removed from kernel regions
 // ==========================================================================
 
+// T2: Forward declarations for template-specialized reduction kernels
+// (defined after computeLikelihoodDervGenericOpenACC, called from computeLikelihoodBranch)
+template<int NSTATES>
+static void reductionKernelTipInt(
+    double *partial_lh_node, size_t plh_node_size,
+    int *local_tip_states, size_t tip_dad_offset,
+    double *dad_partial_lh_base, size_t plh_offset, size_t plh_count,
+    UBYTE *dad_scale_num_base, size_t scl_offset, size_t scl_count,
+    double *local_ptn_invar, double *local_ptn_freq,
+    double *local_pattern_lh, double *local_pattern_lh_cat,
+    int ptn_lower, int ptn_upper,
+    int block_int, int nstates_int, int ncat_int, int orig_nptn_int,
+    double &tree_lh, double &prob_const);
+
+template<int NSTATES>
+static void reductionKernelIntInt(
+    double *trans_mat, size_t trans_mat_size,
+    double *dad_partial_lh_base, double *node_partial_lh_base,
+    size_t plh_offset, size_t plh_count,
+    UBYTE *dad_scale_num_base, UBYTE *node_scale_num_base,
+    size_t scl_offset, size_t scl_count,
+    double *local_ptn_invar, double *local_ptn_freq,
+    double *local_pattern_lh, double *local_pattern_lh_cat,
+    int ptn_lower, int ptn_upper,
+    int block_int, int nstates_int, int nstatesqr_int, int ncat_int, int orig_nptn_int,
+    double &tree_lh, double &prob_const);
+
 double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
 
     // One-time verification message
@@ -1555,10 +1582,10 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
             int *local_tip_states = tip_states_flat;
             size_t tip_dad_offset = (size_t)dad_node_id * nptn;
 
-            // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
+            // Step 11 + T2: Log-likelihood reduction offloaded to GPU via OpenACC
             // TIP-INTERNAL case: dad is a leaf, node is internal.
             // partial_lh_node[state*block+s] is precomputed (trans_mat × tip_lh).
-            // Reduction: gang over patterns, reduction(+:) for total lnL.
+            // T2: Dispatched to template-specialized reductionKernelTipInt<NSTATES>.
 #ifdef USE_OPENACC_PROFILE
             if (profiling) prof_t1 = getRealTime();
 #endif
@@ -1568,52 +1595,17 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 size_t plh_count  = (ptn_upper - ptn_lower) * block;
                 size_t scl_offset = ptn_lower;
                 size_t scl_count  = ptn_upper - ptn_lower;
-                // Step 12: class member pointers captured in outer scope for
-                // enter data; persistent data uses present() instead of copyin/copyout.
 
-                #pragma acc data \
-                    copyin(partial_lh_node[0:plh_node_size]) \
-                    present(local_tip_states[tip_dad_offset:scl_count], \
-                            dad_partial_lh_base[plh_offset:plh_count], \
-                            dad_scale_num_base[scl_offset:scl_count], \
-                            local_ptn_invar[ptn_lower:scl_count], \
-                            local_ptn_freq[ptn_lower:scl_count], \
-                            local_pattern_lh[ptn_lower:scl_count], \
-                            local_pattern_lh_cat[ptn_lower:scl_count])
-                {
-                    int block_int = (int)block;
-                    int nstates_int = (int)nstates;
-                    int ncat_int = (int)ncat;
-                    int orig_nptn_int = (int)orig_nptn;
-                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
-                    for (int p = (int)ptn_lower; p < (int)ptn_upper; p++) {
-                        int state_dad = local_tip_states[tip_dad_offset + p];
-                        double lh_ptn = local_ptn_invar[p];
-
-                        // Dot product: partial_lh_node[state] · dad_partial_lh[p]
-                        // For ncat=1: single category, block == nstates
-                        for (int cc = 0; cc < ncat_int; cc++) {
-                            double lh_cat = 0.0;
-                            for (int ii = 0; ii < nstates_int; ii++) {
-                                lh_cat += partial_lh_node[state_dad*block_int + cc*nstates_int + ii]
-                                        * dad_partial_lh_base[p*block_int + cc*nstates_int + ii];
-                            }
-                            local_pattern_lh_cat[p*ncat_int + cc] = lh_cat;
-                            lh_ptn += lh_cat;
-                        }
-
-                        // Log-likelihood + scaling correction
-                        if (p < orig_nptn_int) {
-                            lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
-                            local_pattern_lh[p] = lh_ptn;
-                            tree_lh += lh_ptn * local_ptn_freq[p];
-                        } else {
-                            if (dad_scale_num_base[p] >= 1)
-                                lh_ptn *= SCALING_THRESHOLD;
-                            prob_const += lh_ptn;
-                        }
-                    } // FOR p
-                } // end acc data
+                OPENACC_DISPATCH_NSTATES(reductionKernelTipInt, (int)nstates,
+                    partial_lh_node, plh_node_size,
+                    local_tip_states, tip_dad_offset,
+                    dad_partial_lh_base, plh_offset, plh_count,
+                    dad_scale_num_base, scl_offset, scl_count,
+                    local_ptn_invar, local_ptn_freq,
+                    local_pattern_lh, local_pattern_lh_cat,
+                    (int)ptn_lower, (int)ptn_upper,
+                    (int)block, (int)nstates, (int)ncat, (int)orig_nptn,
+                    tree_lh, prob_const);
             }
 #ifdef USE_OPENACC_PROFILE
             if (profiling) {
@@ -1853,11 +1845,9 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 } // end else (bifurcating batched path)
             } // end P2 batched computation
 
-            // Step 11: Log-likelihood reduction offloaded to GPU via OpenACC
+            // Step 11 + T2: Log-likelihood reduction offloaded to GPU via OpenACC
             // INTERNAL-INTERNAL case: both dad and node are internal nodes.
-            // For each pattern: compute trans_mat × node_partial_lh, dot with
-            // dad_partial_lh, take log + scaling correction, accumulate weighted sum.
-            // Matches PoC: gang over patterns, reduction(+:logLikelihood).
+            // T2: Dispatched to template-specialized reductionKernelIntInt<NSTATES>.
 #ifdef USE_OPENACC_PROFILE
             if (profiling) prof_t1 = getRealTime();
 #endif
@@ -1867,55 +1857,18 @@ double PhyloTree::computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branc
                 size_t plh_count  = (ptn_upper - ptn_lower) * block;
                 size_t scl_offset = ptn_lower;
                 size_t scl_count  = ptn_upper - ptn_lower;
-                // Step 12: class member pointers captured in outer scope for
-                // enter data; persistent data uses present() instead of copyin/copyout.
 
-                #pragma acc data \
-                    copyin(trans_mat[0:trans_mat_size]) \
-                    present(dad_partial_lh_base[plh_offset:plh_count], \
-                            node_partial_lh_base[plh_offset:plh_count], \
-                            dad_scale_num_base[scl_offset:scl_count], \
-                            node_scale_num_base[scl_offset:scl_count], \
-                            local_ptn_invar[ptn_lower:scl_count], \
-                            local_ptn_freq[ptn_lower:scl_count], \
-                            local_pattern_lh[ptn_lower:scl_count], \
-                            local_pattern_lh_cat[ptn_lower:scl_count])
-                {
-                    int block_int = (int)block;
-                    int nstates_int = (int)nstates;
-                    int nstatesqr_int = (int)nstatesqr;
-                    int ncat_int = (int)ncat;
-                    int orig_nptn_int = (int)orig_nptn;
-                    #pragma acc parallel loop gang reduction(+:tree_lh, prob_const)
-                    for (int p = (int)ptn_lower; p < (int)ptn_upper; p++) {
-                        double lh_ptn = local_ptn_invar[p];
-
-                        for (int cc = 0; cc < ncat_int; cc++) {
-                            double lh_cat = 0.0;
-                            for (int ii = 0; ii < nstates_int; ii++) {
-                                // Matrix-vector product: trans_mat × node_partial_lh
-                                double lh_state = 0.0;
-                                for (int xx = 0; xx < nstates_int; xx++)
-                                    lh_state += trans_mat[cc*nstatesqr_int + ii*nstates_int + xx]
-                                              * node_partial_lh_base[p*block_int + cc*nstates_int + xx];
-                                lh_cat += dad_partial_lh_base[p*block_int + cc*nstates_int + ii] * lh_state;
-                            }
-                            local_pattern_lh_cat[p*ncat_int + cc] = lh_cat;
-                            lh_ptn += lh_cat;
-                        }
-
-                        // Log-likelihood + scaling correction
-                        if (p < orig_nptn_int) {
-                            lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
-                            local_pattern_lh[p] = lh_ptn;
-                            tree_lh += lh_ptn * local_ptn_freq[p];
-                        } else {
-                            if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
-                                lh_ptn *= SCALING_THRESHOLD;
-                            prob_const += lh_ptn;
-                        }
-                    } // FOR p
-                } // end acc data
+                OPENACC_DISPATCH_NSTATES(reductionKernelIntInt, (int)nstates,
+                    trans_mat, trans_mat_size,
+                    dad_partial_lh_base, node_partial_lh_base,
+                    plh_offset, plh_count,
+                    dad_scale_num_base, node_scale_num_base,
+                    scl_offset, scl_count,
+                    local_ptn_invar, local_ptn_freq,
+                    local_pattern_lh, local_pattern_lh_cat,
+                    (int)ptn_lower, (int)ptn_upper,
+                    (int)block, (int)nstates, (int)nstatesqr, (int)ncat, (int)orig_nptn,
+                    tree_lh, prob_const);
             }
 #ifdef USE_OPENACC_PROFILE
             if (profiling) {
@@ -2300,6 +2253,272 @@ static void computeTipDerivTablesOnGPU(
             tip_derv2[out_idx] = val2;
         }
     }
+}
+
+// ==========================================================================
+// T2: Template-specialized log-likelihood reduction kernel for TIP-INTERNAL.
+//
+// Extracted from inline code in computeLikelihoodBranchGenericOpenACC.
+// Computes site log-likelihood from precomputed tip lookup table × dad partial lh.
+// NSTATES=4:  outer-loop vectorization (gang vector VL=128), each thread
+//             processes one full pattern → 100% utilization.
+// NSTATES=20: inner-loop vector reduction (gang + vector VL=32) → 62.5% util.
+// NSTATES=0:  generic fallback with runtime nstates (original gang-only code).
+// ==========================================================================
+template<int NSTATES>
+static void reductionKernelTipInt(
+    double *partial_lh_node, size_t plh_node_size,
+    int *local_tip_states, size_t tip_dad_offset,
+    double *dad_partial_lh_base, size_t plh_offset, size_t plh_count,
+    UBYTE *dad_scale_num_base, size_t scl_offset, size_t scl_count,
+    double *local_ptn_invar, double *local_ptn_freq,
+    double *local_pattern_lh, double *local_pattern_lh_cat,
+    int ptn_lower, int ptn_upper,
+    int block_int, int nstates_int, int ncat_int, int orig_nptn_int,
+    double &tree_lh, double &prob_const)
+{
+    double my_tree_lh = 0.0;
+    double my_prob_const = 0.0;
+
+    #pragma acc data \
+        copyin(partial_lh_node[0:plh_node_size]) \
+        present(local_tip_states[tip_dad_offset:scl_count], \
+                dad_partial_lh_base[plh_offset:plh_count], \
+                dad_scale_num_base[scl_offset:scl_count], \
+                local_ptn_invar[ptn_lower:scl_count], \
+                local_ptn_freq[ptn_lower:scl_count], \
+                local_pattern_lh[ptn_lower:scl_count], \
+                local_pattern_lh_cat[ptn_lower:scl_count])
+    {
+        if constexpr (NSTATES == 4) {
+            // T2: Outer-loop vectorization — each vector thread processes one pattern.
+            // Inner loop (ncat*4 iterations) is sequential, fully unrolled by compiler.
+            #pragma acc parallel loop gang vector vector_length(128) \
+                reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                int state_dad = local_tip_states[tip_dad_offset + p];
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    #pragma acc loop seq
+                    for (int ii = 0; ii < 4; ii++) {
+                        lh_cat += partial_lh_node[state_dad * block_int + cc * 4 + ii]
+                                * dad_partial_lh_base[p * block_int + cc * 4 + ii];
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        } else if constexpr (NSTATES == 20) {
+            // T2: Inner-loop vector reduction across 20 states.
+            #pragma acc parallel loop gang vector_length(32) \
+                reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                int state_dad = local_tip_states[tip_dad_offset + p];
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    #pragma acc loop vector reduction(+:lh_cat)
+                    for (int ii = 0; ii < 20; ii++) {
+                        lh_cat += partial_lh_node[state_dad * block_int + cc * 20 + ii]
+                                * dad_partial_lh_base[p * block_int + cc * 20 + ii];
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        } else {
+            // NSTATES=0: generic fallback (gang-only, runtime nstates)
+            #pragma acc parallel loop gang reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                int state_dad = local_tip_states[tip_dad_offset + p];
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    for (int ii = 0; ii < nstates_int; ii++) {
+                        lh_cat += partial_lh_node[state_dad * block_int + cc * nstates_int + ii]
+                                * dad_partial_lh_base[p * block_int + cc * nstates_int + ii];
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + dad_scale_num_base[p] * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        }
+    } // end acc data
+
+    tree_lh += my_tree_lh;
+    prob_const += my_prob_const;
+}
+
+// ==========================================================================
+// T2: Template-specialized log-likelihood reduction kernel for INT-INT.
+//
+// Extracted from inline code in computeLikelihoodBranchGenericOpenACC.
+// Computes site log-likelihood from trans_mat × node_plh dotted with dad_plh.
+// NSTATES=4:  outer-loop vectorization (gang vector VL=128) → 100% util.
+// NSTATES=20: inner-loop vector reduction (gang + vector VL=32) → 62.5% util.
+// NSTATES=0:  generic fallback with runtime nstates (original gang-only code).
+// ==========================================================================
+template<int NSTATES>
+static void reductionKernelIntInt(
+    double *trans_mat, size_t trans_mat_size,
+    double *dad_partial_lh_base, double *node_partial_lh_base,
+    size_t plh_offset, size_t plh_count,
+    UBYTE *dad_scale_num_base, UBYTE *node_scale_num_base,
+    size_t scl_offset, size_t scl_count,
+    double *local_ptn_invar, double *local_ptn_freq,
+    double *local_pattern_lh, double *local_pattern_lh_cat,
+    int ptn_lower, int ptn_upper,
+    int block_int, int nstates_int, int nstatesqr_int, int ncat_int, int orig_nptn_int,
+    double &tree_lh, double &prob_const)
+{
+    double my_tree_lh = 0.0;
+    double my_prob_const = 0.0;
+
+    #pragma acc data \
+        copyin(trans_mat[0:trans_mat_size]) \
+        present(dad_partial_lh_base[plh_offset:plh_count], \
+                node_partial_lh_base[plh_offset:plh_count], \
+                dad_scale_num_base[scl_offset:scl_count], \
+                node_scale_num_base[scl_offset:scl_count], \
+                local_ptn_invar[ptn_lower:scl_count], \
+                local_ptn_freq[ptn_lower:scl_count], \
+                local_pattern_lh[ptn_lower:scl_count], \
+                local_pattern_lh_cat[ptn_lower:scl_count])
+    {
+        if constexpr (NSTATES == 4) {
+            // T2: Outer-loop vectorization — each vector thread processes one pattern.
+            // Inner loops (4×4 mat-vec + 4 dot) are sequential, fully unrolled.
+            #pragma acc parallel loop gang vector vector_length(128) \
+                reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    #pragma acc loop seq
+                    for (int ii = 0; ii < 4; ii++) {
+                        double lh_state = 0.0;
+                        #pragma acc loop seq
+                        for (int xx = 0; xx < 4; xx++)
+                            lh_state += trans_mat[cc * 16 + ii * 4 + xx]
+                                      * node_partial_lh_base[p * block_int + cc * 4 + xx];
+                        lh_cat += dad_partial_lh_base[p * block_int + cc * 4 + ii] * lh_state;
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        } else if constexpr (NSTATES == 20) {
+            // T2: Inner-loop vector reduction across 20 states.
+            // Each of 20 vector threads computes one row of mat-vec (20 FMAs seq).
+            #pragma acc parallel loop gang vector_length(32) \
+                reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    #pragma acc loop vector reduction(+:lh_cat)
+                    for (int ii = 0; ii < 20; ii++) {
+                        double lh_state = 0.0;
+                        #pragma acc loop seq
+                        for (int xx = 0; xx < 20; xx++)
+                            lh_state += trans_mat[cc * 400 + ii * 20 + xx]
+                                      * node_partial_lh_base[p * block_int + cc * 20 + xx];
+                        lh_cat += dad_partial_lh_base[p * block_int + cc * 20 + ii] * lh_state;
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        } else {
+            // NSTATES=0: generic fallback (gang-only, runtime nstates)
+            #pragma acc parallel loop gang reduction(+:my_tree_lh, my_prob_const)
+            for (int p = ptn_lower; p < ptn_upper; p++) {
+                double lh_ptn = local_ptn_invar[p];
+
+                for (int cc = 0; cc < ncat_int; cc++) {
+                    double lh_cat = 0.0;
+                    for (int ii = 0; ii < nstates_int; ii++) {
+                        double lh_state = 0.0;
+                        for (int xx = 0; xx < nstates_int; xx++)
+                            lh_state += trans_mat[cc * nstatesqr_int + ii * nstates_int + xx]
+                                      * node_partial_lh_base[p * block_int + cc * nstates_int + xx];
+                        lh_cat += dad_partial_lh_base[p * block_int + cc * nstates_int + ii] * lh_state;
+                    }
+                    local_pattern_lh_cat[p * ncat_int + cc] = lh_cat;
+                    lh_ptn += lh_cat;
+                }
+
+                if (p < orig_nptn_int) {
+                    lh_ptn = log(fabs(lh_ptn)) + (dad_scale_num_base[p] + node_scale_num_base[p]) * LOG_SCALING_THRESHOLD;
+                    local_pattern_lh[p] = lh_ptn;
+                    my_tree_lh += lh_ptn * local_ptn_freq[p];
+                } else {
+                    if (dad_scale_num_base[p] + node_scale_num_base[p] >= 1)
+                        lh_ptn *= SCALING_THRESHOLD;
+                    my_prob_const += lh_ptn;
+                }
+            }
+        }
+    } // end acc data
+
+    tree_lh += my_tree_lh;
+    prob_const += my_prob_const;
 }
 
 // ==========================================================================
