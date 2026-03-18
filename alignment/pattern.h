@@ -14,7 +14,7 @@
 
 #include "phylo-yaml/statespace.h"
 
-using namespace std;
+// using namespace std;
 using namespace PML;
 
 const int PAT_CONST       = 1; // const site pattern, e.g. AAAAAA, CC-C-CCCC

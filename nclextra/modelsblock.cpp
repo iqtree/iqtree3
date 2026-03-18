@@ -75,14 +75,14 @@ void ModelsBlock::Read(NxsToken &token)
 
 NxsModel *ModelsBlock::findModel(string name) {
     iterator it = find(name);
-    if (it == end()) return NULL;
+    if (it == end()) return nullptr;
     return &(it->second);
 }
 
 NxsModel *ModelsBlock::findMixModel(string name) {
     NxsModel *model = findModel(name);
-    if (!model) return NULL;
+    if (!model) return nullptr;
     if (model->flag & NM_ATOMIC)
-        return NULL;
+        return nullptr;
     return model;
 }

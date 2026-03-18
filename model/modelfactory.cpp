@@ -129,8 +129,8 @@ ModelsBlock *readModelsDefinition(Params &params) {
 }
 
 ModelFactory::ModelFactory() : CheckpointFactory() {
-    model = NULL;
-    site_rate = NULL;
+    model = nullptr;
+    site_rate = nullptr;
     store_trans_matrix = false;
     is_storing = false;
     joint_optimize = false;
@@ -185,7 +185,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     }
 
     /********* preprocessing model string ****************/
-    NxsModel *nxsmodel  = NULL;
+    NxsModel *nxsmodel  = nullptr;
 
     string new_model_str = "";
     size_t mix_pos;
@@ -696,7 +696,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         if (tree->aln->num_informative_sites != tree->getAlnNSite()) {
             if (!params.partition_file) {
                 string infsites_file = ((string)params.out_prefix + ".infsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, infsites_file.c_str(), false, NULL, EXCLUDE_UNINF);
+                tree->aln->printAlignment(params.aln_output_format, infsites_file.c_str(), false, nullptr, EXCLUDE_UNINF);
                 cerr << "For your convenience alignment with parsimony-informative sites printed to " << infsites_file << endl;
             }
             outError("Invalid use of +ASC_INF because of " + convertIntToString(tree->getAlnNSite() - tree->aln->num_informative_sites) +
@@ -714,7 +714,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         if (tree->aln->frac_invariant_sites > 0) {
             if (!params.partition_file) {
                 string varsites_file = ((string)params.out_prefix + ".varsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, NULL, EXCLUDE_INVAR);
+                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, nullptr, EXCLUDE_INVAR);
                 cerr << "For your convenience alignment with variable sites printed to " << varsites_file << endl;
             }
             outError("Invalid use of +ASC_MIS because of " + convertIntToString(tree->aln->frac_invariant_sites*tree->aln->getNSite()) +
@@ -748,7 +748,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 //                }
             if (!params.partition_file) {
                 string varsites_file = ((string)params.out_prefix + ".varsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, NULL, EXCLUDE_INVAR);
+                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, nullptr, EXCLUDE_INVAR);
                 cerr << "For your convenience alignment with variable sites printed to " << varsites_file << endl;
             }
             outError("Invalid use of +ASC because of " + convertIntToString(tree->aln->frac_invariant_sites*tree->aln->getNSite()) +

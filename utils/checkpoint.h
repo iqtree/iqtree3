@@ -17,7 +17,7 @@
 #include <typeinfo>
 #include "tools.h"
 
-using namespace std;
+// using namespace std;
 
 #define CKP_PRECISION 10
 

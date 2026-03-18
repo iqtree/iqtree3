@@ -828,9 +828,9 @@ void ModelPoMo::report_model_params(ostream &out, bool reset_scale) {
 
   // Report rates.
   // Mutation rates.
-  double *rs = NULL;
+  double *rs = nullptr;
   // Exchangeabilities.
-  double *es = NULL;
+  double *es = nullptr;
   if (is_reversible) {
     rs = new double[n_connections];
     es = new double[n_connections];
@@ -971,7 +971,7 @@ void ModelPoMo::rate_matrix_to_rates(double *m, double *r) {
 }
 
 void ModelPoMo::report(ostream &out) {
-  ios  state(NULL);
+  ios  state(nullptr);
   out << this->full_name << endl;
   out << endl;
 

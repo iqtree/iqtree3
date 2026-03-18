@@ -88,7 +88,7 @@ void NCBITree::readNCBINames(ifstream &in, const char *name_type) {
 Node *NCBITree::readNCBITree(const char *infile, int root_id, const char* taxon_level, const char *ignore_level) {
     ifstream in;
     cout << "Reading NCBI nodes file " << infile << endl;
-    Node *parent = NULL;
+    Node *parent = nullptr;
     try {
         in.exceptions(ios::failbit | ios::badbit);
         in.open(infile);
@@ -106,7 +106,7 @@ Node *NCBITree::readNCBITree(const char *infile, int root_id, const char* taxon_
 
 Node* NCBITree::readNCBITree(istream &in, int root_id, const char* taxon_level, const char *ignore_level) {
     //IntVector parents_id;
-    nodes.resize(MAX_TAXONOMY_ID, NULL);
+    nodes.resize(MAX_TAXONOMY_ID, nullptr);
     node_levels.resize(MAX_TAXONOMY_ID);
     string node_level;
     int node_id, parent_id, max_node_id = 0, num_nodes = 0;
@@ -233,7 +233,7 @@ int NCBITree::pruneBridgeNodes(Node *node, Node *dad) {
         double len = node->neighbors[0]->length + node->neighbors[1]->length;
         dad->updateNeighbor(node, child, len);
         child->updateNeighbor(node, dad, len);
-        nodes[node->id] = NULL;
+        nodes[node->id] = nullptr;
         delete node;
         num_nodes++;
     }
@@ -249,7 +249,7 @@ int NCBITree::freeNode(Node *node, Node *dad)
         if ((*it)->node != dad) {
             num_nodes += freeNode((*it)->node, node);
         }
-    nodes[node->id] = NULL;
+    nodes[node->id] = nullptr;
     delete node;
     return num_nodes;
 }
