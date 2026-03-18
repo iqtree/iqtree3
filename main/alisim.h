@@ -147,6 +147,6 @@ void outputTreeWithInternalNames(AliSimulator* alisimulator);
 /**
 *  set internal node name as the node's id
 */
-void updateInternalNodeName(Node *node, Node *dad = NULL);
+void updateInternalNodeName(Node *node, Node *dad = nullptr);
 
 #endif /* alisim_h */

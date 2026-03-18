@@ -22,7 +22,7 @@ const double MAX_FREE_RATE_PROP = 1000;
 
 RateFree::RateFree(int ncat, double start_alpha, string params, bool sorted_rates, string opt_alg, PhyloTree *tree) : RateGamma(ncat, start_alpha, false, tree) {
 	fix_params = 0;
-	prop = NULL;
+	prop = nullptr;
     this->sorted_rates = sorted_rates;
     optimizing_params = 0;
     this->optimize_alg = opt_alg;
@@ -653,7 +653,7 @@ double RateFree::optimizeWithEM() {
             rates[c] = scaling;
             sum += prop[c] * rates[c];
             // reset subst model
-            tree->setModel(NULL);
+            tree->setModel(nullptr);
             subst_model->setTree(phylo_tree);
         }
         
@@ -667,9 +667,9 @@ double RateFree::optimizeWithEM() {
     }
     
     // deattach memory
-//    tree->central_partial_lh = NULL;
-//    tree->central_scale_num = NULL;
-//    tree->central_partial_pars = NULL;
+//    tree->central_partial_lh = nullptr;
+//    tree->central_scale_num = nullptr;
+//    tree->central_partial_pars = nullptr;
 
     delete tree;
     aligned_free(new_prop);

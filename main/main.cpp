@@ -57,6 +57,14 @@
 #include "tree/ncbitree.h"
 #include "pda/ecopd.h"
 #include "tree/upperbounds.h"
+
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
+#ifdef USE_OPENACC
+#include <openacc.h>
+#include "tree/phylokernel_openacc_test.h"
+#endif
 #include "terraceanalysis.h"
 #include "pda/ecopdmtreeset.h"
 #include "pda/gurobiwrapper.h"
@@ -71,7 +79,7 @@
     #include <omp.h>
 #endif
 
-using namespace std;
+// using namespace std;
 
 inline void separator(ostream &out, int type = 0) {
     switch (type) {
@@ -166,14 +174,14 @@ void summarizeHeader(ostream &out, Params &params, bool budget_constraint, Input
     if(params.eco_dag_file)
         out << "Input food web file name: "<<params.eco_dag_file<<endl;
      out << "Input file format: " << ((params.intype == IN_NEWICK) ? "Newick" : ( (params.intype == IN_NEXUS) ? "Nexus" : "Unknown" )) << endl;
-    if (params.initial_file != NULL)
+    if (params.initial_file != nullptr)
         out << "Initial taxa file: " << params.initial_file << endl;
-    if (params.param_file != NULL)
+    if (params.param_file != nullptr)
         out << "Parameter file: " << params.param_file << endl;
     out << endl;
-    out << "Type of measure: " << ((params.root != NULL || params.is_rooted) ? "Rooted": "Unrooted") <<
+    out << "Type of measure: " << ((params.root != nullptr || params.is_rooted) ? "Rooted": "Unrooted") <<
             (analysis_type== IN_NEWICK ? " phylogenetic diversity (PD)" : " split diversity (SD)");
-    if (params.root != NULL) out << " at " << params.root;
+    if (params.root != nullptr) out << " at " << params.root;
     out << endl;
     if (params.run_mode != RunMode::CALC_DIST && params.run_mode != RunMode::PD_USER_SET) {
         out << "Search objective: " << ((params.find_pd_min) ? "Minimum" : "Maximum") << endl;
@@ -258,7 +266,7 @@ void printPDUser(ostream &out, Params &params, PDRelatedMeasures &pd_more) {
 void summarizeTree(Params &params, PDTree &tree, vector<PDTaxaSet> &taxa_set,
     PDRelatedMeasures &pd_more) {
     string filename;
-    if (params.out_file == NULL) {
+    if (params.out_file == nullptr) {
         filename = params.out_prefix;
         filename += ".pda";
     } else
@@ -405,7 +413,7 @@ void runPDTree(Params &params)
 
         if (params.endemic_pd)
             tree.calcPDEndemism(taxa_set, pd_more.PDEndemism);
-        if (params.complement_area != NULL)
+        if (params.complement_area != nullptr)
             tree.calcPDComplementarity(taxa_set, params.complement_area, pd_more.PDComplementarity);
 
         t_end = getCPUTime();
@@ -429,7 +437,7 @@ void runPDTree(Params &params)
 
     test_greedy.init(params);
 
-    if (params.root == NULL && !params.is_rooted)
+    if (params.root == nullptr && !params.is_rooted)
         cout << endl << "Running PD algorithm on UNROOTED tree..." << endl;
     else
         cout << endl << "Running PD algorithm on ROOTED tree..." << endl;
@@ -545,7 +553,7 @@ bool makeRanking(vector<SplitSet> &pd_set, IntVector &indices, IntVector &rankin
     IntVector::iterator inti;
     ranking.clear();
     bool nested = true;
-    Split *cur_sp = NULL;
+    Split *cur_sp = nullptr;
     int id = 1;
     for (it = pd_set.begin(); it != pd_set.end(); it++) {
         if ((*it).empty()) continue;
@@ -654,7 +662,7 @@ void summarizeSplit(Params &params, PDNetwork &sg, vector<SplitSet> &pd_set, PDR
         printNexusSets(nex_file.c_str(), sg, pd_set);
     }
     string filename;
-    if (params.out_file == NULL) {
+    if (params.out_file == nullptr) {
         filename = params.out_prefix;
         filename += ".pda";
     } else
@@ -1023,7 +1031,7 @@ void runPDSplit(Params &params) {
         if (params.endemic_pd)
             sg.calcPDEndemism(pd_set[0], pd_more.PDEndemism);
 
-        if (params.complement_area != NULL)
+        if (params.complement_area != nullptr)
             sg.calcPDComplementarity(pd_set[0], params.complement_area, pd_more.setName, pd_more.PDComplementarity);
 
     } else {
@@ -1230,7 +1238,7 @@ void scaleBranchLength(Params &params) {
         cout << "Scaling clade support with a factor of " << params.scaling_factor << " ..." << endl;
         tree.scaleCladeSupport(params.scaling_factor, false);
     }
-    if (params.out_file != NULL)
+    if (params.out_file != nullptr)
         tree.printTree(params.out_file);
     else {
         tree.printTree(cout);
@@ -1321,7 +1329,7 @@ void printRFDist(string filename, double *rfdist, int n, int m, int rf_dist_mode
 void computeRFDistExtended(const char *trees1, const char *trees2, const char *filename) {
     cout << "Reading input trees 1 file " << trees1 << endl;
     int ntrees = 0, ntrees2 = 0;
-    double *rfdist_raw = NULL;
+    double *rfdist_raw = nullptr;
     try {
         ifstream in;
         in.exceptions(ios::failbit | ios::badbit);
@@ -1364,7 +1372,7 @@ void computeRFDistExtended(const char *trees1, const char *trees2, const char *f
 void computeRFDistSamePair(const char *trees1, const char *trees2, const char *filename) {
     cout << "Reading input trees 1 file " << trees1 << endl;
     int ntrees = 0, ntrees2 = 0;
-    double *rfdist_raw = NULL;
+    double *rfdist_raw = nullptr;
     try {
         ifstream in;
         in.exceptions(ios::failbit | ios::badbit);
@@ -1431,7 +1439,7 @@ void computeRFDist(Params &params) {
     MTreeSet trees(params.user_file, params.is_rooted, params.tree_burnin, params.tree_max_count);
     int n = trees.size(), m = trees.size();
     double *rfdist;
-    double *incomp_splits = NULL;
+    double *incomp_splits = nullptr;
     string infoname = params.out_prefix;
     infoname += ".rfinfo";
     string treename = params.out_prefix;
@@ -1717,7 +1725,7 @@ outstreambuf* outstreambuf::open( const char* name, ios::openmode mode) {
             if (!fout.is_open()) {
                 cerr << "ERROR: Could not open " << name << " for logging" << endl;
                 exit(EXIT_FAILURE);
-                return NULL;
+                return nullptr;
             }
             fout_buf = fout.rdbuf();
         }
@@ -1738,7 +1746,7 @@ outstreambuf* outstreambuf::close() {
         fout.close();
         return this;
     }
-    return NULL;
+    return nullptr;
 }
 
 int outstreambuf::overflow( int c) { // used for output buffer only
@@ -2001,7 +2009,7 @@ extern "C" void getintargv(int *argc, char **argv[])
                     n=1;
                     break;
                 case 'q': 
-                       // tp_exit(0, NULL, FALSE, __FILE__, __LINE__, _exit_wait_optn);
+                       // tp_exit(0, nullptr, FALSE, __FILE__, __LINE__, _exit_wait_optn);
                     if(_exit_wait_optn) {
                         printf("\npress [return] to finish: ");
                         fflush(stdout);
@@ -2187,7 +2195,7 @@ void collapseLowBranchSupport(char *user_file, char *split_threshold_str) {
     bool isrooted = false;
     tree.readTree(user_file, isrooted);
     tree.collapseLowBranchSupport(minsup);
-    tree.collapseZeroBranches(NULL, NULL, -1.0);
+    tree.collapseZeroBranches(nullptr, nullptr, -1.0);
     if (verbose_mode >= VB_MED)
         tree.drawTree(cout);
     string outfile = (string)user_file + ".collapsed";
@@ -2242,7 +2250,7 @@ int main(int argc, char *argv[]) {
         int intargc;
         char **intargv;
         intargc = 0;
-        intargv = NULL;
+        intargv = nullptr;
 
         for (n = strlen(argv[0]) - 5;
              (n >= 0) && !found && (argv[0][n] != '/')
@@ -2392,6 +2400,57 @@ int main(int argc, char *argv[]) {
 //    cout << (int)(((getMemorySize()/1000.0)/1000)/1000) << " GB RAM)" << endl;
 //#endif
 
+#ifdef USE_CUDA
+    {
+        int gpu_count = 0;
+        cudaError_t err = cudaGetDeviceCount(&gpu_count);
+        if (err != cudaSuccess || gpu_count == 0) {
+            cout << "GPU:     None detected (CUDA error: " << cudaGetErrorString(err) << ")" << endl;
+        } else {
+            int device_id = 0;
+            cudaGetDevice(&device_id);
+            cudaDeviceProp prop;
+            cudaGetDeviceProperties(&prop, device_id);
+            cout << "GPU:     " << prop.name
+                 << " (compute " << prop.major << "." << prop.minor
+                 << ", " << (prop.totalGlobalMem / (1024*1024)) << " MB"
+                 << ", " << prop.multiProcessorCount << " SMs)" << endl;
+        }
+    }
+#endif
+#ifdef USE_OPENACC
+    {
+        int acc_count = acc_get_num_devices(acc_device_nvidia);
+        if (acc_count == 0) {
+            cout << "GPU:     None detected (OpenACC)" << endl;
+        } else {
+            int device_id = 0;
+            acc_device_t device_type = acc_device_nvidia;
+            acc_set_device_type(device_type);
+            acc_set_device_num(device_id, device_type);
+            cout << "GPU:     Device " << device_id
+                 << " (OpenACC, " << acc_count << " device(s) available";
+#if _OPENACC >= 201711
+            // OpenACC 2.7+: use acc_get_property to query device name and memory
+            size_t gpu_mem = acc_get_property(device_id, device_type, acc_property_memory);
+            const char *dev_name = acc_get_property_string(device_id, device_type, acc_property_name);
+            if (dev_name && dev_name[0] != '\0')
+                cout << ", " << dev_name;
+            if (gpu_mem > 0)
+                cout << ", " << (gpu_mem / (1024*1024)) << " MB";
+#endif
+            cout << ")" << endl;
+        }
+    }
+    // OpenACC self-tests (Steps 2-7) — commented out after validation
+    // testJCTransMatrix();          // Step 2: JC P(t) matrix
+    // testTipOneHot();              // Step 3: Tip one-hot vectors
+    // testTipTipInternal();         // Step 4: TIP-TIP cherry node
+    // testTipInternalInternal();    // Step 5: TIP-INTERNAL + INTERNAL-INTERNAL
+    // testScaling();                // Step 6: Underflow scaling
+    // testLogLikelihoodRoot();      // Step 7: Log-likelihood at root
+#endif
+
     cout << "Command:";
     int i;
     for (i = 0; i < argc; i++)
@@ -2420,6 +2479,9 @@ int main(int argc, char *argv[]) {
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    cout << "GPU";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -2438,6 +2500,7 @@ int main(int argc, char *argv[]) {
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {
@@ -2451,11 +2514,13 @@ int main(int argc, char *argv[]) {
         cout << Params::getInstance().num_threads  << " threads";
     else
         cout << "auto-detect threads";
+#ifndef USE_OPENACC
     cout << " (" << max_procs << " CPU cores detected)";
     if (Params::getInstance().num_threads  > max_procs) {
         cout << endl;
         outError("You have specified more threads than CPU cores available");
     }
+#endif
     // omp_set_nested(false); // don't allow nested OpenMP parallelism
     omp_set_max_active_levels(1);
 #else
@@ -2641,7 +2706,7 @@ int main(int argc, char *argv[]) {
         }
 
 
-        if (Params::getInstance().intype == IN_NEWICK && !Params::getInstance().find_all && Params::getInstance().budget_file == NULL &&
+        if (Params::getInstance().intype == IN_NEWICK && !Params::getInstance().find_all && Params::getInstance().budget_file == nullptr &&
             Params::getInstance().find_pd_min == false && Params::getInstance().calc_pdgain == false &&
             Params::getInstance().run_mode != RunMode::LINEAR_PROGRAMMING && Params::getInstance().multi_tree == false)
             runPDTree(Params::getInstance());
@@ -3574,6 +3639,9 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         cout << "Safe ";
     }
 
+#ifdef USE_OPENACC
+    cout << "OpenACC (GPU-offloaded)";
+#else
     if (Params::getInstance().pll) {
 #ifdef __AVX__
         cout << "PLL-AVX";
@@ -3592,6 +3660,7 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         } else
             cout << "x86";
     }
+#endif
 
 #ifdef _OPENMP
     if (Params::getInstance().num_threads >= 1) {

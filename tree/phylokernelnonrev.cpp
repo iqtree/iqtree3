@@ -91,6 +91,7 @@ void PhyloTree::computeNonrevPartialLikelihood(TraversalInfo &info, size_t ptn_l
         
     double *eleft = echildren, *eright = echildren + block*nstates;
     
+    ASSERT(left && right);
 	if ((!left->node->isLeaf() && right->node->isLeaf())) {
 		PhyloNeighbor *tmp = left;
 		left = right;
@@ -125,7 +126,7 @@ void PhyloTree::computeNonrevPartialLikelihood(TraversalInfo &info, size_t ptn_l
                     if (child->node == root) 
                         state_child = 0;
                     else state_child = (ptn < orig_ntn) ? (aln->at(ptn))[child->node->id] : model_factory->unobserved_ptns[ptn-orig_ntn];
-                    double *child_lh = partial_lh_leaf + state_child*block;
+                    const double *child_lh = partial_lh_leaf + state_child*block;
                     for (c = 0; c < block; c++) {
                         // compute real partial likelihood vector
                         partial_lh_all[c] *= child_lh[c];
@@ -224,8 +225,8 @@ void PhyloTree::computeNonrevPartialLikelihood(TraversalInfo &info, size_t ptn_l
             else
                 state_left = (ptn < orig_ntn) ? (aln->at(ptn))[left->node->id] : model_factory->unobserved_ptns[ptn-orig_ntn];
 			int state_right = (ptn < orig_ntn) ? (aln->at(ptn))[right->node->id] : model_factory->unobserved_ptns[ptn-orig_ntn];
-            double *vleft = partial_lh_left + (state_left*block);
-            double *vright = partial_lh_right + (state_right*block);
+            const double *vleft = partial_lh_left + (state_left*block);
+            const double *vright = partial_lh_right + (state_right*block);
             for (i = 0; i < block; i++)
                 partial_lh[i] = vleft[i] * vright[i];
 		}
@@ -439,7 +440,7 @@ void PhyloTree::computeNonrevLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode
             double *lh_node = partial_lh_node +(*it)*block;
             double *lh_derv1 = partial_lh_derv1 +(*it)*block;
             double *lh_derv2 = partial_lh_derv2 +(*it)*block;
-            double *lh_tip = tip_partial_lh + (*it)*nstates;
+            const double *lh_tip = tip_partial_lh + (*it)*nstates;
             double *trans_mat_tmp = trans_mat;
             double *trans_derv1_tmp = trans_derv1;
             double *trans_derv2_tmp = trans_derv2;
@@ -663,7 +664,7 @@ double PhyloTree::computeNonrevLikelihoodBranch(PhyloNeighbor *dad_branch, Phylo
             // precompute information from one tip
             for (IntVector::iterator it = states_dad.begin(); it != states_dad.end(); it++) {
                 double *lh_node = partial_lh_node +(*it)*block;
-                double *lh_tip = tip_partial_lh + (*it)*nstates;
+                const double *lh_tip = tip_partial_lh + (*it)*nstates;
                 double *trans_mat_tmp = trans_mat;
                 for (c = 0; c < ncat; c++) {
                     for (i = 0; i < nstates; i++) {

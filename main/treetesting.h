@@ -33,12 +33,12 @@ struct TreeInfo {
  * print site log likelihoods to a fileExists
  * @param filename output file name
  * @param tree phylogenetic tree
- * @param ptn_lh pattern log-likelihoods, will be computed if NULL
+ * @param ptn_lh pattern log-likelihoods, will be computed if nullptr
  * @param append TRUE to append to existing file, FALSE otherwise
- * @param linename name of the line, default "Site_Lh" if NULL
+ * @param linename name of the line, default "Site_Lh" if nullptr
  */
-void printSiteLh(const char*filename, PhyloTree *tree, double *ptn_lh = NULL,
-		bool append = false, const char *linename = NULL);
+void printSiteLh(const char*filename, PhyloTree *tree, double *ptn_lh = nullptr,
+		bool append = false, const char *linename = nullptr);
 
 /**
  * print HMM results to a fileExists
@@ -58,12 +58,12 @@ void printMarginalProb(const char* filename, PhyloTree *tree);
  * print partition log likelihoods to a file
  * @param filename output file name
  * @param tree phylogenetic tree
- * @param ptn_lh pattern log-likelihoods, will be computed if NULL
+ * @param ptn_lh pattern log-likelihoods, will be computed if nullptr
  * @param append TRUE to append to existing file, FALSE otherwise
- * @param linename name of the line, default "Site_Lh" if NULL
+ * @param linename name of the line, default "Site_Lh" if nullptr
  */
-void printPartitionLh(const char*filename, PhyloTree *tree, double *ptn_lh = NULL,
-		bool append = false, const char *linename = NULL);
+void printPartitionLh(const char*filename, PhyloTree *tree, double *ptn_lh = nullptr,
+		bool append = false, const char *linename = nullptr);
 
 /**
  * print site log likelihoods per category to a file
@@ -84,7 +84,7 @@ void printSiteProbCategory(const char*filename, PhyloTree *tree, SiteLoglType ws
  * @param filename output file name
  * @param tree phylogenetic tree
 */
-void printSiteStateFreq(const char*filename, PhyloTree *tree, double *state_freqs = NULL);
+void printSiteStateFreq(const char*filename, PhyloTree *tree, double *state_freqs = nullptr);
 
 /**
  * print site state frequency vectors (for Huaichun)

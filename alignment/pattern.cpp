@@ -87,8 +87,11 @@ int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
             if (*i == STATE_UNKNOWN) num++;
     }
 #else
-    for (const_iterator i = begin(); i != end(); i++)
-        if (*i == STATE_UNKNOWN) num++;
+    for (iterator i = begin(); i != end(); i++) {
+        if (*i == STATE_UNKNOWN) {
+            num++;
+        }
+    }
 #endif
     return num;
 }

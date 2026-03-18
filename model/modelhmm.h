@@ -17,7 +17,7 @@
 #define MIN_TRAN_PROB 1e-10
 #define INITIAL_PROB_SAME_CAT 0.9999
 
-using namespace std;
+// using namespace std;
 
 class PhyloHmm;
 

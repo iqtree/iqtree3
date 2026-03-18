@@ -26,9 +26,9 @@ PhyloSuperHmm::PhyloSuperHmm(SuperAlignment *alignment, Params &params) : PhyloS
  destructor
  */
 PhyloSuperHmm::~PhyloSuperHmm() {
-    model_factory = NULL;
-    model = NULL;
-    site_rate = NULL;
+    model_factory = nullptr;
+    model = nullptr;
+    site_rate = nullptr;
     for (reverse_iterator it = rbegin(); it != rend(); it++) {
         delete (*it);
     }

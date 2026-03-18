@@ -514,6 +514,31 @@ void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixt
 	/* compute P(t) */
 	double evol_time = time / total_num_subst;
 
+#ifdef USE_OPENACC
+    // TODO: add openACC and remove eigenspace for openACC flow
+    {
+        double exptime[num_states];
+        int i, j, k;
+
+        for (i = 0; i < num_states; i++)
+            exptime[i] = exp(evol_time * eigenvalues[i]);
+
+        for (i = 0; i < num_states; i++) {
+            for (j = 0; j < num_states; j++) {
+                double val = 0.0;
+                for (k = 0; k < num_states; k++) {
+                    val += eigenvectors[i * num_states + k]
+                         * inv_eigenvectors[k * num_states + j]
+                         * exptime[k];
+                }
+                trans_matrix[i * num_states + j] = (val < 0.0) ? 0.0 : val;
+            }
+        }
+
+        return;
+    }
+#else // !USE_OPENACC
+
 #if !defined(__ARM_NEON)
     if (Params::getInstance().experimental) {
         double eval_exp[num_states];
@@ -563,7 +588,9 @@ void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixt
 			sum += trans_row[j];
 		trans_row[i] = 1.0 - sum; // update diagonal entry
 	}
-#endif
+#endif // !defined(__ARM_NEON)
+
+#endif // USE_OPENACC
 //	delete [] exptime;
 }
 
@@ -800,6 +827,38 @@ void ModelMarkov::computeTransDerv(double time, double *trans_matrix,
          */
         return;
     }
+
+#ifdef USE_OPENACC
+    // Under OpenACC, compute derivatives in state-space form using Q·P(t).
+    // This is consistent with computeTransMatrix's OpenACC path and the
+    // non-reversible derivative path (lines 796-828).
+    //
+    // For reversible models, rate_matrix (member) is NULL, so reconstruct
+    // Q̃ = V·diag(λ)·V⁻¹ from the eigendecomposition.
+    //
+    // Math: P'(t) = Q̃·P(t),  P''(t) = Q̃·P'(t) = Q̃²·P(t)
+    {
+        computeTransMatrix(time, trans_matrix);
+
+        // Reconstruct Q̃ = V · diag(λ) · V⁻¹
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> evectors(eigenvectors, num_states, num_states);
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> inv_evectors(inv_eigenvectors, num_states, num_states);
+        ArrayXd eval = Map<ArrayXd>(eigenvalues, num_states);
+        MatrixXd Q_tilde = evectors * eval.matrix().asDiagonal() * inv_evectors;
+
+        // P'(t) = Q̃ · P(t)
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> trans_mat(trans_matrix, num_states, num_states);
+        MatrixXd prod = Q_tilde * trans_mat;
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> derv1_mat(trans_derv1, num_states, num_states);
+        derv1_mat = prod;
+
+        // P''(t) = Q̃ · P'(t)
+        prod = Q_tilde * prod;
+        Map<Matrix<double,Dynamic,Dynamic,RowMajor>> derv2_mat(trans_derv2, num_states, num_states);
+        derv2_mat = prod;
+        return;
+    }
+#endif
 
 	double evol_time = time / total_num_subst;
 
@@ -1992,7 +2051,7 @@ void ModelMarkov::setRates() {
 	        return (new ModelLieMarkov(model_name, tree, model_params, freq_type, freq_params));
 	} else {
 		cerr << "Unrecognized model name " << model_name << endl;
-		return (NULL);
+		return (nullptr);
 	}
 }
 

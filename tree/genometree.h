@@ -10,7 +10,7 @@
 #include "genomenode.h"
 #include "utils/timeutil.h"
 #include <queue>
-using namespace std;
+// using namespace std;
 
 /**
 A Genome Tree to present a genome by genome entry (each is a set of sites)

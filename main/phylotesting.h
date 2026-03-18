@@ -47,7 +47,7 @@ public:
         logl = 0.0;
         df = 0;
         tree_len = 0.0;
-        aln = NULL;
+        aln = nullptr;
         AIC_score = DBL_MAX;
         AICc_score = DBL_MAX;
         BIC_score = DBL_MAX;

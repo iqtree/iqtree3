@@ -27,7 +27,7 @@ public:
     ConstraintTree();
 
     /** destructor */
-    virtual ~ConstraintTree();
+    virtual ~ConstraintTree() override;
 
     /**
         internal function to initialize splits from tree structure
@@ -51,7 +51,7 @@ public:
 	 * @param taxa_names names of taxa that will be removed
      * @return number of taxa actually removed
 	 */
-	virtual int removeTaxa(StrVector &taxa_names);
+	virtual int removeTaxa(StrVector &taxa_names) override;
 
     /** 
         check if a "partial" split defined by two taxa name sets is compatible with the constraint tree.
@@ -88,9 +88,9 @@ public:
         @param taxname taxon name to search for
         @return TRUE if constraint tree has a taxon, FALSE otherwise
     */
-    bool hasTaxon(string &taxname) {
+    /* bool hasTaxon(string &taxname) {
         return taxname_index.find(taxname) != taxname_index.end();
-    }
+    }*/
 
 protected:
 
