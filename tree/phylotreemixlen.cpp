@@ -740,6 +740,14 @@ void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
     current_it->setLength(cur_mixture, value);
     current_it_back->setLength(cur_mixture, value);
 
+#ifdef USE_OPENACC
+    if (computeLikelihoodDervMixlenPointer == NULL) {
+        // TODO: implement computeLikelihoodDervMixlenPointer for OpenACC
+        // Mixlen per-category derivatives not supported on GPU.
+        // Fall back to base class which uses standard derivative kernel.
+        return PhyloTree::computeFuncDerv(value, df, ddf);
+    }
+#endif
     (this->*computeLikelihoodDervMixlenPointer)(current_it, (PhyloNode*) current_it_back->node, df, ddf);
 
 	df = -df;

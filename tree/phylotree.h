@@ -936,10 +936,8 @@ public:
         GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
     void computePartialLikelihoodGenericOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
 
-    /** OpenACC: scalar (plain C) partial likelihood kernel for reversible models (UNUSED).
-        Works in eigenspace: partials stored as U^{-1} * L, echildren = U * diag(exp(lambda*t)).
-        Kept as dead code — dispatch always uses computePartialLikelihoodGenericOpenACC. */
-    void computeRevPartialLikelihoodOpenACC(TraversalInfo &info, size_t ptn_lower, size_t ptn_upper, int packet_id);
+    // computeRevPartialLikelihoodOpenACC — REMOVED (dead code, eigenspace path
+    // never used under OpenACC which forces kernel_nonrev = true).
 
     /** Free all OpenACC device data (called before host buffers are freed). */
     void freeOpenACCData();
@@ -968,6 +966,52 @@ public:
     int *gpu_tip_states_ptr = nullptr;
     // P2: Saved buffer_partial_lh size for batch upload/delete
     size_t gpu_buffer_plh_size = 0;
+    // D3: Track whether buffer_partial_lh is currently resident on GPU
+    // to avoid redundant re-uploads during Newton iterations
+    bool gpu_buffer_plh_resident = false;
+    double *gpu_buffer_plh_ptr = nullptr;
+    // D4: Persistent transition matrices for derivative kernel
+    // Allocated once, reused across calls with update device()
+    double *gpu_trans_mat = nullptr;
+    double *gpu_trans_derv1 = nullptr;
+    double *gpu_trans_derv2 = nullptr;
+    size_t gpu_trans_mat_size = 0;
+    bool gpu_trans_mat_resident = false;
+
+    // E1: GPU-resident eigendecomposition for on-device P(t) computation.
+    // Uploaded once per model parameter change; reused across all branch
+    // length optimizations (eigendecomp is fixed while branch lengths vary).
+    // Formulas:
+    //   P(t)[i,j]   = Σ_k V[i,k] * exp(λ_k * t / total_num_subst) * V⁻¹[k,j]
+    //   P'(t)[i,j]  = Σ_k V[i,k] * (λ_k/tns) * exp(λ_k*t/tns) * V⁻¹[k,j]
+    //   P''(t)[i,j] = Σ_k V[i,k] * (λ_k/tns)² * exp(λ_k*t/tns) * V⁻¹[k,j]
+    double *gpu_eigenvalues = nullptr;       // [nstates] on device
+    double *gpu_eigenvectors = nullptr;      // [nstates*nstates] row-major
+    double *gpu_inv_eigenvectors = nullptr;  // [nstates*nstates] row-major
+    double gpu_total_num_subst = 1.0;
+    size_t gpu_eigen_nstates = 0;
+    bool gpu_eigen_resident = false;
+
+    // P0: Additional GPU-resident data for on-device P(t) computation.
+    // Rate categories and proportions from site_rate, state frequencies from model.
+    double *gpu_rate_cats = nullptr;    // [ncat] rate multiplier per category
+    double *gpu_rate_props = nullptr;   // [ncat] proportion per category
+    double *gpu_state_freq = nullptr;   // [nstates] equilibrium frequencies
+    size_t gpu_eigen_ncat = 0;
+
+    /** Upload model eigendecomposition + rates to GPU. Called at start of derivative computation. */
+    void uploadEigenToGPU();
+    /** Free GPU eigendecomposition data. */
+    void freeEigenFromGPU();
+
+    // P1: GPU-resident tip lookup tables for TIP-INTERNAL derivative kernel.
+    // Computed on GPU from GPU-resident trans_mat and tip_partial_lh.
+    // Persistent across calls (allocated once, reused).
+    double *gpu_tip_derv_node  = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    double *gpu_tip_derv_derv1 = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    double *gpu_tip_derv_derv2 = nullptr;  // [(STATE_UNKNOWN+1) * block]
+    size_t gpu_tip_derv_size = 0;
+    bool gpu_tip_derv_resident = false;
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
@@ -1029,10 +1073,13 @@ public:
         GPU-offloaded via OpenACC pragmas, matching PoC prototype. */
     double computeLikelihoodBranchGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 
-    /** OpenACC: scalar (plain C) branch likelihood kernel for reversible models (UNUSED).
-        Works in eigenspace: reduction uses val[i] * plh_node[i] * plh_dad[i].
-        Kept as dead code — dispatch always uses computeLikelihoodBranchGenericOpenACC. */
-    double computeRevLikelihoodBranchOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+    // computeRevLikelihoodBranchOpenACC — REMOVED (dead code, eigenspace path
+    // never used under OpenACC which forces kernel_nonrev = true).
+
+    /** OpenACC: GPU-offloaded derivative kernel for branch length optimization.
+        Computes first and second derivatives of log-likelihood w.r.t. branch length.
+        Uses pre-computed partial likelihoods already resident on GPU. */
+    void computeLikelihoodDervGenericOpenACC(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf);
 #endif
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
