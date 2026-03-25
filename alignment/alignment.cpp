@@ -4637,6 +4637,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         }
         if (added_sites < nsite) {
             site_pattern.resize(added_sites);
+        }
     } else if (strncasecmp(spec, "BAYES", 5) == 0) {
         // Bayesian bootstrap (Rubin 1981): Dirichlet(1,...,1) site weights.
         // Float weights → ML via pattern_weight[]; scaled integer frequencies → parsimony.
