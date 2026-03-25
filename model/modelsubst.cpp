@@ -22,7 +22,7 @@ ModelSubst::ModelSubst(int nstates) : Optimization(), CheckpointFactory()
 		state_freq[i] = 1.0 / num_states;
 	freq_type = FREQ_EQUAL;
     fixed_parameters = false;
-//    linked_model = NULL;
+//    linked_model = nullptr;
 }
 
 void ModelSubst::startCheckpoint() {

@@ -52,7 +52,7 @@ int PhyloSuperTreeUnlinked::computeParsimonyTree(const char *out_prefix, Alignme
     int i;
     ASSERT(saln->partitions.size() == size());
     for (i = 0; i < size(); i++) {
-        score += at(i)->computeParsimonyTree(NULL, saln->partitions[i], rand_stream);
+        score += at(i)->computeParsimonyTree(nullptr, saln->partitions[i], rand_stream);
     }
     if (out_prefix) {
         string file_name = out_prefix;

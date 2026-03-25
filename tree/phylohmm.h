@@ -13,7 +13,7 @@
 #include "model/modelhmm.h"
 #include "utils/optimization.h"
 
-using namespace std;
+// using namespace std;
 
 // compute the log of dotproduct of the logorithm arrays
 inline double logDotProd(double* ln_x, double* ln_y, int n) {
@@ -84,7 +84,7 @@ public:
     // cat_assign_method:
     //  0 - the categories along sites is assigned according to the path with maximum probability (default)
     //  1 - the categories along sites is assigned according to the max posterior probability
-    void showSiteCatMaxLike(ostream& out, bool show_assignment = true, int cat_assign_method = 0, int* numSiteCat = NULL);
+    void showSiteCatMaxLike(ostream& out, bool show_assignment = true, int cat_assign_method = 0, int* numSiteCat = nullptr);
     
     // number of sites
     int nsite;
@@ -149,16 +149,16 @@ public:
     double computeFwdLikeArray();
 
     // show the array site_like_cat
-    void showSiteLikeCat();
+    // void showSiteLikeCat();
     
     // show the array TransiteLog
-    void showTransiteLog();
+    // void showTransiteLog();
 
     // verify the backLikeArray and FwdLikeArray
-    void checkEachSiteBackFwdLikeArray();
+    // void checkEachSiteBackFwdLikeArray();
     
     // compute the marginal probabilities for each site
-    void computeMarginalProb(ostream* out = NULL);
+    void computeMarginalProb(ostream* out = nullptr);
 
     // compute the marginal probabilities for transitions between every pair of sites
     void computeMarginalTransitProb();

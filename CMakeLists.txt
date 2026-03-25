@@ -120,8 +120,8 @@ find_package(Backtrace)
 
 # The version number.
 set (iqtree_VERSION_MAJOR 3)
-set (iqtree_VERSION_MINOR 0)
-set (iqtree_VERSION_PATCH ".1")
+set (iqtree_VERSION_MINOR 1)
+set (iqtree_VERSION_PATCH ".0")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 
@@ -227,6 +227,13 @@ if (APPLE)
         set (__ARM_NEON "TRUE")
         set (NEON 1)
     endif()
+    execute_process(
+      COMMAND sw_vers -productVersion
+      OUTPUT_VARIABLE MACOS_VERSION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REGEX MATCH "^([0-9]+)" MACOS_MAJOR_VERSION "${MACOS_VERSION}")
+    message("macOS version: ${MACOS_VERSION} (major: ${MACOS_MAJOR_VERSION})")
 elseif (UNIX AND NOT APPLE)  # Unix and Linux
     execute_process(
       COMMAND uname -m
@@ -529,8 +536,14 @@ if (NOT IQTREE_FLAGS MATCHES "single")
 
     if(CLANG AND APPLE)
     	if(OSX_NATIVE_ARCHITECTURE STREQUAL "arm64")
-    		link_directories(${PROJECT_SOURCE_DIR}/libmac_m1)
-            LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac_m1/libomp.a" "${PROJECT_SOURCE_DIR}/libmac_m1/libz.a")
+            if(MACOS_MAJOR_VERSION GREATER_EQUAL 26)
+                message("Using libmac26_m1 for macOS ${MACOS_VERSION}")
+                link_directories(${PROJECT_SOURCE_DIR}/libmac26_m1)
+                LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac26_m1/libomp.a" "${PROJECT_SOURCE_DIR}/libmac_m1/libz.a")
+            else()
+                link_directories(${PROJECT_SOURCE_DIR}/libmac_m1)
+                LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac_m1/libomp.a" "${PROJECT_SOURCE_DIR}/libmac_m1/libz.a")
+            endif()
     	else()
             link_directories(${PROJECT_SOURCE_DIR}/libmac)
             LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac/libomp.a" "${PROJECT_SOURCE_DIR}/libmac/libz.a")

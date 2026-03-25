@@ -18,7 +18,7 @@
 #include "tools.h"
 
 
-using namespace std;
+// using namespace std;
 
 const double ERROR_X = 1.0e-4;
 

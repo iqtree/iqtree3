@@ -65,9 +65,9 @@ struct IntBranchInfo {
     double lh_contribution; // log-likelihood contribution of this branch: L(T)-L(T|e=0)
 };
 
-inline int int_branch_cmp(const IntBranchInfo a, const IntBranchInfo b) {
+/* inline int int_branch_cmp(const IntBranchInfo a, const IntBranchInfo b) {
     return (a.lh_contribution < b.lh_contribution);
-}
+}*/
 
 /**
         Representative Leaf Set, stored as a multiset template of STL,
@@ -92,7 +92,7 @@ public:
     /**
             destructor
      */
-    virtual ~IQTree();
+    virtual ~IQTree() override;
 
     void init();
 
@@ -100,17 +100,17 @@ public:
         set checkpoint object
         @param checkpoint
     */
-    virtual void setCheckpoint(Checkpoint *checkpoint);
+    virtual void setCheckpoint(Checkpoint *checkpoint) override;
 
     /** 
         save object into the checkpoint
     */
-    virtual void saveCheckpoint();
+    virtual void saveCheckpoint() override;
 
     /** 
         restore object from the checkpoint
     */
-    virtual void restoreCheckpoint();
+    virtual void restoreCheckpoint() override;
 
     /**
         save UFBoot_trees.
@@ -157,7 +157,7 @@ public:
      * print phylolib tree to a file.
      * @param suffix suffix string for the tree file
      */
-    void printPhylolibTree(const char* suffix);
+    // void printPhylolibTree(const char* suffix);
 
 
     /**
@@ -185,8 +185,8 @@ public:
 
     double getProbDelete();
 
-    void resetKDelete();
-    void increaseKDelete();
+    // void resetKDelete();
+    // void increaseKDelete();
 
     /**
             set the number of iterations for the IQPNNI algorithm
@@ -235,7 +235,7 @@ public:
      *    @param[OUT]
      *        tabuBranches branches that are tabu
      */
-    void getNonTabuBranches(Branches& allBranches, SplitGraph& tabuSplits, Branches& nonTabuBranches, Branches* tabuBranches = NULL);
+    // void getNonTabuBranches(Branches& allBranches, SplitGraph& tabuSplits, Branches& nonTabuBranches, Branches* tabuBranches = nullptr);
 
     /**
      * @brief remove all branches corresponding to nnis
@@ -369,7 +369,7 @@ public:
      *      node[IN] for navigation
      * @return A list of branches for evaluating NNIs
      */
-    void getNNIBranches(SplitIntMap &tabuSplits, SplitIntMap &candidateSplitHash, Branches &nonNNIBranches, Branches &outBranches, Node *dad = NULL, Node *node = NULL);
+    void getNNIBranches(SplitIntMap &tabuSplits, SplitIntMap &candidateSplitHash, Branches &nonNNIBranches, Branches &outBranches, Node *dad = nullptr, Node *node = nullptr);
 
     /**
      *  Return internal branches that appear in \a candidateSplitHash
@@ -385,7 +385,7 @@ public:
      *  @return
      *      A list of branches fufilling the aforementioned conditions.
      */
-    void getStableBranches(SplitIntMap &candSplits, double supportValue, Branches &outBranches, Node *dad = NULL, Node *node = NULL);
+    void getStableBranches(SplitIntMap &candSplits, double supportValue, Branches &outBranches, Node *dad = nullptr, Node *node = nullptr);
 
 
     /**
@@ -415,7 +415,7 @@ public:
     /**
      * @brief get branches that correspond to the splits in \a nniSplits
      */
-    void getSplitBranches(Branches &branches, SplitIntMap &splits, Node *dad = NULL, Node *node = NULL);
+    void getSplitBranches(Branches &branches, SplitIntMap &splits, Node *dad = nullptr, Node *node = nullptr);
 
     /**
      *         Do fastNNI using PLL
@@ -439,7 +439,7 @@ public:
                             being considered (used for traverse direction)
 
      */
-    //void evalNNIs(PhyloNode *node = NULL, PhyloNode *dad = NULL);
+    //void evalNNIs(PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
 
     /**
      * @brief Evaluate all NNIs on branch defined by \a branches
@@ -449,7 +449,7 @@ public:
      */
     void evaluateNNIs(Branches &nniBranches, vector<NNIMove> &outNNIMoves);
 
-    double optimizeNNIBranches(Branches &nniBranches);
+    // double optimizeNNIBranches(Branches &nniBranches);
 
     /**
             search all positive NNI move on the current tree and save them
@@ -496,14 +496,14 @@ public:
                                                            details)
      * @return the estimated value
      */
-    double getAvgNumNNI(void);
+    // double getAvgNumNNI(void);
 
     /**
      * Estimate the median of the distribution of N (see paper for more d
                                                           details)
      * @return the estimated value
      */
-    double estDeltaMedian(void);
+    // double estDeltaMedian(void);
 
     /**
      * Estimate the 95% quantile of the distribution of DELTA (see paper for
@@ -542,9 +542,9 @@ public:
     Linear* linRegModel;
 
 
-    inline double getNNICutoff() {
+    /* inline double getNNICutoff() {
         return nni_cutoff;
-    }
+    }*/
 
     /*
      *  Contains a sorted list of all NNIs (2n-6) evaluated for the current best tree
@@ -601,7 +601,7 @@ public:
     * Write to log file the freq of pllAlignment sites, and
     * freq of bootstrap site stored in pllUFBootDataPtr->boot_samples
     */
-   void pllLogBootSamples(int** pll_boot_samples, int nsamples, int npatterns);
+   // void pllLogBootSamples(int** pll_boot_samples, int nsamples, int npatterns);
 
    /**
     * Convert certain arrays in pllUFBootDataPtr
@@ -720,7 +720,7 @@ public:
     /**
      * Generate the initial tree (usually used for model parameter estimation)
      */
-    virtual void computeInitialTree(LikelihoodKernel kernel, istream* in = NULL);
+    virtual void computeInitialTree(LikelihoodKernel kernel, istream* in = nullptr);
 
     /**
      *  @brief: optimize model parameters on the current tree
@@ -837,7 +837,7 @@ public:
     void computeRootstrapUnrooted(MTreeSet &trees, const char* outgroup, bool use_taxid);
 
     int getDelete() const;
-    void setDelete(int _delete);
+    // void setDelete(int _delete);
 
 protected:
     /**** NNI cutoff heuristic *****/
@@ -865,10 +865,10 @@ protected:
 
     void estimateNNICutoff(Params* params);
 
-    virtual void saveCurrentTree(double logl); // save current tree
+    virtual void saveCurrentTree(double logl) override; // save current tree
 
 
-    void saveNNITrees(PhyloNode *node = NULL, PhyloNode *dad = NULL);
+    void saveNNITrees(PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
 
     int duplication_counter;
 
@@ -901,7 +901,7 @@ protected:
      *         non-cherry leaves are selected first
      *         @param del_leaves (OUT) the list of deleted leaves
      */
-    void deleteNonCherryLeaves(PhyloNodeVector &del_leaves);
+    // void deleteNonCherryLeaves(PhyloNodeVector &del_leaves);
 
     /**
             reinsert the whole list of leaves back into the tree
@@ -912,7 +912,7 @@ protected:
     void reinsertLeavesByParsimony(PhyloNodeVector &del_leaves);
 
 
-    void doParsimonyReinsertion();
+    // void doParsimonyReinsertion();
 
 
     /**
@@ -950,7 +950,7 @@ protected:
             @param node the root of the sub-tree
             @param dad dad of 'node', used to direct the recursion
      */
-    void initializeBonus(PhyloNode *node = NULL, PhyloNode *dad = NULL);
+    void initializeBonus(PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
 
     /**
             raise the bonus points for all branches in the subtree rooted at a node
@@ -976,13 +976,13 @@ protected:
             @param node the root of the sub-tree
             @param dad dad of 'node', used to direct the recursion
      */
-    void findBestBonus(double &best_score, NodeVector &best_nodes, NodeVector &best_dads, Node *node = NULL, Node *dad = NULL);
+    void findBestBonus(double &best_score, NodeVector &best_nodes, NodeVector &best_dads, Node *node = nullptr, Node *dad = nullptr);
 
     void estDeltaMin();
 
-    void convertNNI2Splits(SplitIntMap &nniSplits, int numNNIs, vector<NNIMove> &compatibleNNIs);
+    // void convertNNI2Splits(SplitIntMap &nniSplits, int numNNIs, vector<NNIMove> &compatibleNNIs);
 
-    string generateParsimonyTree(int randomSeed);
+    // string generateParsimonyTree(int randomSeed);
 
     double doTreePerturbation();
 

@@ -18,7 +18,7 @@
 //#include "phylokernelmixture.h"
 #include "modelpomomixture.h"
 
-using namespace std;
+// using namespace std;
 
 const char* builtin_mixmodels_definition = R"(
 #nexus
@@ -1040,7 +1040,7 @@ ModelSubst* createModel(string model_str, ModelsBlock *models_block,
                         StateFreqType freq_type, string freq_params,
                         PhyloTree* tree)
 {
-	ModelSubst *model = NULL;
+	ModelSubst *model = nullptr;
 	string model_params;
     NxsModel *nxsmodel = models_block->findModel(model_str);
 	if (nxsmodel) model_params = nxsmodel->description;
@@ -1188,7 +1188,7 @@ ModelSubst* createModel(string model_str, ModelsBlock *models_block,
 	@param tree associated tree for the model
 */
 ModelMixture::ModelMixture(PhyloTree *tree) : ModelMarkov(tree) {
-	prop = NULL;
+	prop = nullptr;
 	fix_prop = true;
     optimizing_gtr = false;
     optimize_steps = 0;
@@ -1198,7 +1198,7 @@ ModelMixture::ModelMixture(string orig_model_name, string model_name, string mod
 		StateFreqType freq, string freq_params, PhyloTree *tree, bool optimize_weights)
 	: ModelMarkov(tree)
 {
-	prop = NULL;
+	prop = nullptr;
 	fix_prop = true;
     optimizing_gtr = false;
     optimize_steps = 0;
@@ -2205,7 +2205,7 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
                 tree->ptn_freq[ptn] = this_lk_cat[ptn*nmix];
             subst_model->optimizeParameters(gradient_epsilon);
             // reset subst model
-            tree->setModel(NULL);
+            tree->setModel(nullptr);
             subst_model->setTree(phylo_tree);
             // phylo_tree->clearAllPartialLH();
             rescale_codon_mix();
@@ -2217,9 +2217,9 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
     }
 
     // deattach memory
-    tree->central_partial_lh = NULL;
-    tree->central_scale_num = NULL;
-    tree->central_partial_pars = NULL;
+    tree->central_partial_lh = nullptr;
+    tree->central_scale_num = nullptr;
+    tree->central_partial_pars = nullptr;
 
     delete tree;
     aligned_free(new_prop);
