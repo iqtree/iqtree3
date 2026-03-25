@@ -2380,6 +2380,9 @@ public:
     /** TRUE to print bootstrapped site frequency for e.g. PMSF */
     bool print_boot_site_freq;
 
+    /** TRUE to print per-site resample weights for each bootstrap replicate */
+    bool print_boot_site_weights;
+
 	/** true to print sub alignments of super alignment, default: false */
 	bool print_subaln;
 

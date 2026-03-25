@@ -1460,6 +1460,7 @@ void parseArg(int argc, char *argv[], Params &params) {
     params.root_state = NULL;
     params.print_bootaln = false;
     params.print_boot_site_freq = false;
+    params.print_boot_site_weights = false;
     params.print_subaln = false;
     params.print_partition_info = false;
     params.print_conaln = false;
@@ -4322,6 +4323,10 @@ void parseArg(int argc, char *argv[], Params &params) {
 			}
 			if (strcmp(argv[cnt], "-wbsf") == 0) {
 				params.print_boot_site_freq = true;
+				continue;
+			}
+			if (strcmp(argv[cnt], "-wbsw") == 0) {
+				params.print_boot_site_weights = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-wsa") == 0) {
@@ -7926,6 +7931,7 @@ void Params::setDefault() {
     root_state = NULL;
     print_bootaln = false;
     print_boot_site_freq = false;
+    print_boot_site_weights = false;
     print_subaln = false;
     print_partition_info = false;
     print_conaln = false;

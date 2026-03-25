@@ -4329,6 +4329,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         int added_sites = 0;
         IntVector sample;
         random_resampling(nsite, sample);
+        boot_site_weights.assign(sample.begin(), sample.end());
         for (size_t site = 0; site < nsite; ++site) {
             for (int rep = 0; rep < sample[site]; ++rep) {
                 int ptn_id = aln->getPatternID(site);
@@ -4354,6 +4355,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         const size_t nptn = aln->getNPattern();
         DoubleVector site_weights;
         createBayesBootWeights(site_weights);
+        boot_site_weights = site_weights;
         // Accumulate per-pattern float weights
         vector<double> ptn_float_weight(nptn, 0.0);
         for (size_t i = 0; i < nsite; ++i)

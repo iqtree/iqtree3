@@ -4538,6 +4538,8 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     bootaln_name += ".bootaln";
     string bootlh_name = params.out_prefix;
     bootlh_name += ".bootlh";
+    string bootweights_name = params.out_prefix;
+    bootweights_name += ".bootweights";
     int bootSample = 0;
     if (tree->getCheckpoint()->get("bootSample", bootSample)) {
         cout << "CHECKPOINT: " << bootSample << " bootstrap analyses restored" << endl;
@@ -4561,6 +4563,17 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
             tree_out.close();
         } catch (ios::failure) {
             outError(ERR_WRITE_OUTPUT, bootaln_name);
+        }
+
+        // empty the bootweights file
+        if (params.print_boot_site_weights)
+        try {
+            ofstream wt_out;
+            wt_out.exceptions(ios::failbit | ios::badbit);
+            wt_out.open(bootweights_name.c_str());
+            wt_out.close();
+        } catch (ios::failure) {
+            outError(ERR_WRITE_OUTPUT, bootweights_name);
         }
     }
 
@@ -4631,6 +4644,22 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
         if (params.print_boot_site_freq && MPIHelper::getInstance().isMaster()) {
             printSiteStateFreq((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsitefreq").c_str(), bootstrap_alignment);
                 bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
+        }
+
+        if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+            try {
+                ofstream wt_out;
+                wt_out.exceptions(ios::failbit | ios::badbit);
+                wt_out.open(bootweights_name.c_str(), ios_base::out | ios_base::app);
+                const DoubleVector &wt = bootstrap_alignment->boot_site_weights;
+                for (size_t i = 0; i < wt.size(); ++i) {
+                    if (i > 0) wt_out << " ";
+                    wt_out << wt[i];
+                }
+                wt_out << "\n";
+            } catch (ios::failure) {
+                outError(ERR_WRITE_OUTPUT, bootweights_name);
+            }
         }
 
         if (!tree->constraintTree.empty()) {
@@ -4774,6 +4803,8 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     cout << "Non-parametric " << RESAMPLE_NAME << " results written to:" << endl;
     if (params.print_bootaln)
         cout << RESAMPLE_NAME_I << " alignments:     " << params.out_prefix << ".bootaln" << endl;
+    if (params.print_boot_site_weights)
+        cout << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
     cout << "  " << RESAMPLE_NAME_I << " trees:          " << params.out_prefix << ".boottrees" << endl;
     if (params.consensus_type == CT_CONSENSUS_TREE)
         cout << "  Consensus tree:           " << params.out_prefix << ".contree" << endl;

@@ -961,6 +961,13 @@ public:
     DoubleVector pattern_weight;
 
     /**
+     * Per-site resample weights populated by createBootstrapAlignment().
+     * Standard bootstrap: integer counts (as doubles); Bayesian bootstrap: Dirichlet floats.
+     * Length = getNSite() of the source alignment.
+     */
+    DoubleVector boot_site_weights;
+
+    /**
      * @return true if data type is SEQ_CODON and state is a stop codon
      */
     bool isStopCodon(int state);
