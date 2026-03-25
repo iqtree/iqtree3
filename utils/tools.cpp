@@ -7512,7 +7512,7 @@ void Params::setDefault() {
     suppress_zero_distance_warnings = false;
     suppress_duplicate_sequence_warnings = false;
     
-    site_weights_file = "";                                      |  -----------------------------------------------------------------
+    site_weights_file = "";
     site_float_weights_file = "";
     
     original_params = "";
