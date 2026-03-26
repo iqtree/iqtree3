@@ -1521,6 +1521,9 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
             } else {
                 boot_aln->createBootstrapAlignment(*it);
             }
+            // concatenate per-partition site weights for -wbsw output
+            boot_site_weights.insert(boot_site_weights.end(),
+                boot_aln->boot_site_weights.begin(), boot_aln->boot_site_weights.end());
             partitions.push_back(boot_aln);
         }
         taxa_index = super_aln->taxa_index;
