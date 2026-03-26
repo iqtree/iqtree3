@@ -4659,8 +4659,15 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         }
         // Float weights for ML (picked up by PhyloTree::computePtnFreq)
         pattern_weight.assign(ptn_float_weight.begin(), ptn_float_weight.end());
+        // Rebuild site_pattern to be consistent with scaled integer frequencies so that:
+        // (a) PLL's concatenateAlignments assertion holds for partition models, and
+        // (b) parsimony correctly uses Dirichlet-weighted frequencies.
         // NOTE: do NOT set total_site_float_weight — getNSite() returns it when > 0
         // and floating-point truncation (e.g. 1997.9999...) would give wrong site count.
+        site_pattern.clear();
+        for (size_t ptn = 0; ptn < nptn; ++ptn)
+            for (int rep = 0; rep < at(ptn).frequency; ++rep)
+                site_pattern.push_back(ptn);
     } else if (strncmp(spec, "GENESITE,", 9) == 0) {
 		// resampling genes, then resampling sites within resampled genes
 		convert_int_vec(spec+9, site_vec);

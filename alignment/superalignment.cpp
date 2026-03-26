@@ -1491,7 +1491,7 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
             partitions.push_back(boot_aln);
         }
     } else {
-        outError("Wrong -bsam, either -bsam GENE or -bsam GENESITE");
+        outError("Wrong -bsam, use BAYES, GENE, or GENESITE");
     }
 	taxa_index = super_aln->taxa_index;
     countConstSite();
@@ -1522,6 +1522,21 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
                 boot_aln->createBootstrapAlignment(*it);
             }
             // concatenate per-partition site weights for -wbsw output
+            boot_site_weights.insert(boot_site_weights.end(),
+                boot_aln->boot_site_weights.begin(), boot_aln->boot_site_weights.end());
+            partitions.push_back(boot_aln);
+        }
+        taxa_index = super_aln->taxa_index;
+        countConstSite();
+    } else if (strncasecmp(spec, "BAYES", 5) == 0) {
+        // Bayesian bootstrap: draw Dirichlet(1,...,1) weights independently per partition.
+        // ML uses pattern_weight[] (Dirichlet floats). For PLL compatibility, frequencies
+        // must match the site_pattern counts, so restore original frequencies after setup.
+        Alignment::copyAlignment(aln);
+        partitions.reserve(super_aln->partitions.size());
+        for (vector<Alignment*>::iterator it = super_aln->partitions.begin(); it != super_aln->partitions.end(); it++) {
+            Alignment *boot_aln = new Alignment;
+            boot_aln->createBootstrapAlignment(*it, nullptr, spec);
             boot_site_weights.insert(boot_site_weights.end(),
                 boot_aln->boot_site_weights.begin(), boot_aln->boot_site_weights.end());
             partitions.push_back(boot_aln);
@@ -1565,7 +1580,7 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
         }
         init();
     } else {
-        outError("Wrong -bsam, either -bsam GENE or -bsam GENESITE");
+        outError("Wrong -bsam, use BAYES, GENE, or GENESITE");
     }
 }
 
