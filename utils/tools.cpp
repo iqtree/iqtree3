@@ -1925,6 +1925,11 @@ void parseArg(int argc, char *argv[], Params &params) {
                 continue;
             }
 
+            if (strcmp(argv[cnt], "-czbb") == 0 || strcmp(argv[cnt], "--polytomy-boot") == 0) {
+                params.collapse_zero_branch_boot = true;
+                continue;
+            }
+
 			if (strcmp(argv[cnt], "-swc") == 0) {
 				params.split_weight_summary = SW_COUNT;
 				continue;
@@ -3516,6 +3521,8 @@ void parseArg(int argc, char *argv[], Params &params) {
                                      "': scale factor after ':' must be a positive integer (e.g., -bsam BAYES:10)");
                         }
                     }
+                    if (is_valid_bayes)
+                        params.collapse_zero_branch_boot = true;
                 }
 				continue;
 			}
@@ -5856,6 +5863,7 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  -g FILE              (Multifurcating) topological constraint tree file" << endl
     << "  --fast               Fast search to resemble FastTree" << endl
     << "  --polytomy           Collapse near-zero branches into polytomy" << endl
+    << "  --polytomy-boot      Collapse near-zero branches into polytomy in bootstrap trees only" << endl
     << "  --tree-fix           Fix -t tree (no tree search performed)" << endl
     << "  --treels             Write locally optimal trees into .treels file" << endl
     << "  --show-lh            Compute tree likelihood without optimisation" << endl
@@ -7126,6 +7134,7 @@ void Params::setDefault() {
     split_threshold_str = nullptr;
     split_weight_threshold = -1000;
     collapse_zero_branch = false;
+    collapse_zero_branch_boot = false;
     split_weight_summary = SW_SUM;
     gurobi_format = true;
     gurobi_threads = 1;

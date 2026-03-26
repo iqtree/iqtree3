@@ -4674,6 +4674,13 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
         boot_tree->num_precision = tree->num_precision;
 
         runTreeReconstruction(params, boot_tree);
+
+        if (params.collapse_zero_branch_boot && !params.collapse_zero_branch) {
+            cout << "Collapsing near-zero internal branches in the bootstrap tree... ";
+            cout << boot_tree->collapseInternalBranches(nullptr, nullptr, params.min_branch_length*4);
+            cout << " collapsed" << endl;
+        }
+
         // read in the output tree file
         stringstream ss;
         boot_tree->printTree(ss);

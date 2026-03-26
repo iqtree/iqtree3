@@ -1550,6 +1550,9 @@ public:
     /** TRUE to collapse zero branches, default FALSE */
     bool collapse_zero_branch;
 
+    /** TRUE to collapse zero branches in bootstrap trees only, default FALSE */
+    bool collapse_zero_branch_boot;
+
     /**
             Way to summarize split weight in the consensus tree or network: SW_SUM, SW_AVG_ALL, or SW_AVG_PRESENT
      */
