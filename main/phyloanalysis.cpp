@@ -4814,7 +4814,7 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     if (params.print_bootaln)
         cout << RESAMPLE_NAME_I << " alignments:     " << params.out_prefix << ".bootaln" << endl;
     if (params.print_boot_site_weights)
-        cout << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
+        cout << "  " << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
     cout << "  " << RESAMPLE_NAME_I << " trees:          " << params.out_prefix << ".boottrees" << endl;
     if (params.consensus_type == CT_CONSENSUS_TREE)
         cout << "  Consensus tree:           " << params.out_prefix << ".contree" << endl;
