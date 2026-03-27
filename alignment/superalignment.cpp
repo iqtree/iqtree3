@@ -1539,6 +1539,10 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
             boot_aln->createBootstrapAlignment(*it, nullptr, spec);
             boot_site_weights.insert(boot_site_weights.end(),
                 boot_aln->boot_site_weights.begin(), boot_aln->boot_site_weights.end());
+            // Concatenate per-partition pattern_weight[] into SuperAlignment-level pattern_weight
+            // so callers (e.g. UFBoot) can access all weights via a single flat array.
+            pattern_weight.insert(pattern_weight.end(),
+                boot_aln->pattern_weight.begin(), boot_aln->pattern_weight.end());
             partitions.push_back(boot_aln);
         }
         taxa_index = super_aln->taxa_index;

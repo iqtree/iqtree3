@@ -1303,6 +1303,9 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         }
         if (params.print_ufboot_trees)
         cout << "  UFBoot trees:                  " << params.out_prefix << ".ufboot" << endl;
+        if (params.print_boot_site_weights && params.bootstrap_spec &&
+                strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0)
+            cout << "  " << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
 
     }
 

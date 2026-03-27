@@ -391,10 +391,51 @@ void IQTree::initSettings(Params &params) {
         } else {
             cout << "CHECKPOINT: " << boot_trees.size() << " UFBoot trees and " << boot_splits.size() << " UFBootSplits restored" << endl;
         }
+        const bool bayes_ufboot = params.bootstrap_spec &&
+                                  strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0;
+
+        // Open bootweights file for Bayesian UFBoot (-wbsw)
+        ofstream wt_out;
+        if (bayes_ufboot && params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+            string bootweights_name = string(params.out_prefix) + ".bootweights";
+            try {
+                wt_out.exceptions(ios::failbit | ios::badbit);
+                wt_out.open(bootweights_name.c_str());
+            } catch (ios::failure) {
+                outError(ERR_WRITE_OUTPUT, bootweights_name);
+            }
+        }
+
         VerboseMode saved_mode = verbose_mode;
         verbose_mode = VB_QUIET;
         for (i = 0; i < params.gbo_replicates; i++) {
-            if (params.print_bootaln) {
+            if (bayes_ufboot) {
+                // Bayesian UFBoot: use createBootstrapAlignment to get per-pattern
+                // Dirichlet weights (pattern_weight[]) and site weights (boot_site_weights).
+                Alignment *boot_aln = aln->isSuperAlignment()
+                    ? (Alignment*) new SuperAlignment
+                    : new Alignment;
+                boot_aln->createBootstrapAlignment(aln, nullptr, params.bootstrap_spec);
+                // Copy per-pattern Dirichlet weights into boot_samples[i].
+                // For SuperAlignment, pattern_weight[] is now concatenated across partitions
+                // by SuperAlignment::createBootstrapAlignment, so no special handling needed.
+                for (size_t j = 0; j < orig_nptn; j++)
+                    boot_samples[i][j] = (BootValType)boot_aln->pattern_weight[j];
+                // Write site weights to .bootweights file if -wbsw
+                if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+                    try {
+                        const DoubleVector &wt = boot_aln->boot_site_weights;
+                        for (size_t s = 0; s < wt.size(); s++) {
+                            if (s > 0) wt_out << " ";
+                            wt_out << wt[s];
+                        }
+                        wt_out << "\n";
+                    } catch (ios::failure) {
+                        outError(ERR_WRITE_OUTPUT, string(params.out_prefix) + ".bootweights");
+                    }
+                }
+                delete boot_aln;
+            } else if (params.print_bootaln) {
                 Alignment* bootstrap_alignment;
                 if (aln->isSuperAlignment()) {
                     bootstrap_alignment = new SuperAlignment;
@@ -416,9 +457,14 @@ void IQTree::initSettings(Params &params) {
                 }
             }
         }
+        if (wt_out.is_open()) wt_out.close();
         verbose_mode = saved_mode;
         if (params.print_bootaln) {
             cout << "Bootstrap alignments printed to " << bootaln_name << endl;
+        }
+        if (bayes_ufboot && params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+            cout << "  " << RESAMPLE_NAME_I << " site weights:   "
+                 << params.out_prefix << ".bootweights" << endl;
         }
 
 //        cout << "Max candidate trees (tau): " << max_candidate_trees << endl;
@@ -3044,6 +3090,11 @@ void IQTree::refineBootTrees() {
         auto num_nnis = boot_tree->doNNISearch();
         if (num_nnis.second != 0) {
             refined_trees++;
+        }
+
+        // collapse near-zero branches in bootstrap tree if -czbb (but not already done by -czb)
+        if (params->collapse_zero_branch_boot && !params->collapse_zero_branch) {
+            boot_tree->collapseInternalBranches(nullptr, nullptr, params->min_branch_length*4);
         }
 
         if (verbose_mode >= VB_MED) {
