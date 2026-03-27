@@ -1303,8 +1303,7 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         }
         if (params.print_ufboot_trees)
         cout << "  UFBoot trees:                  " << params.out_prefix << ".ufboot" << endl;
-        if (params.print_boot_site_weights && params.bootstrap_spec &&
-                strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0)
+        if (params.print_boot_site_weights)
             cout << "  " << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
 
     }
@@ -3576,6 +3575,11 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     if (params.online_bootstrap && params.gbo_replicates > 0) {
         cout << "Generating " << params.gbo_replicates << " samples for ultrafast "
         << RESAMPLE_NAME << " (seed: " << params.ran_seed << ")..." << endl;
+        if (params.bootstrap_spec && strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0 &&
+                params.collapse_zero_branch_boot) {
+            outWarning("Near-zero branch collapsing (-czbb/--polytomy-boot) is not applied "
+                       "for Bayesian bootstrap with UFBoot.");
+        }
     }
 
     iqtree->initSettings(params);
