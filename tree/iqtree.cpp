@@ -394,9 +394,9 @@ void IQTree::initSettings(Params &params) {
         const bool bayes_ufboot = params.bootstrap_spec &&
                                   strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0;
 
-        // Open bootweights file for Bayesian UFBoot (-wbsw)
+        // Open bootweights file for UFBoot -wbsw (both BAYES and standard)
         ofstream wt_out;
-        if (bayes_ufboot && params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+        if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
             string bootweights_name = string(params.out_prefix) + ".bootweights";
             try {
                 wt_out.exceptions(ios::failbit | ios::badbit);
@@ -435,7 +435,7 @@ void IQTree::initSettings(Params &params) {
                     }
                 }
                 delete boot_aln;
-            } else if (params.print_bootaln) {
+            } else if (params.print_bootaln || params.print_boot_site_weights) {
                 Alignment* bootstrap_alignment;
                 if (aln->isSuperAlignment()) {
                     bootstrap_alignment = new SuperAlignment;
@@ -447,7 +447,20 @@ void IQTree::initSettings(Params &params) {
                 for (size_t j = 0; j < orig_nptn; j++) {
                     boot_samples[i][j] = this_sample[j];
                 }
-                bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
+                if (params.print_bootaln)
+                    bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
+                if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+                    try {
+                        const DoubleVector &wt = bootstrap_alignment->boot_site_weights;
+                        for (size_t s = 0; s < wt.size(); s++) {
+                            if (s > 0) wt_out << " ";
+                            wt_out << wt[s];
+                        }
+                        wt_out << "\n";
+                    } catch (ios::failure) {
+                        outError(ERR_WRITE_OUTPUT, string(params.out_prefix) + ".bootweights");
+                    }
+                }
                 delete bootstrap_alignment;
             } else {
                 IntVector this_sample;
@@ -462,7 +475,7 @@ void IQTree::initSettings(Params &params) {
         if (params.print_bootaln) {
             cout << "Bootstrap alignments printed to " << bootaln_name << endl;
         }
-        if (bayes_ufboot && params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+        if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
             cout << "  " << RESAMPLE_NAME_I << " site weights:   "
                  << params.out_prefix << ".bootweights" << endl;
         }
