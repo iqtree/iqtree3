@@ -17,6 +17,7 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
+#include <map>
 #include "partitionmodel.h"
 #include "alignment/superalignment.h"
 #include "alignment/alignmentpairwise.h"
@@ -336,22 +337,13 @@ double PartitionModel::targetFunk(double x[]) {
     return res;
 }
 
-double PartitionModel::computeMarginalLh() {
-    PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
-    int ntrees = tree->size();
 
-    // all partition sequence type should be same, either DNA or protein
-    SeqType seqtype = tree->at(0)->aln->seq_type;
-    /*
-    if (seqtype != SEQ_DNA && seqtype != SEQ_PROTEIN) {
-        return 1.0;
-    }
-     */
-    for (int j = 1; j < ntrees; j++) {
-        if (tree->at(j)->aln->seq_type != seqtype) {
-            return 1.0;
-        }
-    }
+double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices, bool remove_empty_seq) {
+    PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+    int nparts = part_indices.size();
+
+    // all partitions in part_indices should have the same sequence type
+    SeqType seqtype = tree->at(part_indices[0])->aln->seq_type;
 
     // ambigious states may be used in the calculation
     int ambi_aa[] = {
@@ -365,49 +357,56 @@ double PartitionModel::computeMarginalLh() {
     double sum_sites = 0.0;
 
     // compute "class weights"
-    //if (tree->part_order.empty()) tree->computePartitionOrder();
-    for (int j = 0; j < ntrees; j++) {
-        //int i = tree->part_order[j];
-        int part_sites = tree->at(j)->getAlnNSite();
+    for (int j = 0; j < nparts; j++) {
+        int part_sites = tree->at(part_indices[j])->getAlnNSite();
         weight_array.push_back(part_sites);
         sum_sites += part_sites;
     }
-    for (int j = 0; j < ntrees; j++) {
+    for (int j = 0; j < nparts; j++) {
         weight_array[j] /= sum_sites;
     }
-    for (int j = 0; j < ntrees; j++) {
+    for (int j = 0; j < nparts; j++) {
         log_weight_array.push_back(log(weight_array[j]));
     }
 
     //get sets of taxa for each partition tree in advance
-    vector<StrVector> t_seqs_vec_array;
-    vector<set<string> > t_seqs_set_array;
-    t_seqs_vec_array.resize(ntrees);
-    t_seqs_set_array.resize(ntrees);
+    vector<StrVector> t_seqs_vec_array(nparts);
+    vector<set<string> > t_seqs_set_array(nparts);
+    int ntaxa = tree->getNumTaxa();
+    StrVector taxa_names;
 
-    for (int j = 0; j < ntrees; j++) {
-        PhyloTree *t = tree->at(j);
-        t->getTaxaName(t_seqs_vec_array[j]);
-        t_seqs_set_array[j].insert(t_seqs_vec_array[j].begin(), t_seqs_vec_array[j].end());
+    if (remove_empty_seq) {
+        for (int j = 0; j < nparts; j++) {
+            PhyloTree *t = tree->at(part_indices[j]);
+            t->getTaxaName(t_seqs_vec_array[j]);
+            t_seqs_set_array[j].insert(t_seqs_vec_array[j].begin(), t_seqs_vec_array[j].end());
+        }
+    } else {
+        tree->getTaxaName(taxa_names);
+        for (int j = 0; j < nparts; j++) {
+            Alignment *part_aln = NULL;
+            part_aln = tree->at(part_indices[j])->aln->removeGappySeq(false);
+            t_seqs_vec_array[j] = part_aln->getSeqNames();
+            t_seqs_set_array[j].insert(t_seqs_vec_array[j].begin(), t_seqs_vec_array[j].end());
+        }
     }
 
     // compute the mixture-based log-likelihood
     double mix_lh = 0.0;
 
-    for (int j = 0; j < ntrees; j++) {
-        //int i = tree->part_order[j];
-        Alignment *tree1_aln = tree->at(j)->aln;
+    for (int j = 0; j < nparts; j++) {
+        Alignment *tree1_aln = tree->at(part_indices[j])->aln;
         int tree1_nsite = tree1_aln->getNSite();
         StrVector tree1_seqs = t_seqs_vec_array[j];
 
         // get the site-log-likelihood the the partition under each tree and the corresponding model
-        double *lh_array = new double [ntrees*tree1_nsite];
+        double *lh_array = new double [nparts*tree1_nsite];
 
 #ifdef _OPENMP
 #pragma omp parallel for if(tree->num_threads > 1)
 #endif
-        for (int k = 0; k < ntrees ; k++) {
-            PhyloTree *tree2 = tree->at(k);
+        for (int k = 0; k < nparts ; k++) {
+            PhyloTree *tree2 = tree->at(part_indices[k]);
 
             // get the intersection of tree1_aln and tree2.
             set<string> inter_seqs;
@@ -437,27 +436,43 @@ double PartitionModel::computeMarginalLh() {
                 log_state_freq[n] = log(state_freq[n]);
             }
 
-            if (inter_seqs_id.size() > 1) {
+            if (inter_seqs_id.size() > 1 ||
+                (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible())) {
                 // subset tree1_aln
                 Alignment *sub_tree1_aln = nullptr;
-                if (tree1_seqs.size() != inter_seqs.size()) {
+                if (tree1_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree1_seqs.size() < ntaxa)) {
                     sub_tree1_aln = new Alignment();
-                    sub_tree1_aln->extractSubAlignment(tree1_aln, inter_seqs_id, 0);
+                    sub_tree1_aln->extractSubAlignment(tree1_aln, inter_seqs_id, 0, 0, NULL, false);
                 } else {
                     sub_tree1_aln = tree1_aln;
                 }
 
                 // subset tree2
                 PhyloTree *sub_tree2 = nullptr;
-                string inter_seqs_set (tree2_seqs.size(), 0);
-                for (int l = 0; l < tree2_seqs.size(); l++) {
-                    if (inter_seqs.find(tree2_seqs[l]) != inter_seqs.end()) {
-                        inter_seqs_set[l] = 1;
-                    }
+                int tree2_ntaxa;
+                if (remove_empty_seq) {
+                    tree2_ntaxa = tree2_seqs.size();
+                } else {
+                    tree2_ntaxa = ntaxa;
                 }
+                string inter_seqs_set (tree2_ntaxa, 0);
 
                 sub_tree2 = new PhyloTree();
-                if (tree2_seqs.size() != inter_seqs.size()) {
+                if (tree2_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree2_seqs.size() < ntaxa)) {
+                    if (remove_empty_seq) {
+                        for (int l = 0; l < tree2_seqs.size(); l++) {
+                            if (inter_seqs.find(tree2_seqs[l]) != inter_seqs.end()) {
+                                inter_seqs_set[l] = 1;
+                            }
+                        }
+                    } else {
+                        for (int l = 0; l < ntaxa; l++) {
+                            if (inter_seqs.find(taxa_names[l]) != inter_seqs.end()) {
+                                inter_seqs_set[l] = 1;
+                            }
+                        }
+                    }
+
                     sub_tree2->copyTree(tree2, inter_seqs_set);
                     if (!tree2->getModel()->isReversible()) {
                         sub_tree2->nodeNum = 2 * sub_tree2->leafNum -2;
@@ -466,23 +481,22 @@ double PartitionModel::computeMarginalLh() {
                     sub_tree2->copyTree(tree2);
                 }
 
-                if (inter_seqs_id.size() == 2 && tree2->getModel()->isReversible()) {
-                    // if only two seqs in the subset
-                    // add a gappy seq two the sub_aln
+                if ((inter_seqs_id.size() == 2 && tree2->getModel()->isReversible()) ||
+                    (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible())) {
+                    // too few taxa for likelihood kernel; add a gappy taxon with all-unknown states
                     string gappy_seq = "gappy_seq";
                     sub_tree1_aln->addSeqName(gappy_seq);
                     for (size_t patt = 0; patt < sub_tree1_aln->size(); ++patt) {
                         sub_tree1_aln->at(patt).push_back(sub_tree1_aln->STATE_UNKNOWN);
                     }
 
-                    // add a taxa with 0 branch length to the sub_tree
+                    // add a gappy taxon with 0 branch length to the sub_tree
                     Node *inter_node = sub_tree2->newNode();
                     Node *gappy_taxon = sub_tree2->newNode(-1, "gappy_seq");
-                    auto it = inter_seqs.begin();
-                    string inter_seq1 = *it;
-                    Node *node1 = sub_tree2->findLeafName(inter_seq1);
+                    string first_seq = *inter_seqs.begin();
+                    Node *node1 = sub_tree2->findLeafName(first_seq);
                     Node *node2 = node1->neighbors[0]->node;
-                    double half_branch = node1->findNeighbor(node2)->length/2.0;
+                    double half_branch = node1->neighbors[0]->length / 2.0;
 
                     node1->updateNeighbor(node2, inter_node, half_branch);
                     node2->updateNeighbor(node1, inter_node, half_branch);
@@ -491,9 +505,9 @@ double PartitionModel::computeMarginalLh() {
 
                     inter_node->addNeighbor(gappy_taxon, 0);
                     gappy_taxon->addNeighbor(inter_node, 0);
-                    sub_tree2->branchNum+= 2;
+                    sub_tree2->branchNum += 2;
                     sub_tree2->leafNum++;
-                    sub_tree2->nodeNum = 2 * sub_tree2->leafNum -2;
+                    sub_tree2->nodeNum = 2 * sub_tree2->leafNum - 2;
                 }
 
                 // link sub_tree2 and sub_tree1_aln
@@ -506,7 +520,7 @@ double PartitionModel::computeMarginalLh() {
                 sub_tree2->optimize_by_newton = tree2->params->optimize_by_newton;
                 sub_tree2->setLikelihoodKernel(tree2->params->SSE);
                 sub_tree2->setNumThreads(tree2->num_threads);
-                sub_tree2->ensureNumberOfThreadsIsSet(nullptr);
+                //sub_tree2->ensureNumberOfThreadsIsSet(nullptr);
 
                 sub_tree2->initializeAllPartialLh();
 
@@ -516,7 +530,8 @@ double PartitionModel::computeMarginalLh() {
                 sub_tree2->computeLikelihood(ptn_lh_array);
 
                 //compute site log-likelihood
-                if (tree1_seqs.size() != inter_seqs.size()) { //for sequences only appears in tree1, calculate the state frequencies based on the model in tree2
+                if (tree1_seqs.size() != inter_seqs.size()) {
+                    //for sequences only appears in tree1, calculate the state frequencies based on the model in tree2
                     for (int l = 0; l < tree1_nsite; l++) {
                         int ptn_id = sub_tree1_aln->getPatternID(l);
                         double site_lh = ptn_lh_array[ptn_id];
@@ -558,15 +573,16 @@ double PartitionModel::computeMarginalLh() {
                 }
 
                 //release memory
-                if (tree1_seqs.size() != inter_seqs.size()) {
+                if (tree1_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree1_seqs.size() < ntaxa)) {
                     delete sub_tree1_aln;
                 }
                 sub_tree2->setModelFactory(nullptr);
                 sub_tree2->aln = nullptr;
                 delete sub_tree2;
                 delete[] ptn_lh_array;
-            } else if (tree2->getModel()->isReversible()) {
-                // case when the intersection of taxon sets is 1
+            } else {
+                // case when the intersection of taxon sets is 0 or 1 (reversible model)
+                // all taxa use state frequencies only
                 for (int l = 0; l < tree1_nsite; l++) {
                     double site_lh = 0.0;
                     Pattern p = tree1_aln->at(tree1_aln->getPatternID(l));
@@ -600,9 +616,6 @@ double PartitionModel::computeMarginalLh() {
                     }
                     lh_array[tree1_nsite * k + l] = site_lh;
                 }
-            } else {
-                // intersection has only 1 taxon and non-reversible model
-                outError("mAIC calculation doesn't work yet for intersection of 1 taxon and non-reversible model");
             }
             delete[] state_freq;
         }
@@ -611,9 +624,8 @@ double PartitionModel::computeMarginalLh() {
         double mix_lh_partition = 0.0;
         for (int l = 0; l < tree1_nsite; l++) {
             double weighted_lh, max_lh, mix_lh_site;
-            //int ptn_freq = tree1_aln->at(l).frequency;
 
-            for (int k = 0; k < ntrees; k++) {
+            for (int k = 0; k < nparts; k++) {
                 weighted_lh = log_weight_array[k]+lh_array[tree1_nsite*k+l];
                 if (k == 0) {
                     max_lh = weighted_lh;
@@ -623,7 +635,7 @@ double PartitionModel::computeMarginalLh() {
             }
 
             double mix_lh_site_original = 0.0;
-            for (int k = 0; k < ntrees; k++) {
+            for (int k = 0; k < nparts; k++) {
                 mix_lh_site_original += exp(log_weight_array[k]+lh_array[tree1_nsite*k+l]-max_lh);
             }
             mix_lh_site = max_lh + log(mix_lh_site_original);
@@ -634,6 +646,28 @@ double PartitionModel::computeMarginalLh() {
         delete[] lh_array; //release array memery
     }
     return mix_lh;
+}
+
+double PartitionModel::computeMarginalLh(bool remove_empty_seq) {
+    PhyloSuperTree *tree = (PhyloSuperTree*)site_rate->getTree();
+    int ntrees = tree->size();
+
+    // group partition indices by sequence type
+    map<SeqType, vector<int>> seqtype_groups;
+    for (int j = 0; j < ntrees; j++) {
+        SeqType st = tree->at(j)->aln->seq_type;
+        seqtype_groups[st].push_back(j);
+    }
+
+    // compute marginal log-likelihood per data type group and sum
+    // weights within each group are partition length / total length of that group
+    double total_marginal_lh = 0.0;
+    for (auto &group_pair : seqtype_groups) {
+        vector<int> &group_indices = group_pair.second;
+        total_marginal_lh += computeMarginalLhForPartitions(group_indices, remove_empty_seq);
+    }
+
+    return total_marginal_lh;
 }
 
 void PartitionModel::setVariables(double *variables) {

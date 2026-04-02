@@ -19,6 +19,12 @@
  ***************************************************************************/
 
 #include <stdarg.h>
+#include <queue>
+#include <random>
+#include <algorithm>
+#include <numeric>
+#include <iomanip>
+#include <cmath>
 #include "superalignment.h"
 #include "nclextra/msetsblock.h"
 #include "nclextra/myreader.h"
@@ -55,7 +61,7 @@ SuperAlignment::SuperAlignment(Params &params) : Alignment()
 {
     readFromParams(params);
     
-    init();
+    init(nullptr, params.marginal_lh_aic);
     
     // only show Degree of missing data if AliSim is inactive or an input alignment is supplied
     if (!(Params::getInstance().alisim_active && !Params::getInstance().alisim_inference_mode)) {
@@ -178,7 +184,7 @@ void SuperAlignment::readFromParams(Params &params) {
     }
 }
 
-void SuperAlignment::init(StrVector *sequence_names) {
+void SuperAlignment::init(StrVector *sequence_names, bool keep_order) {
     // start original code
     
     max_num_states = 0;
@@ -192,6 +198,52 @@ void SuperAlignment::init(StrVector *sequence_names) {
         taxa_index.resize(seq_names.size());
         for (auto i = taxa_index.begin(); i != taxa_index.end(); i++)
             i->resize(nsite, -1);
+    }
+
+    // 2025-12-9 Huaiyan: keep the sequence order in the superalignment same as partition alignments, do it once when applying mAIC to PartitionFinder.
+    // Uses topological sort (Kahn's algorithm) to merge the per-partition sequence orderings into a single consistent global order.
+    if (keep_order) {
+        // build a DAG: edge a->b means a appears immediately before b in some partition
+        unordered_map<string, unordered_set<string>> successors;
+        unordered_map<string, int> indegree;
+
+        for (auto *aln : partitions) {
+            size_t nseq = aln->getNSeq();
+            for (size_t seq = 0; seq < nseq; seq++) {
+                const string &name = aln->getSeqName(seq);
+                if (indegree.find(name) == indegree.end())
+                    indegree[name] = 0;
+            }
+            for (size_t i = 0; i + 1 < nseq; i++) {
+                const string &a = aln->getSeqName(i);
+                const string &b = aln->getSeqName(i + 1);
+                if (!successors[a].count(b)) {
+                    successors[a].insert(b);
+                    indegree[b]++;
+                }
+            }
+        }
+
+        // BFS from nodes with no predecessors
+        queue<string> q;
+        for (auto &entry : indegree) {
+            if (entry.second == 0)
+                q.push(entry.first);
+        }
+
+        while (!q.empty()) {
+            const string &x = q.front();
+            seq_names.push_back(x);
+            taxa_index.push_back(IntVector(nsite, -1));
+            for (const string &y : successors[x]) {
+                if (--indegree[y] == 0)
+                    q.push(y);
+            }
+            q.pop();
+        }
+
+        if (seq_names.size() != indegree.size())
+            outError("Conflicting sequence orders across partitions prevent consistent ordering for mAIC PartitionFinder.");
     }
 
     size_t site = 0;
@@ -2037,4 +2089,142 @@ void SuperAlignment::orderPatternByNumChars(int pat_type) {
 //        sum_scores[part] = partitions[part]->pars_lower_bound[0];
     }
     // TODO compute pars_lower_bound (lower bound of pars score for remaining patterns)
+}
+
+void SuperAlignment::createSUPartitions(Params &params) {
+    cout << endl << "Generating ModelTamer subsample-upsampling per partition..." << endl;
+
+    std::mt19937 gen(params.ran_seed);
+    size_t npart = partitions.size();
+
+    // determine per-partition sampling percentage
+    vector<double> part_percent(npart);
+    bool all_skip = true;
+    for (size_t p = 0; p < npart; p++) {
+        if (params.model_tamer < 0) {  // AUTO
+            part_percent[p] = estimateModelTamerPercent(
+                partitions[p]->getNPattern(), partitions[p]->seq_type == SEQ_PROTEIN);
+        } else {
+            part_percent[p] = params.model_tamer;
+        }
+        if (part_percent[p] < 100.0) all_skip = false;
+    }
+
+    if (all_skip) {
+        cout << "ModelTamer AUTO: all partitions have too few patterns, analyzing full MSA" << endl;
+        return;
+    }
+
+    int n_sub = params.model_tamer_sub;
+    int n_up = params.model_tamer_up;
+
+    for (int i = 0; i < n_sub; i++) {
+        // subsample: compute target sites and draw subsampled site indices per partition
+        vector<int> n_target(npart, -1);
+        vector<vector<int>> sub_sites(npart);
+
+        for (size_t p = 0; p < npart; p++) {
+            if (part_percent[p] >= 100.0) continue;
+
+            Alignment *aln = partitions[p];
+            int n_site = aln->getNSite();
+            int n_ptn = aln->getNPattern();
+
+            if (params.model_tamer_method == 0) {
+                // ModelTamer method: estimate sites needed for target patterns
+                int n_target_ptn = static_cast<int>(ceil(part_percent[p] * n_ptn / 100.0));
+                vector<int> probe(n_site);
+                std::iota(probe.begin(), probe.end(), 0);
+                std::shuffle(probe.begin(), probe.end(), gen);
+                probe.resize(n_target_ptn);
+                Alignment *probe_aln = new Alignment();
+                probe_aln->extractSites(aln, probe);
+                n_target[p] = (n_target_ptn * n_target_ptn + probe_aln->getNPattern() - 1)
+                              / probe_aln->getNPattern();
+                delete probe_aln;
+            } else {
+                n_target[p] = static_cast<int>(ceil(part_percent[p] * n_site / 100.0));
+            }
+
+            sub_sites[p].resize(n_site);
+            std::iota(sub_sites[p].begin(), sub_sites[p].end(), 0);
+            std::shuffle(sub_sites[p].begin(), sub_sites[p].end(), gen);
+            sub_sites[p].resize(n_target[p]);
+        }
+
+        for (int j = 0; j < n_up; j++) {
+            // print replicate header (only for model_tamer_only with multiple replicates)
+            if (params.model_tamer_only && (n_sub > 1 || n_up > 1))
+                cout << endl << "Replicate s" << i + 1 << "u" << j + 1 << ":" << endl;
+            cout << "Subset\tType\tSeqs\tSites\tPtnOri\tPtnSU\tSU(%)\tName" << endl;
+
+            // upsample each partition
+            vector<Alignment*> su_parts(npart);
+            for (size_t p = 0; p < npart; p++) {
+                Alignment *aln = partitions[p];
+                int n_site = aln->getNSite();
+                int n_ptn = aln->getNPattern();
+
+                if (n_target[p] < 0) {
+                    // partition skipped (too few patterns for SU)
+                    cout << p + 1 << "\t" << aln->sequence_type << "\t" << aln->getNSeq()
+                         << "\t" << n_site << "\t" << n_ptn << "\t" << n_ptn
+                         << "\t" << fixed << setprecision(1) << 100.0
+                         << "\t" << aln->name << " (skipped)" << endl;
+                    su_parts[p] = aln;  // keep original pointer
+                    continue;
+                }
+
+                // upsample from subsampled sites
+                std::uniform_int_distribution<int> dist(0, n_target[p] - 1);
+                vector<int> up_sites(n_site);
+                for (int k = 0; k < n_site; k++)
+                    up_sites[k] = sub_sites[p][dist(gen)];
+
+                su_parts[p] = new Alignment();
+                su_parts[p]->extractSites(aln, up_sites);
+
+                double ptn_pct = 100.0 * su_parts[p]->getNPattern() / n_ptn;
+                cout << p + 1 << "\t" << aln->sequence_type << "\t" << aln->getNSeq()
+                     << "\t" << n_site << "\t" << n_ptn << "\t" << su_parts[p]->getNPattern()
+                     << "\t" << fixed << setprecision(1) << ptn_pct
+                     << "\t" << aln->name << endl;
+            }
+
+            if (params.model_tamer_only) {
+                // write concatenated SU alignment
+                string aln_file = (string)params.out_prefix
+                    + ".s" + to_string(i + 1) + "u" + to_string(j + 1) + ".phy";
+                vector<Alignment*> saved = partitions;
+                partitions = su_parts;
+                try {
+                    ofstream out;
+                    out.exceptions(ios::failbit | ios::badbit);
+                    out.open(aln_file);
+                    printCombinedAlignment(out);
+                    out.close();
+                    cout << "Alignment was printed to " << aln_file << endl;
+                } catch (ios::failure &) {
+                    outError(ERR_WRITE_OUTPUT, aln_file);
+                }
+                partitions = saved;
+                // clean up SU copies (skip those pointing to originals)
+                for (size_t p = 0; p < npart; p++)
+                    if (n_target[p] >= 0) delete su_parts[p];
+            } else {
+                // replace partitions with SU versions
+                for (size_t p = 0; p < npart; p++) {
+                    if (n_target[p] >= 0) {
+                        delete partitions[p];
+                        partitions[p] = su_parts[p];
+                    }
+                }
+            }
+        }
+    }
+
+    if (!params.model_tamer_only) {
+        init();  // rebuild super alignment structure
+    }
+    cout << endl;
 }

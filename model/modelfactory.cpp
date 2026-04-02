@@ -1104,6 +1104,7 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
     vector<string> nested_models;
     int nmix, i;
     double max_logl, cur_logl;
+    bool found_nested_model = false;
     map<string, vector<string> >::iterator itr;
 
     nmix = model->getNMixtures();
@@ -1128,20 +1129,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
         for (i = 0; i < nested_models.size(); i++) {
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_models[i] + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated (e.g. MF_IGNORED)
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_models[i] + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");
@@ -1179,20 +1183,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
             nested_mix_model = replaceLastQ(model_name, nested_models[i]);
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_mix_model + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_mix_model + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");

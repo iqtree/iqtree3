@@ -923,30 +923,18 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev) {
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED) {
         // compute mAIC/mBIC/mAICc if it is a partition model
-        int ntrees; //mix_df;
-        double mix_lh;
+        double mix_lh = tree.getModelFactory()->computeMarginalLh(params.remove_empty_seq);
 
-        mix_lh = tree.getModelFactory()->computeMarginalLh();
-        if (mix_lh < 0) {
-            PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
-            ntrees = stree->size();
-            //mix_df = df + ntrees - 1;  // Ed Susko: The weights are fixed by the partition length, so there are no extra degrees of freedom
-            //nsites = tree.getAlnNSite();
+        double mAIC, mAICc, mBIC;
+        computeInformationScores(mix_lh, df, ssize, mAIC, mAICc, mBIC);
 
-            double mAIC, mAICc, mBIC;
-            computeInformationScores(mix_lh, df, ssize, mAIC, mAICc, mBIC);
-
-            out << endl;
-            out << "Marginal log-likelihood of the tree: " << mix_lh << endl;
-            out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << endl;
-            //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
-            //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
-        } else {
-            out << endl;
-            out << "mAIC calculation is skipped because not all partition sequence types are same" << endl;
-        }
+        out << endl;
+        out << "Marginal log-likelihood of the tree: " << mix_lh << endl;
+        out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << endl;
+        //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
+        //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
     }
 
     if (ssize <= df && main_tree) {
@@ -5184,11 +5172,13 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     /****************** read in alignment **********************/
     if (params.partition_file) {
         // Partition model analysis
-        if (!align_is_given)
-            if (params.partition_type == TOPO_UNLINKED)
+        if (!align_is_given) {
+            if (params.partition_type == TOPO_UNLINKED) {
                 alignment = new SuperAlignmentUnlinked(params);
-            else
+            } else {
                 alignment = new SuperAlignment(params);
+            }
+        }
     } else {
         if (!align_is_given)
             alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
@@ -6283,5 +6273,58 @@ void runRootstrap(Params &params) {
     else
         tree.computeRootstrapUnrooted(trees, params.root, false);
     cout << getRealTime() - start_time << " sec" << endl;
-    
+
+}
+
+/**
+ * Run ModelTamer subsample-upsample analysis.
+ * For partitioned data, applies SU to each partition independently via createSUPartitions.
+ * For single alignments, creates one SU alignment via createSUAlignment.
+ * Supports --modeltamer AUTO to auto-estimate sampling percentage per partition/alignment.
+ * @param params program parameters
+ * @param checkpoint checkpoint for resuming analysis
+ */
+void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
+    IQTree *tree = nullptr;
+    Alignment *alignment = nullptr;
+
+    if (params.partition_file) {
+        // Partitioned data: apply SU to each partition independently
+        SuperAlignment *super_aln = new SuperAlignment(params);
+        super_aln->createSUPartitions(params);
+        alignment = (Alignment *)super_aln;
+    } else {
+        // Single alignment
+        Alignment *orig_aln = createAlignment(params.aln_file, params.sequence_type,
+                                              params.intype, params.model_name);
+
+        // auto-estimate percentage if --modeltamer AUTO
+        if (params.model_tamer < 0) {
+            params.model_tamer = estimateModelTamerPercent(
+                orig_aln->getNPattern(), orig_aln->seq_type == SEQ_PROTEIN);
+            if (params.model_tamer >= 100) {
+                cout << "ModelTamer AUTO: too few patterns, analyzing full MSA" << endl;
+                delete orig_aln;
+                runPhyloAnalysis(params, checkpoint, tree, alignment);
+                alignment = tree->aln;
+                delete tree;
+                delete alignment;
+                return;
+            }
+            cout << "ModelTamer AUTO: estimated sampling percentage = "
+                 << params.model_tamer << "%" << endl;
+        }
+
+        alignment = createSUAlignment(params, orig_aln);
+        delete orig_aln;
+    }
+
+    // write SU alignment to file
+    string su_file = (string)params.out_prefix + ".su_aln.phy";
+    alignment->printAlignment(IN_PHYLIP, su_file.c_str());
+
+    runPhyloAnalysis(params, checkpoint, tree, alignment, true);
+    alignment = tree->aln;
+    delete tree;
+    delete alignment;
 }

@@ -1,6 +1,6 @@
 /*
  * phylotesting.cpp
- * implementation of ModelFinder and PartitionFinder
+ * implementation of ModelFinder, PartitionFinder and MixtureFinder
  *  Created on: Aug 23, 2013
  *      Author: minh
  */
@@ -1807,8 +1807,9 @@ void transferModelParameters(PhyloSuperTree *super_tree, ModelCheckpoint &model_
     }
 }
 
-void mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, StrVector &model_names) {
-	cout << "Merging into " << gene_sets.size() << " partitions..." << endl;
+PhyloSuperTree* mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, StrVector &model_names, bool replace_super_tree = true) {
+    if (replace_super_tree)
+        cout << "Merging into " << gene_sets.size() << " partitions..." << endl;
 	vector<set<int> >::iterator it;
 	SuperAlignment *super_aln = (SuperAlignment*)super_tree->aln;
 	vector<PartitionInfo> part_info;
@@ -1847,30 +1848,46 @@ void mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, S
 		info.nniMoves[0].ptnlh = nullptr;
 		info.nniMoves[1].ptnlh = nullptr;
 		part_info.push_back(info);
-		PhyloTree *tree = super_tree->extractSubtree(*it);
-        tree->setParams(super_tree->params);
-		tree->setAlignment(aln);
-		tree_vec.push_back(tree);
+        if (replace_super_tree) {
+            PhyloTree *tree = super_tree->extractSubtree(*it);
+            tree->setParams(super_tree->params);
+            tree->setAlignment(aln);
+            tree_vec.push_back(tree);
+        }
         new_super_aln->partitions.push_back(aln);
 	}
 
     // BUG FIX 2016-11-29: when merging partitions with -m TESTMERGE, sequence order is changed
     // get the taxa names from existing tree
     StrVector seq_names;
+    PhyloSuperTree *new_super_tree = nullptr;
+    ASSERT(super_tree->root);
+
     if (super_tree->root) {
         super_tree->getTaxaName(seq_names);
     }
     new_super_aln->init(&seq_names);
 
-	for (PhyloSuperTree::reverse_iterator tit = super_tree->rbegin(); tit != super_tree->rend(); tit++)
-		delete (*tit);
-	super_tree->clear();
-	super_tree->insert(super_tree->end(), tree_vec.begin(), tree_vec.end());
-	super_tree->part_info = part_info;
-
-	delete super_tree->aln;
-//    super_tree->aln = new SuperAlignment(super_tree);
-    super_tree->setAlignment(new_super_aln);
+    if (replace_super_tree) {
+        for (PhyloSuperTree::reverse_iterator tit = super_tree->rbegin(); tit != super_tree->rend(); tit++)
+            delete (*tit);
+        super_tree->clear();
+        super_tree->insert(super_tree->end(), tree_vec.begin(), tree_vec.end());
+        super_tree->part_info = part_info;
+        delete super_tree->aln;
+        super_tree->setAlignment(new_super_aln);
+    } else {
+        if (super_tree->params->partition_type != BRLEN_OPTIMIZE) {
+            // for edge-linked partition model
+            new_super_tree = new PhyloSuperTreePlen(new_super_aln, super_tree->params->partition_type);
+        } else {
+            // edge-unlinked partition model
+            new_super_tree = new PhyloSuperTree(new_super_aln);
+        }
+        new_super_tree->part_info = part_info;
+    }
+    return new_super_tree;
+    //    super_tree->aln = new SuperAlignment(super_tree);
 }
 
 /**
@@ -4040,6 +4057,15 @@ void PartitionFinder::retreiveAnsFrChkpt(vector<pair<int,double> >& jobs, int jo
                 cout << cur_pair.tree_len << " " << cur_pair.set_name;
                 cout << endl;
 
+                if (params->marginal_lh_aic) {
+                    //cur_pair.distance = closest_pairs[pair].distance;
+                    //cur_pair.score_bic = computeInformationScore(lhnew, dfnew, ssize, MTC_BIC);
+                    sorted_pairs.insertPair(cur_pair);
+                } else if (params->partition_merge == MERGE_GREEDY) {
+                    if (cur_pair.score < inf_score)
+                        better_pairs.insertPair(cur_pair);
+                }
+
                 to_delete.push_back(1);
             } else {
                 to_delete.push_back(0);
@@ -4197,6 +4223,156 @@ void PartitionFinder::getBestModelforMergesMPI(int nthreads, vector<MergeJob* >&
 }
 
 #endif // _IQTREE_MPI
+
+double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge) {
+    PhyloSuperTree *maic_tree;
+    double score_maic;
+    if (merge) {
+        maic_tree = mergePartitions(in_tree, gene_sets, model_names, false);
+    } else {
+        cur_super_aln = ((SuperAlignment *) in_tree->aln);
+        if (params->partition_type != BRLEN_OPTIMIZE) {
+            maic_tree = new PhyloSuperTreePlen(cur_super_aln, params->partition_type);
+        } else {
+            maic_tree = new PhyloSuperTree(cur_super_aln);
+        }
+    }
+
+    ASSERT(maic_tree);
+    maic_tree->setCheckpoint(model_info);
+    maic_tree->setParams(params);
+    maic_tree->restoreCheckpoint();
+    maic_tree->setLikelihoodKernel(params->SSE);
+    maic_tree->setNumThreads(min((size_t)num_threads,maic_tree->size()));
+    maic_tree->initializeModel(*params, params->model_name, models_block);
+    maic_tree->getModelFactory()->setCheckpoint(model_info);
+
+    for (int j = 0; j < maic_tree->size(); j++) {
+        //string part_name = maic_tree->at(j)->aln->name;
+        //cout << '[check] part name: ' << part_name << endl;
+        model_info->startStruct(maic_tree->at(j)->aln->name);
+        maic_tree->at(j)->restoreCheckpoint();
+        maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
+        model_info->endStruct();
+    }
+    lh_marginal = maic_tree->getModelFactory()->computeMarginalLh(params->remove_empty_seq);
+    score_maic = computeInformationScore(lh_marginal, df, ssize, MTC_AIC);
+    delete maic_tree;
+
+    return score_maic;
+}
+
+
+ModelPairSet PartitionFinder::getBetterPairsmAIC() {
+    cout << "Compute mAIC score of partition models..." << endl;
+    double cpu_time = getCPUTime();
+    double real_time = getRealTime();
+
+    double cur_score_maic = 0;
+    double greedy_lh_marginal;
+    double greedy_score_maic = inf_score_maic;
+    ModelPairSet sorted_pairs_bu = sorted_pairs;
+    ModelPairSet cur_better_pairs;
+    set<int> part_ids;
+    int better_df = dfsum;
+    vector<set<int> > better_gene_sets = gene_sets;
+    StrVector better_model_names = model_names;
+
+    // evaluate all pairs of partitions for merging
+    int index = 0;
+    for (auto it = sorted_pairs.begin(); it != sorted_pairs.end(); it++, index++) {
+        //time-saving strategies for clustering method
+        if (params->partition_merge != MERGE_GREEDY) {
+            // early stopping: if no better mAIC pairs until going through number pairs reach to number of current partitions
+            if (cur_better_pairs.size() == 0 && index > gene_sets.size()) break;
+
+            // check for compatibility
+            vector<int> overlap; // index of partitions in the merged pair
+            set_intersection(part_ids.begin(), part_ids.end(),
+                             it->second.merged_set.begin(), it->second.merged_set.end(),
+                             std::back_inserter(overlap));
+            if (!overlap.empty()) continue;
+        }
+
+        //compute mAIC
+        ModelPair cur_pair = it->second;
+
+        // prepare partition IDs and model_names for subsets
+        auto it_bu = next(sorted_pairs_bu.begin(), index); // as partition index may change in this loop, use back up to get back correct information
+        int cur_df = better_df - dfvec[it_bu->second.part1] - dfvec[it_bu->second.part2] + it->second.df;
+        vector<set<int> > cur_gene_sets = better_gene_sets;
+        StrVector cur_model_names = better_model_names;
+
+        cur_gene_sets[cur_pair.part1] = cur_pair.merged_set;
+        cur_model_names[cur_pair.part1] = cur_pair.model_name;
+        cur_gene_sets.erase(cur_gene_sets.begin() + cur_pair.part2);
+        cur_model_names.erase(cur_model_names.begin() + cur_pair.part2);
+
+        cur_score_maic = getmAICforMergeScheme(cur_gene_sets, cur_model_names, cur_df, true);
+
+        if (params->partition_merge != MERGE_GREEDY) {
+            if (cur_score_maic < inf_score_maic) {
+                cout << "Merging " << it->second.set_name << " with mAIC score: " << cur_score_maic
+                     << " (Marginal LnL: " << lh_marginal << "  df: " << cur_df << ")" << endl;
+                part_ids.insert(it->second.merged_set.begin(), it->second.merged_set.end());
+                cur_better_pairs.insertPair(it_bu->second);
+
+                inf_score_maic = cur_score_maic;
+                better_df = cur_df;
+                better_gene_sets = cur_gene_sets;
+                better_model_names = cur_model_names;
+
+                // decrease part ID for all pairs beyond opt_pair.part2
+                auto next_pair = it;
+                for (next_pair++; next_pair != sorted_pairs.end(); next_pair++) {
+                    if (next_pair->second.part1 > cur_pair.part2)
+                        next_pair->second.part1--;
+                    if (next_pair->second.part2 > cur_pair.part2)
+                        next_pair->second.part2--;
+                }
+            } /*else {
+                cout << "[mAIC] "<< it->second.set_name << " will [NOT] be merged with mAIC score: " << cur_score_maic
+                     << " (Marginal LnL: " << lh_marginal << "  df: " << cur_df << ")" << endl;
+            }*/
+        } else {
+            if (cur_score_maic < greedy_score_maic) {
+                //cout << "Merging " << it->second.set_name << " with mAIC score: " << cur_score_maic
+                //     << " (Marginal LnL: " << lh_marginal << "  df: " << cur_df << ")" << endl;/*, cAIC score:"
+                //     << it->second.score << ", BIC score: " << it->second.score_bic << ", dist: " << it->second.distance << endl;*/
+                cur_better_pairs.clear();
+                cur_better_pairs.insertPair(it_bu->second);
+                greedy_score_maic = cur_score_maic;
+                greedy_lh_marginal = lh_marginal;
+            } /*else {
+                cout << "[mAIC] "<< it->second.set_name << " will [NOT] be merged with mAIC score: " << cur_score_maic
+                     << " (Marginal LnL: " << lh_marginal << "  df: " << cur_df << "), cAIC score: "
+                     << it->second.score << ", BIC score: " << it->second.score_bic << ", dist: " << it->second.distance << endl;
+            }*/
+        }
+    }
+
+    if (params->partition_merge == MERGE_GREEDY && cur_better_pairs.size() > 0) {
+        auto it = cur_better_pairs.begin();
+        int cur_df = dfsum - dfvec[it->second.part1] - dfvec[it->second.part2] + it->second.df;
+        cout << "Merging " << it->second.set_name << " with mAIC score: " << greedy_score_maic
+             << " (Marginal LnL: " << greedy_lh_marginal << "  df: " << cur_df << ")" << endl;
+    }
+    cout << cur_better_pairs.size() << " compatible better partition pairs found based on mAIC" << endl;
+    /*if (cur_better_pairs.size() == 0 && better_pairs.size() == 0) {
+        auto it = sorted_pairs.begin();
+        cur_better_pairs.insertPair(it->second);
+        cout << "merge " << it->second.set_name << " for further analysis" << endl;
+    }*/
+    cpu_time = getCPUTime() - cpu_time;
+    real_time = getRealTime() - real_time;
+    cout << "CPU time for computing mAIC scores: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
+    cout << "Wall-clock time for computing mAIC scores: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
+    cout << endl;
+
+    sorted_pairs.clear();
+    return cur_better_pairs;
+}
+
 
 /**
  * compute and process the best model for partitions (without MPI)
@@ -4388,6 +4564,9 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
             }
             if (cur_pair.score < inf_score)
                 better_pairs.insertPair(cur_pair);
+            if (params->marginal_lh_aic) {
+                sorted_pairs.insertPair(cur_pair);
+            }
         }
     }
 }
@@ -4421,6 +4600,7 @@ void PartitionFinder::getBestModel(int job_type) {
         // for merges
         ASSERT(gene_sets.size() == lenvec.size());
         better_pairs.clear();
+        sorted_pairs.clear();
         // find closest partition pairs
         closest_pairs.clear();
         findClosestPairs(super_aln, lenvec, gene_sets, false, closest_pairs);
@@ -4816,6 +4996,12 @@ void PartitionFinder::test_PartitionModel() {
     cout << "Full partition model " << criterionName(params->model_test_criterion)
          << " score: " << inf_score << " (LnL: " << lhsum << "  df:" << dfsum << ")" << endl;
 
+    if (params->marginal_lh_aic) {
+        //double score_bic = computeInformationScore(lhsum, dfsum, ssize, MTC_BIC);
+        inf_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, false);
+        cout << "Full partition model mAIC score: " << inf_score_maic << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ")" << endl;
+    }
+
     string criterion_name = criterionName(params->model_test_criterion);
 
     if (!test_merge) {
@@ -4860,7 +5046,6 @@ void PartitionFinder::test_PartitionModel() {
         return;
     }
 
-    StrVector model_names;
     StrVector greedy_model_trees;
 
     gene_sets.resize(in_tree->size());
@@ -4901,6 +5086,18 @@ void PartitionFinder::test_PartitionModel() {
 #endif
 
     bool proceed_stepwise_merge = perform_merge;
+
+    // variables for mAIC merging
+    bool switched_to_caic = false;
+    double lhsum_bu;
+    int dfsum_bu;
+    vector<set<int> > gene_sets_bu;
+    DoubleVector lhvec_bu;
+    IntVector dfvec_bu;
+    DoubleVector lenvec_bu;
+    StrVector model_names_bu;
+    StrVector greedy_model_trees_bu;
+
     while (proceed_stepwise_merge) {
         // stepwise merging charsets
 
@@ -4915,18 +5112,63 @@ void PartitionFinder::test_PartitionModel() {
         MPI_Bcast(&is_pairs_empty, 1, MPI_CXX_BOOL,PROC_MASTER, MPI_COMM_WORLD);
 #endif
 
-        if (is_pairs_empty) break;
+        if (is_pairs_empty && !params->marginal_lh_aic) break;
         
         Checkpoint mfchkpt;
         if (MPIHelper::getInstance().isMaster()) {
 
             ModelPairSet compatible_pairs;
 
-            int num_comp_pairs = params->partition_merge == MERGE_RCLUSTERF ? gene_sets.size()/2 : 1;
+            int num_comp_pairs = params->partition_merge == MERGE_RCLUSTERF ? gene_sets.size() / 2 : 1;
             better_pairs.getCompatiblePairs(num_comp_pairs, compatible_pairs);
-            if (compatible_pairs.size() > 1)
-                cout << compatible_pairs.size() << " compatible better partition pairs found" << endl;
+            if (!params->marginal_lh_aic) {
+                if (compatible_pairs.size() > 1)
+                    cout << compatible_pairs.size() << " compatible better partition pairs found" << endl;
+            } else {
+                //cout <<  "[cAIC] "<< compatible_pairs.size() << " compatible better partition pairs found" << endl;
+                better_pairs = getBetterPairsmAIC();
+                bool is_maic_pairs_empty = better_pairs.empty();
 
+                if (is_maic_pairs_empty){
+                    if (switched_to_caic) {
+                        cout << "No better pairs based on mAIC after one round of " << criterionName(params->model_test_criterion) << " merging and finish merging with previous optimal mAIC" << endl;
+                        //load back back up
+                        lhsum = lhsum_bu;
+                        dfsum = dfsum_bu;
+                        gene_sets = gene_sets_bu;
+                        lhvec = lhvec_bu;
+                        dfvec = dfvec_bu;
+                        lenvec = lenvec_bu;
+                        model_names = model_names_bu;
+                        greedy_model_trees = greedy_model_trees_bu;
+                        break;
+                    } else {
+                        if (is_pairs_empty || gene_sets.size() == 2) {
+                            cout << "No better pairs based on both mAIC and " << criterionName(params->model_test_criterion) << endl;
+                            break;
+                        };
+                        cout << "No better pairs based on mAIC, try merging better pairs based on " << criterionName(params->model_test_criterion) << endl;
+                        cout << compatible_pairs.size() << " compatible better partition pairs found based on " << criterionName(params->model_test_criterion) << endl;
+                        switched_to_caic = true;
+                        //back up
+                        lhsum_bu = lhsum;
+                        dfsum_bu = dfsum;
+                        gene_sets_bu = gene_sets;
+                        lhvec_bu = lhvec;
+                        dfvec_bu = dfvec;
+                        lenvec_bu = lenvec;
+                        model_names_bu = model_names;
+                        greedy_model_trees_bu = greedy_model_trees;
+                    }
+                } else {
+                    if (switched_to_caic) {
+                        cout << "Better pairs based on mAIC are found after one round of " << criterionName(params->model_test_criterion) << " merging" << endl;
+                        switched_to_caic = false;
+                    }
+                    compatible_pairs = better_pairs;
+                }
+
+            }
             // 2017-12-21: simultaneously merging better pairs
             for (auto it_pair = compatible_pairs.begin(); it_pair != compatible_pairs.end(); it_pair++) {
                 ModelPair opt_pair = it_pair->second;
@@ -4934,10 +5176,12 @@ void PartitionFinder::test_PartitionModel() {
                 lhsum = lhsum - lhvec[opt_pair.part1] - lhvec[opt_pair.part2] + opt_pair.logl;
                 dfsum = dfsum - dfvec[opt_pair.part1] - dfvec[opt_pair.part2] + opt_pair.df;
                 inf_score = computeInformationScore(lhsum, dfsum, ssize, params->model_test_criterion);
-                ASSERT(inf_score <= opt_pair.score + 0.1);
 
-                cout << "Merging " << opt_pair.set_name << " with " << criterionName(params->model_test_criterion)
-                << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
+                if (!params->marginal_lh_aic || switched_to_caic) {
+                    ASSERT(inf_score <= opt_pair.score + 0.1);
+                    cout << "Merging " << opt_pair.set_name << " with " << criterionName(params->model_test_criterion)
+                         << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
+                }
                 // change entry opt_part1 to merged one
                 gene_sets[opt_pair.part1] = opt_pair.merged_set;
                 lhvec[opt_pair.part1] = opt_pair.logl;
@@ -4975,6 +5219,29 @@ void PartitionFinder::test_PartitionModel() {
                 model_info->transferSubCheckpoint(&mfchkpt, opt_pair.set_name + CKP_SEP + "RateGammaInvar" + CKP_SEP + "p_invar");
                 model_info->transferSubCheckpoint(&mfchkpt, opt_pair.set_name + CKP_SEP + "RateInvar" + CKP_SEP + "p_invar");
 #endif
+            }
+            // save and output mAIC after merging all pairs
+            if (params->marginal_lh_aic) {
+                double cur_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, true);
+                if (!switched_to_caic) {
+                    cout << "Current partition model mAIC score: " << cur_score_maic
+                         << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  "), cAIC score: "
+                         << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
+                    inf_score_maic = cur_score_maic;
+                } else {
+                    if (cur_score_maic <= inf_score_maic) {
+                        cout << "Current partition model mAIC score: " << cur_score_maic
+                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is better than "
+                             << inf_score_maic << ", back to merging with mAIC since next round" << endl;
+                        inf_score_maic = cur_score_maic;
+                        switched_to_caic = false;
+                    } else {
+                        cout << "Current partition model mAIC score: " << cur_score_maic
+                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is worse than "
+                             << inf_score_maic << endl;
+                    }
+                }
+                cout << endl;
             }
 
             // proceed to the next iteration if gene_sets.size() >= 2
@@ -5026,6 +5293,10 @@ void PartitionFinder::test_PartitionModel() {
         dfvec.resize(in_tree->size());
         lenvec.resize(in_tree->size());
     }
+    if (params->num_threads > in_tree->size() && !params->parallel_over_sites) {
+        params->num_threads = in_tree->size();
+        cout << "Number of threads is changed to " << params->num_threads << endl;
+    }
 
     bool proceed_test_model_again = (!iEquals(params->merge_models, "all"));
 #ifdef _IQTREE_MPI
@@ -5072,7 +5343,16 @@ void PartitionFinder::test_PartitionModel() {
 
     inf_score = computeInformationScore(lhsum, dfsum, ssize, params->model_test_criterion);
     cout << "Best partition model " << criterionName(params->model_test_criterion) << " score: " << inf_score << " (LnL: " << lhsum << "  df:" << dfsum << ")" << endl;
+    if (params->marginal_lh_aic) {
+        model_names.resize(in_tree->size());
+        for (i = 0; i < in_tree->size(); i++) {
+            model_names[i] = in_tree->at(i)->aln->model_name;
+        }
 
+        //double score_bic = computeInformationScore(lhsum, dfsum, ssize, MTC_BIC);
+        inf_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, false);
+        cout << "Best partition model mAIC score: " << inf_score_maic << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ")" << endl;
+    }
     ((SuperAlignment*)in_tree->aln)->printBestPartition((string(params->out_prefix) + ".best_scheme.nex").c_str());
     ((SuperAlignment*)in_tree->aln)->printBestPartitionRaxml((string(params->out_prefix) + ".best_scheme").c_str());
     model_info->dump();
@@ -6584,9 +6864,10 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
  @param[in] iqtree phylogenetic tree
  @param[in,out] model_info (IN/OUT) information for all models considered
  @param[out] model_str name of the best-fit Q mixture model
+ @param[in] input_model_str user input model name string
  @return the likelihood from the optimal mixture model
  */
-double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info, string& model_str) {
+double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info, string& model_str, string input_model_str) {
 
     bool do_init_tree;
     string best_subst_name;
@@ -6599,7 +6880,9 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     string best_model_AIC, best_model_AICc, best_model_BIC;
     double best_score_AIC, best_score_AICc, best_score_BIC;
     // Store the information of (k-1)-class models. Once (k-1)-class is better then k-class, the (k-1)-class models will be printed out as the global best.
-    string best_model_pre_AIC, best_model_pre_AICc, best_model_pre_BIC, best_model_pre_list;
+    string best_model_AIC_pre, best_model_AICc_pre, best_model_BIC_pre, best_model_list_pre;
+    string best_score_AIC_pre, best_score_AICc_pre, best_score_BIC_pre, best_tree_AIC_pre, best_tree_AICc_pre, best_tree_BIC_pre;
+
     Checkpoint *checkpoint;
     int ssize;
     int curr_df;
@@ -6621,6 +6904,19 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     // Step 0: (reorder candidate DNA models when -mset is used) build the nest-relationship network
     map<string, vector<string> > nest_network;
     StrVector model_names, freq_names;
+
+    StrVector model_list, freq_list; // user-defined DNA Q-mixture estimation
+    string input_rate;
+    if (input_model_str.size()) {
+        generateModelLists(input_model_str, model_list, freq_list, input_rate);
+        params.max_mix_cats = model_list.size();
+
+        params.model_set = model_list[0].c_str();
+        //strncpy(params.state_freq_set, freq_list[0].c_str(), sizeof(params.state_freq_set));
+        //params.state_freq_set[sizeof(params.state_freq_set)-1] = '\0';
+        params.ratehet_set = input_rate.c_str();
+    }
+
     getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
                   params.model_set, params.model_subset, model_names);
     getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
@@ -6666,10 +6962,17 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
 
     cout << endl << "Model: " << best_subst_name << best_rate_name << "; df: " << curr_df << "; loglike: " << curr_loglike << "; " << criteria_str << " score: " << curr_score << endl;
 
-    ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
-    ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
-    ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
-    ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
+    ASSERT(model_info.getString("best_model_AIC", best_model_AIC_pre));
+    ASSERT(model_info.getString("best_model_AICc", best_model_AICc_pre));
+    ASSERT(model_info.getString("best_model_BIC", best_model_BIC_pre));
+    ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_list_pre));
+    ASSERT(model_info.getString("best_score_AIC", best_score_AIC_pre));
+    ASSERT(model_info.getString("best_score_AICc", best_score_AICc_pre));
+    ASSERT(model_info.getString("best_score_BIC", best_score_BIC_pre));
+    ASSERT(model_info.getString("best_tree_AIC", best_tree_AIC_pre));
+    ASSERT(model_info.getString("best_tree_AICc", best_tree_AICc_pre));
+    ASSERT(model_info.getString("best_tree_BIC", best_tree_BIC_pre));
+
 
     // Step 3: keep adding a new class until no further improvement
     if (params.opt_qmix_criteria == 1) {
@@ -6680,6 +6983,16 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     do_init_tree = false;
     model_str = best_subst_name;
     do {
+        if (model_list.size() > getClassNum(best_subst_name)) {
+            // user-defined DNA Q-mixture estimation
+            params.model_set = model_list[getClassNum(best_subst_name)].c_str();
+            if (iqtree->aln->seq_type == SEQ_DNA) {
+                getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
+                              params.model_set, params.model_subset, model_names);
+                nest_network = generateNestNetwork(model_names, freq_names);
+            }
+        }
+
         if (params.optimize_from_given_params == false)
             best_rate_name = best_orig_rate_name;
         best_model = findMixtureComponent(params, *iqtree, model_info, MA_ADD_CLASS, do_init_tree, model_str, best_subst_name, best_rate_name, nest_network);
@@ -6695,24 +7008,38 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
             better_model = (best_model.getScore() < curr_score);
         }
         cout << endl;
+        if (input_model_str.size()) { // user-defined DNA Q-mixture estimation
+            better_model = true;
+        }
         if (better_model) {
             curr_df = best_model.df;
             curr_loglike = best_model.logl;
             curr_score = best_model.getScore();
             model_str = best_subst_name;
 
-            ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
-            ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
-            ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
-            ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
-
+            ASSERT(model_info.getString("best_model_AIC", best_model_AIC_pre));
+            ASSERT(model_info.getString("best_model_AICc", best_model_AICc_pre));
+            ASSERT(model_info.getString("best_model_BIC", best_model_BIC_pre));
+            ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_list_pre));
+            ASSERT(model_info.getString("best_score_AIC", best_score_AIC_pre));
+            ASSERT(model_info.getString("best_score_AICc", best_score_AICc_pre));
+            ASSERT(model_info.getString("best_score_BIC", best_score_BIC_pre));
+            ASSERT(model_info.getString("best_tree_AIC", best_tree_AIC_pre));
+            ASSERT(model_info.getString("best_tree_AICc", best_tree_AICc_pre));
+            ASSERT(model_info.getString("best_tree_BIC", best_tree_BIC_pre));
         }
     } while (better_model && getClassNum(best_subst_name)+1 <= params.max_mix_cats);
 
-    model_info.put("best_model_list_" + criteria_str, best_model_pre_list);
-    model_info.put("best_model_AIC", best_model_pre_AIC);
-    model_info.put("best_model_AICc", best_model_pre_AICc);
-    model_info.put("best_model_BIC", best_model_pre_BIC);
+    model_info.put("best_model_AIC", best_model_AIC_pre);
+    model_info.put("best_model_AICc", best_model_AICc_pre);
+    model_info.put("best_model_BIC", best_model_BIC_pre);
+    model_info.put("best_model_list_" + criteria_str, best_model_list_pre);
+    model_info.put("best_score_AIC", best_score_AIC_pre);
+    model_info.put("best_score_AICc", best_score_AICc_pre);
+    model_info.put("best_score_BIC", best_score_BIC_pre);
+    model_info.put("best_tree_AIC", best_tree_AIC_pre);
+    model_info.put("best_tree_AICc", best_tree_AICc_pre);
+    model_info.put("best_tree_BIC", best_tree_BIC_pre);
     
     best_subst_name = model_str;
     if (params.optimize_from_given_params == false)
@@ -6763,9 +7090,18 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     string model_str;
     Alignment* aln;
     double best_loglike;
+    string input_model_str;
 
     bool mix_finder_mode = (params.model_name == "MIX+MF" || params.model_name == "MIX+MFP" || params.model_name == "MF+MIX" || params.model_name == "MFP+MIX");
-    
+    if (params.est_from_one) {
+        // user-defined DNA Q-mixture estimation
+        input_model_str = params.model_name;
+        cout << "--------------------------------------------------------------------" << endl;
+        cout << "Initialise model " << input_model_str << " estimation by interatively adding mixture components" << endl;
+        cout << "--------------------------------------------------------------------" << endl;
+        mix_finder_mode = true;
+    }
+
     if (!mix_finder_mode)
         return;
     
@@ -6817,9 +7153,11 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     }
     new_iqtree->setParams(&params);
 
-    cout << "--------------------------------------------------------------------" << endl;
-    cout << "|                Running MixtureFinder                             |" << endl;
-    cout << "--------------------------------------------------------------------" << endl;
+    if (!input_model_str.size()) {
+        cout << "--------------------------------------------------------------------" << endl;
+        cout << "|                Running MixtureFinder                             |" << endl;
+        cout << "--------------------------------------------------------------------" << endl;
+    }
 
     // disable the bootstrapping
     int orig_gbo_replicates = params.gbo_replicates;
@@ -6830,7 +7168,7 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     params.stop_condition = SC_UNSUCCESS_ITERATION;
     params.model_name = "";
 
-    best_loglike = runMixtureFinderMain(params, new_iqtree, model_info, model_str);
+    best_loglike = runMixtureFinderMain(params, new_iqtree, model_info, model_str, input_model_str);
     
     // transfer models parameters
     Checkpoint *iqtree_chkpt = iqtree->getCheckpoint();
@@ -6898,13 +7236,21 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
 /****************************************************/
 
 int findModelIndex(const string& model, const char* model_set[], size_t size) {
+    string base;
+    size_t pos = model.find("+F");
+    if (pos != string::npos) {
+        base = model.substr(0, pos);
+    } else {
+        base = model;
+    }
+
     int i;
     for (i = 0; i < size; i++) {
-        if (strcmp(model_set[i], model.c_str()) == 0) {
+        if (strcmp(model_set[i], base.c_str()) == 0) {
             return i;
         }
     }
-    if (model == "K2P") {
+    if (base == "K2P") {
 
     }
     return -1;
@@ -7018,4 +7364,40 @@ map<string, vector<string> > generateNestNetwork(StrVector model_names, StrVecto
         nest_network_all[model_freq_names[i].model_freq] = nested_models_all;
     }
     return nest_network;
+}
+
+void generateModelLists(string input_model_str, StrVector& model_list, StrVector& freq_list, string& input_rate) {
+    if (input_model_str[3] != OPEN_BRACKET)
+        outError("Mixture model name must start with 'MIX{'");
+    size_t pos_close = input_model_str.find('}', 4);
+    if (pos_close == string::npos)
+        outError("Close bracket not found at ", input_model_str);
+
+    StrVector model_rate_list;
+
+    if (pos_close + 1 < input_model_str.size()) {
+        input_rate = input_model_str.substr(pos_close+1);
+    } else {
+        input_rate = "E";
+    }
+    input_model_str = input_model_str.substr(4, pos_close-4);
+    stringstream ss(input_model_str);
+    string token;
+    while (getline(ss, token, ',')) {
+        model_rate_list.push_back(token);
+    }
+    reorderModelNames(model_rate_list, dna_model_names, sizeof(dna_model_names) / sizeof(dna_model_names[0]));
+    reverse(model_rate_list.begin(),model_rate_list.end());
+
+    for (string m : model_rate_list) {
+        size_t pos = m.find("+");
+
+        if (pos == string::npos) {
+            model_list.push_back(m);
+            freq_list.push_back("FQ");
+        } else {
+            model_list.push_back(m.substr(0, pos));
+            freq_list.push_back(m.substr(pos+1));
+        }
+    }
 }

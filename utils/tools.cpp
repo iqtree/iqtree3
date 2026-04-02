@@ -3239,6 +3239,60 @@ void parseArg(int argc, char *argv[], Params &params) {
                 */
                 continue;
             }
+            if (strcmp(argv[cnt], "-est-from-one") == 0 || strcmp(argv[cnt], "--est-from-one") == 0) {
+                params.est_from_one = true;
+                continue;
+            }
+            if (strcmp(argv[cnt], "--modeltamer") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --modeltamer <percent|AUTO>";
+                if (strcmp(argv[cnt], "AUTO") == 0 || strcmp(argv[cnt], "auto") == 0) {
+                    params.model_tamer = -1; // AUTO: estimate percentage from data
+                } else {
+                    params.model_tamer = convert_double(argv[cnt]);
+                    if (params.model_tamer < 0 || params.model_tamer > 100)
+                        throw "--modeltamer percentage must be between 0 and 100";
+                }
+                continue;
+            }
+            if (strcmp(argv[cnt], "--modeltameronly") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --modeltameronly <percent>";
+                params.model_tamer = convert_double(argv[cnt]);
+                params.model_tamer_only = true;
+                if (params.model_tamer < 0 || params.model_tamer > 100)
+                    throw "--modeltameronly percentage must be between 0 and 100";
+                continue;
+            }
+            if (strcmp(argv[cnt], "--modeltamer-sub") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --modeltamer-sub <#subsampling-time>";
+                params.model_tamer_sub = convert_int(argv[cnt]);
+                if (params.model_tamer_sub < 1)
+                    throw "Wrong number of ModelTamer subsampling time for --modeltamer-sub. Must be at least 1";
+                continue;
+            }
+            if (strcmp(argv[cnt], "--modeltamer-up") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --modeltamer-up <#upsampling-time>";
+                params.model_tamer_up = convert_int(argv[cnt]);
+                if (params.model_tamer_up < 1)
+                    throw "Wrong number of ModelTamer upsampling time for --modeltamer-up. Must be at least 1";
+                continue;
+            }
+            if (strcmp(argv[cnt], "--modeltamer-method") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --modeltamer-method <0|1>";
+                params.model_tamer_method = convert_int(argv[cnt]);
+                if (params.model_tamer_method < 0 || params.model_tamer_method > 1)
+                    throw "Wrong option for --modeltamer-method. Only 0 or 1 is allowed.";
+                continue;
+            }
 			if (strcmp(argv[cnt], "-a") == 0) {
 				cnt++;
 				if (cnt >= argc)
@@ -4525,13 +4579,21 @@ void parseArg(int argc, char *argv[], Params &params) {
                 cnt++;
 				if (cnt >= argc)
 					throw "Use -merit AIC|AICC|BIC";
-                if (strcmp(argv[cnt], "AIC") == 0)
+                if (strcmp(argv[cnt], "AIC") == 0) {
                     params.model_test_criterion = MTC_AIC;
-                else if (strcmp(argv[cnt], "AICc") == 0 || strcmp(argv[cnt], "AICC") == 0)
+                } else if (strcmp(argv[cnt], "AICc") == 0 || strcmp(argv[cnt], "AICC") == 0) {
                     params.model_test_criterion = MTC_AICC;
-                else if (strcmp(argv[cnt], "BIC") == 0)
+                } else if (strcmp(argv[cnt], "BIC") == 0) {
                     params.model_test_criterion = MTC_BIC;
-                else throw "Use -merit AIC|AICC|BIC";
+                } else if (strcmp(argv[cnt], "mAIC") == 0) {
+                    params.marginal_lh_aic = true;
+                    params.model_test_criterion = MTC_AIC;
+                } else if (strcmp(argv[cnt], "mAIC+BIC") == 0) {
+                    params.marginal_lh_aic = true;
+                    params.model_test_criterion = MTC_BIC;
+                } else {
+                    throw "Use -merit AIC|AICC|BIC";
+                }
 				continue;
 			}
 			if (strcmp(argv[cnt], "-ms") == 0) {
@@ -7186,6 +7248,12 @@ void Params::setDefault() {
     opt_qmix_criteria = 2; // 1 : likelihood-ratio test; 2 : information criteria, like AIC, BIC
     opt_qmix_pthres = 0.05;
     check_combin_q_mat = true;
+    est_from_one = false;
+    model_tamer = 100;
+    model_tamer_only = false;
+    model_tamer_sub = 1;
+    model_tamer_up = 1;
+    model_tamer_method = 0;
     gamma_shape = -1.0;
     min_gamma_shape = MIN_GAMMA_SHAPE;
     gamma_median = false;
@@ -7223,7 +7291,7 @@ void Params::setDefault() {
     iqp_assess_quartet = IQP_DISTANCE;
     iqp = false;
     write_intermediate_trees = 0;
-//    avoid_duplicated_trees = false;
+    //    avoid_duplicated_trees = false;
     writeDistImdTrees = false;
     rf_dist_mode = 0;
     rf_same_pair = false;
@@ -7332,7 +7400,7 @@ void Params::setDefault() {
     reinsert_par = false;
     bestStart = true;
     snni = true; // turn on sNNI default now
-//    autostop = true; // turn on auto stopping rule by default now
+    //    autostop = true; // turn on auto stopping rule by default now
     unsuccess_iteration = 100;
     speednni = true; // turn on reduced hill-climbing NNI by default now
     numInitTrees = 100;
@@ -7343,7 +7411,7 @@ void Params::setDefault() {
     tabu = false;
     adaptPertubation = false;
     numSupportTrees = 20;
-//    sprDist = 20;
+    //    sprDist = 20;
     sprDist = 6;
     sankoff_cost_file = nullptr;
     numNNITrees = 20;
@@ -7356,7 +7424,7 @@ void Params::setDefault() {
     num_threads_max = 10000;
     openmp_by_model = false;
     model_test_criterion = MTC_BIC;
-//    model_test_stop_rule = MTC_ALL;
+    //    model_test_stop_rule = MTC_ALL;
     model_test_sample_size = 0;
     root_state = nullptr;
     print_bootaln = false;
@@ -7525,7 +7593,7 @@ void Params::setDefault() {
     mutation_file = "";
     site_starting_index = 0;
     mr_bayes_output = false; //merged from 19b1fdc
-    
+
     // ----------- SPRTA ----------
     compute_SPRTA = false;
     SPRTA_zero_branches = false;
