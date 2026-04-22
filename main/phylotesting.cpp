@@ -5086,18 +5086,6 @@ void PartitionFinder::test_PartitionModel() {
 #endif
 
     bool proceed_stepwise_merge = perform_merge;
-
-    // variables for mAIC merging
-    bool switched_to_caic = false;
-    double lhsum_bu;
-    int dfsum_bu;
-    vector<set<int> > gene_sets_bu;
-    DoubleVector lhvec_bu;
-    IntVector dfvec_bu;
-    DoubleVector lenvec_bu;
-    StrVector model_names_bu;
-    StrVector greedy_model_trees_bu;
-
     while (proceed_stepwise_merge) {
         // stepwise merging charsets
 
@@ -5125,49 +5113,11 @@ void PartitionFinder::test_PartitionModel() {
                 if (compatible_pairs.size() > 1)
                     cout << compatible_pairs.size() << " compatible better partition pairs found" << endl;
             } else {
-                //cout <<  "[cAIC] "<< compatible_pairs.size() << " compatible better partition pairs found" << endl;
-                better_pairs = getBetterPairsmAIC();
-                bool is_maic_pairs_empty = better_pairs.empty();
-
-                if (is_maic_pairs_empty){
-                    if (switched_to_caic) {
-                        cout << "No better pairs based on mAIC after one round of " << criterionName(params->model_test_criterion) << " merging and finish merging with previous optimal mAIC" << endl;
-                        //load back back up
-                        lhsum = lhsum_bu;
-                        dfsum = dfsum_bu;
-                        gene_sets = gene_sets_bu;
-                        lhvec = lhvec_bu;
-                        dfvec = dfvec_bu;
-                        lenvec = lenvec_bu;
-                        model_names = model_names_bu;
-                        greedy_model_trees = greedy_model_trees_bu;
-                        break;
-                    } else {
-                        if (is_pairs_empty || gene_sets.size() == 2) {
-                            cout << "No better pairs based on both mAIC and " << criterionName(params->model_test_criterion) << endl;
-                            break;
-                        };
-                        cout << "No better pairs based on mAIC, try merging better pairs based on " << criterionName(params->model_test_criterion) << endl;
-                        cout << compatible_pairs.size() << " compatible better partition pairs found based on " << criterionName(params->model_test_criterion) << endl;
-                        switched_to_caic = true;
-                        //back up
-                        lhsum_bu = lhsum;
-                        dfsum_bu = dfsum;
-                        gene_sets_bu = gene_sets;
-                        lhvec_bu = lhvec;
-                        dfvec_bu = dfvec;
-                        lenvec_bu = lenvec;
-                        model_names_bu = model_names;
-                        greedy_model_trees_bu = greedy_model_trees;
-                    }
-                } else {
-                    if (switched_to_caic) {
-                        cout << "Better pairs based on mAIC are found after one round of " << criterionName(params->model_test_criterion) << " merging" << endl;
-                        switched_to_caic = false;
-                    }
-                    compatible_pairs = better_pairs;
+                compatible_pairs = getBetterPairsmAIC();
+                if (compatible_pairs.empty()) {
+                    cout << "No better pairs based on mAIC" << endl;
+                    break;
                 }
-
             }
             // 2017-12-21: simultaneously merging better pairs
             for (auto it_pair = compatible_pairs.begin(); it_pair != compatible_pairs.end(); it_pair++) {
@@ -5177,7 +5127,7 @@ void PartitionFinder::test_PartitionModel() {
                 dfsum = dfsum - dfvec[opt_pair.part1] - dfvec[opt_pair.part2] + opt_pair.df;
                 inf_score = computeInformationScore(lhsum, dfsum, ssize, params->model_test_criterion);
 
-                if (!params->marginal_lh_aic || switched_to_caic) {
+                if (!params->marginal_lh_aic) {
                     ASSERT(inf_score <= opt_pair.score + 0.1);
                     cout << "Merging " << opt_pair.set_name << " with " << criterionName(params->model_test_criterion)
                          << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
@@ -5223,24 +5173,10 @@ void PartitionFinder::test_PartitionModel() {
             // save and output mAIC after merging all pairs
             if (params->marginal_lh_aic) {
                 double cur_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, true);
-                if (!switched_to_caic) {
-                    cout << "Current partition model mAIC score: " << cur_score_maic
-                         << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  "), cAIC score: "
-                         << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
-                    inf_score_maic = cur_score_maic;
-                } else {
-                    if (cur_score_maic <= inf_score_maic) {
-                        cout << "Current partition model mAIC score: " << cur_score_maic
-                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is better than "
-                             << inf_score_maic << ", back to merging with mAIC since next round" << endl;
-                        inf_score_maic = cur_score_maic;
-                        switched_to_caic = false;
-                    } else {
-                        cout << "Current partition model mAIC score: " << cur_score_maic
-                             << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ") is worse than "
-                             << inf_score_maic << endl;
-                    }
-                }
+                cout << "Current partition model mAIC score: " << cur_score_maic
+                    << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  "), " << criterionName(params->model_test_criterion)
+                    << " score: " << inf_score << " (LnL: " << lhsum << "  df: " << dfsum << ")" << endl;
+                inf_score_maic = cur_score_maic;
                 cout << endl;
             }
 
