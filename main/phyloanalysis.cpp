@@ -5278,13 +5278,27 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     if (tree->isTreeMix()) {
         ((IQTreeMix*) tree)->setMinBranchLen(params);
     } else if (params.min_branch_length <= 0.0) {
-        params.min_branch_length = 1e-6;
-        if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
-            params.min_branch_length = 0.1 / (tree->getAlnNSite());
-            tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+        const bool bayes_boot = (params.num_bootstrap_samples > 0 &&
+                                 params.bootstrap_spec &&
+                                 strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0);
+        if (bayes_boot && params.collapse_zero_branch_boot) {
+            // Set blmin so that the collapse threshold (4*blmin) equals 0.1/ali_len,
+            // matching the default PhyML cutoff used in the Bayesian bootstrap paper.
+            params.min_branch_length = 0.025 / tree->getAlnNSite();
+            tree->num_precision = max((int)ceil(-log10(params.min_branch_length))+1, 6);
             cout.precision(12);
-            cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+            cout << "NOTE: minimal branch length is automatically set to " << params.min_branch_length
+                 << " for Bayesian bootstrap (collapse threshold = 0.1/" << tree->getAlnNSite() << ")" << endl;
             cout.precision(3);
+        } else {
+            params.min_branch_length = 1e-6;
+            if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
+                params.min_branch_length = 0.1 / (tree->getAlnNSite());
+                tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+                cout.precision(3);
+            }
         }
         // Increase the minimum branch length if PoMo is used.
         if (alignment->seq_type == SEQ_POMO) {
