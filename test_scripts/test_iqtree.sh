@@ -25,8 +25,7 @@ run_timed() {
     local REAL USER SYS PEAK_MEM MEM_MB
 
     if [[ "$OS" == "Darwin" ]]; then
-        # macOS
-        /usr/bin/time -l "$@" 2> tmp_time.txt
+        /usr/bin/time -l -o tmp_time.txt "$@"
         local exit_code=$?
         REAL=$(grep "real" tmp_time.txt | awk '{print $1}')
         USER=$(grep "user" tmp_time.txt | awk '{print $1}')
@@ -34,8 +33,7 @@ run_timed() {
         PEAK_MEM=$(grep "peak memory footprint" tmp_time.txt | awk '{print $1}')
         MEM_MB=$(awk "BEGIN {printf \"%.2f\", $PEAK_MEM / (1024 * 1024)}")
     else
-        # Linux
-        /usr/bin/time -f "%e %U %S %M" "$@" 2> tmp_time.txt
+        /usr/bin/time -o tmp_time.txt -f "%e %U %S %M" "$@"
         local exit_code=$?
         read REAL USER SYS MEM_KB < tmp_time.txt
         MEM_MB=$(awk "BEGIN {printf \"%.2f\", $MEM_KB / 1024}")

@@ -14,18 +14,16 @@ concurrency:
 
 jobs:
   build-linux-x86-64:
-    name: Linux x86-64 gcc-${{ matrix.gcc-version }} cmake-${{ matrix.cmake-version }}
+    name: Linux x86-64 clang-${{ matrix.clang-version }} cmake-${{ matrix.cmake-version }}
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Oldest supported gcc and cmake versions
-          - gcc-version: 9
+          - clang-version: 13
             cmake-version: 3.14.7
             upload: true
-          # Latest supported gcc and cmake versions
-          - gcc-version: 12
+          - clang-version: 15
             cmake-version: latest
             upload: false
 
@@ -38,7 +36,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q -y
-          sudo apt-get install -q -y gcc-${{ matrix.gcc-version }} g++-${{ matrix.gcc-version}} libeigen3-dev libboost-dev
+          sudo apt-get install -q -y clang-${{ matrix.clang-version }} lld-${{ matrix.clang-version }} libomp-${{ matrix.clang-version }}-dev libeigen3-dev libboost-dev
+          sudo ln -sf $(which ld.lld-${{ matrix.clang-version }}) /usr/local/bin/ld.lld
 
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
@@ -49,7 +48,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which gcc-${{ matrix.gcc-version }}) -DCMAKE_CXX_COMPILER=$(which g++-${{ matrix.gcc-version }})
+          cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which clang-${{ matrix.clang-version }}) -DCMAKE_CXX_COMPILER=$(which clang++-${{ matrix.clang-version }})
           make -j
           make package
           file iqtree3 | grep x86-64
@@ -81,12 +80,12 @@ jobs:
       - name: Run verify_runtimes.sh
         run: |
           chmod +x test_scripts/verify_runtime.sh
-          ./test_scripts/verify_runtime.sh time_log_iqtree2.tsv time_log_iqtree3.tsv Linux-gcc-${{ matrix.gcc-version }}
+          ./test_scripts/verify_runtime.sh time_log_iqtree2.tsv time_log_iqtree3.tsv Linux-clang-${{ matrix.clang-version }}
 
       - name: Run verify_memory.sh
         run: |
           chmod +x test_scripts/verify_memory.sh
-          ./test_scripts/verify_memory.sh time_log_iqtree2.tsv time_log_iqtree3.tsv Linux-gcc-${{ matrix.gcc-version }}
+          ./test_scripts/verify_memory.sh time_log_iqtree2.tsv time_log_iqtree3.tsv Linux-clang-${{ matrix.clang-version }}
 
   build-linux-aarch64:
     name: Linux aarch64
