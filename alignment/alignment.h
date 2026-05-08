@@ -552,6 +552,8 @@ public:
      */
     bool isGapOnlySeq(size_t seq_id);
 
+    bool isSSF() const { return !ptn_state_freq.empty(); }
+
     virtual bool isSuperAlignment() {
         return false;
     }
@@ -615,8 +617,9 @@ public:
 			Initialize "this" alignment as a bootstrap alignment
 			@param aln: the reference to the original alignment
 			@new_pattern_freqs: the frequencies of patterns to be present in bootstrap aln
+            OBSOLETE
 	 */
-	void buildFromPatternFreq(Alignment & aln, IntVector new_pattern_freqs);
+	//void buildFromPatternFreq(Alignment & aln, IntVector new_pattern_freqs);
 
     /**
             create a gap masked alignment from an input alignment. Gap patterns of masked_aln 
@@ -934,12 +937,9 @@ public:
   IntIntMap pomo_sampled_states_index; // indexing, to quickly find if a PoMo-2-state is already present
 
     /* for site-specific state frequency model with Huaichun, Edward, Andrew */
-    
-    /* site to model ID map */
-    IntVector site_model;
-    
-    /** site to state frequency vector */
-    vector<double*> site_state_freq;
+
+    /** pattern index to state frequency vector map */
+    vector<double*> ptn_state_freq;
 
     /**
      * @return true if data type is SEQ_CODON and state is a stop codon
@@ -1001,14 +1001,13 @@ public:
 
     void getAppearance(StateType state, StateBitset &state_app);
 
-	/**
-	 * read site specific state frequency vectors from a file to create corresponding model
-     * update site_model and site_state_freq variables for this class
-	 * @param aln input alignment
-	 * @param site_freq_file file name
-     * @return TRUE if alignment needs to be changed, FALSE otherwise
-	 */
-	bool readSiteStateFreq(const char* site_freq_file);
+    /**
+     *  Read site-specific state frequency vectors from a file
+     *  to create a site-specific model
+     *  @param site_freq_file Input file name
+     *  @return TRUE if alignment patterns have been changed, FALSE otherwise
+     */
+    bool readSiteStateFreq(const char* site_freq_file);
 
     // added by TD
     /**

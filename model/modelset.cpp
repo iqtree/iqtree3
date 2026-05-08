@@ -50,9 +50,8 @@ void ModelSet::computeTransDerv(double time, double* trans_matrix, double* trans
 
 int ModelSet::getPtnModelID(int ptn)
 {
-	ASSERT(ptn >= 0 && ptn < pattern_model_map.size());
-	ASSERT(pattern_model_map[ptn] >= 0 && pattern_model_map[ptn] < size());
-    return pattern_model_map[ptn];
+    ASSERT(ptn >= 0 && ptn < size());
+    return ptn;
 }
 
 

@@ -4878,13 +4878,11 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
     size_t nptn = alignment->getNPattern(), nstates = alignment->num_states;
     double *ptn_state_freq = new double[nptn*nstates];
     tree->computePatternStateFreq(ptn_state_freq);
-    alignment->site_state_freq.resize(nptn);
     for (size_t ptn = 0; ptn < nptn; ptn++) {
         double *f = new double[nstates];
         memcpy(f, ptn_state_freq+ptn*nstates, sizeof(double)*nstates);
-        alignment->site_state_freq[ptn] = f;
+        alignment->ptn_state_freq.push_back(f);
     }
-    alignment->getSitePatternIndex(alignment->site_model);
     printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
     params.print_site_state_freq = WSF_NONE;
     

@@ -615,7 +615,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 
     /******************** initialize model ****************************/
 
-    if (tree->aln->site_state_freq.empty()) {
+    if (!tree->aln->isSSF()) {
         if (model_str.substr(0, 3) == "MIX" || freq_type == FREQ_MIXTURE) {
             string model_list;
             if (model_str.substr(0, 3) == "MIX") {
@@ -644,14 +644,9 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         model = new ModelSet(model_str.c_str(), tree);
         ModelSet *models = (ModelSet*)model; // assign pointer for convenience
         models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
-        models->pattern_model_map.resize(tree->aln->getNPattern(), -1);
-        for (size_t i = 0; i < tree->aln->getNSite(); ++i) {
-            models->pattern_model_map[tree->aln->getPatternID(i)] = tree->aln->site_model[i];
-            //cout << "site " << i << " ptn " << tree->aln->getPatternID(i) << " -> model " << site_model[i] << endl;
-        }
         double *state_freq = new double[model->num_states];
         double *rates = new double[model->getNumRateEntries()];
-        for (size_t i = 0; i < tree->aln->site_state_freq.size(); ++i) {
+        for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
             ModelMarkov *modeli;
             if (i == 0) {
                 modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
@@ -662,8 +657,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
                 modeli->setStateFrequency(state_freq);
                 modeli->setRateMatrix(rates);
             }
-            if (tree->aln->site_state_freq[i])
-                modeli->setStateFrequency (tree->aln->site_state_freq[i]);
+            if (tree->aln->ptn_state_freq[i])
+                modeli->setStateFrequency(tree->aln->ptn_state_freq[i]);
 
             modeli->init(FREQ_USER_DEFINED);
             models->push_back(modeli);
