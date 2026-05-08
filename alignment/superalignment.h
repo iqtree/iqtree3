@@ -67,18 +67,17 @@ public:
     /** read partition model file */
     // OBSOLETE
     //void readPartition(Params &params);
-    
-    /** read RAxML-style partition file */
-    void readPartitionRaxml(Params &params);
-    
-    /** read partition model file in NEXUS format into variable info */
-    void readPartitionNexus(Params &params);
 
-    /** read partition as files in a directory */
-    void readPartitionDir(string partition_dir, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read RAxML-style partition model file */
+    void readPartitionRaxml(const Params &params);
 
-    /** read partition as a comma-separated list of files */
-    void readPartitionList(string file_list, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read NEXUS-format partition model file */
+    void readPartitionNexus(const Params &params);
+
+    /** read partitions as files in a directory or a comma-separated list */
+    void readPartitionFiles(const string &partition_files,
+                            const char *sequence_type, InputType &intype,
+                            const string &model, bool remove_empty_seq);
 
     void printPartition(const char *filename, const char *aln_file);
     void printPartition(ostream &out, const char *aln_file = nullptr, bool append = false);
