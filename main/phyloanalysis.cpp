@@ -84,11 +84,12 @@ extern "C" {
 void reportReferences(Params &params, ofstream &out) {
 
     out << "To cite IQ-TREE 3 please use:" << endl << endl
-    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Hector Banos, Andrew J. Roger," << endl
-    << "Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman, Matthew W. Hahn," << endl
-    << "Gavin Huttley, Robert Lanfear, Bui Quang Minh (2025)" << endl
+    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Piyumal Demotte, Hector Banos," << endl
+    << "Andrew J. Roger, Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman," << endl
+    << "Matthew W. Hahn, Mario dos Reis, Le Sy Vinh, Gavin Huttley, Robert Lanfear, Bui Quang Minh (2026)" << endl
     << "IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models." << endl
-    << "Submitted." << endl << endl;
+    << "Molecular Biology and Evolution, msag117." << endl
+    << "https://doi.org/10.1093/molbev/msag117" << endl << endl;
 
     if (params.dating_method == "mcmctree") {
         out << "Since you used IQ2MC dating method please also cite: " << endl << endl
