@@ -4258,33 +4258,34 @@ Alignment *Alignment::convertCodonToDNA() {
     return res;
 }
 
-void convert_range(const char *str, int &lower, int &upper, int &step_size, char* &endptr) noexcept(false) {
-
+static const char *convert_site_range(const char *str, int &lower, int &upper,
+                                      int &step) {
+    char *endptr;
+    auto isBadBound = [](const char *str, char *endptr, long d) {
+        return (d == 0 && endptr == str) || d < 0 || d > INT_MAX;
+    };
     // parse the lower bound of the range
-    int d = strtol(str, &endptr, 10);
-    if ((d == 0 && endptr == str) || abs(d) == HUGE_VALL) {
+    long d = strtol(str, &endptr, 10);
+    if (isBadBound(str, endptr, d)) {
         string err = "Expecting integer, but found \"";
         err += str;
         err += "\" instead";
         throw err;
     }
     lower = d;
-    //int d_save = d;
     upper = d;
-    step_size = 1;
-    // skip blank chars
-    for (; *endptr == ' '; endptr++) {}
+    step = 1;
+    // parse the range delimiter
+    for (; *endptr == ' '; endptr++); // skip blank chars
     if (*endptr != '-') {
-        return;
+        return endptr;
     }
-
-    // parse the upper bound of the range
     endptr++;
-    // skip blank chars
-    for (; *endptr == ' '; endptr++) {}
+    for (; *endptr == ' '; endptr++); // skip blank chars
+    // parse the upper bound of the range
     str = endptr;
     d = strtol(str, &endptr, 10);
-    if ((d == 0 && endptr == str) || abs(d) == HUGE_VALL) {
+    if (isBadBound(str, endptr, d)) {
         if (str[0] == '.') {
             // 2019-06-03: special character '.' for whatever ending position
             d = lower-1;
@@ -4296,84 +4297,79 @@ void convert_range(const char *str, int &lower, int &upper, int &step_size, char
             throw err;
         }
     }
-
-    //lower = d_save;
     upper = d;
-    // skip blank chars
-    for (; *endptr == ' '; endptr++) {}
-
+    // parse the step delimiter
+    for (; *endptr == ' '; endptr++); // skip blank chars
     if (*endptr != '\\') {
-        return;
+        return endptr;
     }
-
+    endptr++;
     // parse the step size of the range
-    str = endptr+1;
+    str = endptr;
     d = strtol(str, &endptr, 10);
-    if ((d == 0 && endptr == str) || abs(d) == HUGE_VALL) {
+    if (isBadBound(str, endptr, d)) {
         string err = "Expecting integer, but found \"";
         err += str;
         err += "\" instead";
         throw err;
     }
-    step_size = d;
+    step = d;
+    return endptr;
 }
 
-void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt2aa, int max_id, bool test_num_sites ) {
-    if (max_id < aln->getNSite()) {
-        max_id = aln->getNSite();
-    }
-    int i;
-    char *str = (char*)spec;
-    int nchars = 0;
-    bool converted_to_codon_or_aa = (aln->seq_type == SEQ_CODON || nt2aa);
+void Alignment::extractSiteID(const string &spec, IntVector &site_id,
+                              bool convert_to_codon_or_aa, int max_id) {
     try {
-        for (; *str != 0; ) {
+        if (spec.empty()) {
+            throw "Empty position range";
+        }
+        const char *str = spec.c_str();
+        while (*str) {
             int lower, upper, step;
-            convert_range(str, lower, upper, step, str);
+            str = convert_site_range(str, lower, upper, step);
             // 2019-06-03: special '.' character
             if (upper == lower-1) {
                 upper = max_id;
             }
             lower--;
             upper--;
-            nchars += (upper-lower+1)/step;
-            if (converted_to_codon_or_aa) {
+            if (convert_to_codon_or_aa) {
+                if ((upper - lower + 1) % 3 != 0) {
+                    throw "Range not convertible to codon: " + spec;
+                }
                 lower /= 3;
                 upper /= 3;
             }
-            if (!test_num_sites && upper >= max_id) {
-                throw "Too large site ID";
+            if (max_id > -1 && upper >= max_id) {
+                throw "Too large site ID: " + spec;
             }
             if (lower < 0) {
-                throw "Negative site ID";
+                throw "Negative site ID: " + spec;
             }
             if (lower > upper) {
-                throw "Wrong range";
+                throw "Wrong range: " + spec;
             }
             if (step < 1) {
-                throw "Wrong step size";
+                throw "Wrong step size: " + spec;
             }
-            for (i = lower; i <= upper; i+=step) {
+            for (int i = lower; i <= upper; i += step) {
                 site_id.push_back(i);
             }
             if (*str == ',' || *str == ' ') {
                 str++;
             }
-            //else break;
-        }
-        if (converted_to_codon_or_aa && nchars % 3 != 0) {
-            throw (string)"Range " + spec + " length is not multiple of 3 (necessary for codon data)";
         }
     } catch (const char* err) {
         outError(err);
     } catch (string err) {
         outError(err);
     }
+    ASSERT(!site_id.empty());
 }
 
 void Alignment::extractSites(Alignment *aln, const char* spec, bool nt2aa) {
     IntVector site_id;
-    extractSiteID(aln, spec, site_id, nt2aa);
+    extractSiteID(string(spec), site_id, aln->seq_type == SEQ_CODON || nt2aa, aln->getNSite());
     extractSites(aln, site_id);
 }
 
@@ -6512,7 +6508,7 @@ bool Alignment::readSiteStateFreq(const char* site_freq_file)
             string site_spec;
             iss >> site_spec;
             IntVector site_id; // sites specified in a single line
-            extractSiteID(this, site_spec.c_str(), site_id);
+            extractSiteID(site_spec, site_id, genetic_code, nsite);
             if (site_id.size() == 0) {
                 throw "No site ID specified";
             }
@@ -6627,14 +6623,6 @@ bool Alignment::readSiteStateFreq(const char* site_freq_file)
     }
     cout << models.size() << " distinct per-site state frequency vectors detected" << endl;
     return aln_changed;
-}
-
-/**
- * set the expected_num_sites (for alisim)
- * @param the expected_num_sites
- */
-void Alignment::setExpectedNumSites(int new_expected_num_sites){
-    expected_num_sites = new_expected_num_sites;
 }
 
 void Alignment::extractMapleFile(const std::string& aln_name, const InputType& format)

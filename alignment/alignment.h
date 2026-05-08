@@ -97,6 +97,7 @@ Multiple Sequence Alignment. Stored by a vector of site-patterns
 class Alignment : public vector<Pattern>, public CharSet, public StateSpace {
     friend class SuperAlignment;
     friend class SuperAlignmentUnlinked;
+    friend class AliSimulator;
 
 public:
 
@@ -140,9 +141,18 @@ public:
 
     /** get the SeqType for a given string */
     static SeqType getSeqType(const char *sequence_type);
-    
+
     /** get the SeqTypeString for a given SeqType */
-    string getSeqTypeStr(SeqType sequence_type);
+    static string getSeqTypeStr(SeqType sequence_type);
+
+    /**
+     *  @param spec Specification of positions, e.g. "1-100,101-200\2"
+     *  @param[out] site_id Extracted site ID
+     *  @param convert_to_codon_or_aa Convert nt ID from spec to codon ID
+     *  @param max_id Allow only ID below this value, default: skip checking
+     */
+    static void extractSiteID(const string &spec, IntVector &site_id,
+                              bool convert_to_codon_or_aa = false, int max_id = -1);
 
       /**
                add a pattern into the alignment
@@ -430,14 +440,9 @@ public:
     }
 
     /**
-            @return number of sites (alignment columns)
+     *  @return The number of sites (alignment columns)
      */
-    inline size_t getNSite() {
-        // if expected_num_sites is specified -> resizing site_pattern
-        if (expected_num_sites > -1) {
-            site_pattern.resize(expected_num_sites);
-        }
-        
+    inline size_t getNSite() const {
         return site_pattern.size();
     }
 
@@ -1046,13 +1051,7 @@ public:
      * @param sequence_type user-defined sequence type
      */
     void initCodon(char *gene_code_id);
-    
-    /**
-     * set the expected_num_sites (for alisim)
-     * @param the expected_num_sites
-     */
-    void setExpectedNumSites(int new_expected_num_sites);
-    
+
     /**
         Extract Maple file from an alignment file
      */
@@ -1071,11 +1070,6 @@ protected:
             sequence names
      */
     vector<string> seq_names;
-    
-    /**
-            expected num_sites
-     */
-    int expected_num_sites = -1;
 
     /**
             Site to pattern index
@@ -1112,8 +1106,6 @@ private:
     void outputMutation(std::ofstream &out, char state_char, int32_t pos, int32_t length = -1);
 };
 
-
-void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt2aa = false, int max_id=0, bool test_num_sites=false);
 
 /**
  create a new Alignment object with possibility of comma-separated file names

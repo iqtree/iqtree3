@@ -19,26 +19,28 @@ void runAliSim(Params &params, Checkpoint *checkpoint)
     bool inference_mode = false;
     
     // check if inference_mode is active
-    // case 1: inference_mode = true if an alignment file is supplied
+    // case 1: inference_mode = true if an alignment file is specified
     if (params.aln_file)
         inference_mode = true;
-    // case 2: inference_mode = true if alignment files are specified in a partition_file
+    // case 2: inference_mode = true if alignment files are specified for all partitions
     else if (params.partition_file) {
-        // initilize partition alignments
-        SuperAlignment *partition_aln;
-        if (params.partition_type == TOPO_UNLINKED)
-            partition_aln = new SuperAlignmentUnlinked(params);
-        else
-            partition_aln = new SuperAlignment(params);
-        
-        // inference_mode = true if all alignments for all partitions are supplied
+        SuperAlignment *saln;
+        if (params.partition_type == TOPO_UNLINKED) {
+            saln = new SuperAlignmentUnlinked(params);
+        } else {
+            saln = new SuperAlignment(params);
+        }
         inference_mode = true;
-        for (Alignment *par_aln:partition_aln->partitions)
-            if (par_aln->aln_file.size() == 0)
-                inference_mode = false;
-        
-        // delete partition_aln
-        delete partition_aln;
+        bool found_file = false;
+        for (size_t part = 0; part < saln->partitions.size(); ++part) {
+            Alignment *part_aln = saln->partitions[part];
+            inference_mode &= !part_aln->aln_file.empty();
+            found_file |= !part_aln->aln_file.empty();
+        }
+        if (!inference_mode && found_file) {
+            outError("To run AliSim in Inference Mode, please specify alignment files for all partitions");
+        }
+        delete saln;
     }
     params.alisim_inference_mode = inference_mode;
     
@@ -193,7 +195,8 @@ void inferInputParameters(Params &params, Checkpoint *checkpoint, IQTree *&tree,
         // in normal case (without partitions) -> using the sequence length in the tree
         else
         {
-            params.alisim_sequence_length = (tree->aln->seq_type == SEQ_CODON ? (tree->aln->getNSite() * 3) : tree->aln->getNSite());
+            int num_sites_per_state = (tree->aln->seq_type == SEQ_CODON) ? 3 : 1;
+            params.alisim_sequence_length = tree->aln->getNSite() * num_sites_per_state;
         }
     }
 }
@@ -208,7 +211,8 @@ int computeTotalSequenceLengthAllPartitions(PhyloSuperTree *super_tree)
     for (int i = 0; i < super_tree->size(); i++)
     {
         Alignment *aln = super_tree->at(i)->aln;
-        total_length += (aln->seq_type == SEQ_CODON ? (aln->getNSite() * 3) : aln->getNSite());
+        int num_sites_per_state = (aln->seq_type == SEQ_CODON) ? 3 : 1;
+        total_length += aln->getNSite() * num_sites_per_state;
     }
     return total_length;
 }
@@ -586,21 +590,23 @@ void retrieveAncestralSequenceFromInputFile(AliSimulator *super_alisimulator, ve
     char* aln_filepath = new char[super_alisimulator->params->root_ref_seq_aln.length() + 1];
     strcpy(aln_filepath, super_alisimulator->params->root_ref_seq_aln.c_str());
     string sequence_name = super_alisimulator->params->root_ref_seq_name;
-    
-    // in normal case (without partition) -> using the current tree to load the ancestral sequence
-    IQTree *src_tree = super_alisimulator->tree;
-    // in case with partitions -> using the first phylotree to load the ancestral sequence
-    if (src_tree->isSuperTree())
-    {
-        // make sure all partitions are using the same sequence_type
-        for (int i = 1; i < ((PhyloSuperTree*) src_tree)->size(); i++)
-            if (((PhyloSuperTree*) src_tree)->at(i)->aln->seq_type != ((PhyloSuperTree*) src_tree)->at(0)->aln->seq_type)
-                outError("To load ancestral sequence from a file, all partitions must use the same sequence_type.");
-        
-        // using the first phylotree to load the ancestral sequence
-        src_tree = ((IQTree*)((PhyloSuperTree*) super_alisimulator->tree)->at(0));
+    IQTree *src_tree;
+    if (super_alisimulator->tree->isSuperTree()) {
+        // in case with partitions -> using the first phylotree to load the ancestral sequence
+        src_tree = (IQTree*)((PhyloSuperTree*) super_alisimulator->tree)->at(0);
+        // make sure all partitions are using the same aln_file, sequence_type, and num_states
+        for (int i = 1; i < ((PhyloSuperTree*) super_alisimulator->tree)->size(); ++i) {
+            if (((PhyloSuperTree*) super_alisimulator->tree)->at(i)->aln->aln_file != src_tree->aln->aln_file ||
+                ((PhyloSuperTree*) super_alisimulator->tree)->at(i)->aln->seq_type != src_tree->aln->seq_type ||
+                ((PhyloSuperTree*) super_alisimulator->tree)->at(i)->aln->num_states != src_tree->aln->num_states)
+            {
+                outError("To load ancestral sequence from a file, all partitions must use the same aln_file, sequence_type, and num_states");
+            }
+        }
+    } else {
+        // in normal case (without partition) -> using the current tree to load the ancestral sequence
+        src_tree = super_alisimulator->tree;
     }
-
     // read sequences from the input file
     Alignment *aln = new Alignment();
     StrVector sequences;
@@ -630,47 +636,37 @@ void retrieveAncestralSequenceFromInputFile(AliSimulator *super_alisimulator, ve
         outWarning("Sequence length is now set equally to the length of ancestral sequence.");
         super_alisimulator->refreshExpectedNumSites();
     }
-
-    // get Max number of states
+    // fill sequence states from sequence_str chars
     int max_num_states = src_tree->aln->getMaxNumStates();
-    
-    // convert the input sequence into (numerical states) sequence
-    int num_sites_per_state = src_tree->aln->seq_type == SEQ_CODON ? 3 : 1;
-    int sequence_length = (src_tree->aln->seq_type == SEQ_CODON ? (super_alisimulator->params->alisim_sequence_length / 3) : super_alisimulator->params->alisim_sequence_length);
-    
-    // make sure the length of the ancestral sequence must be equal to the total length of all partitions
-    if (super_alisimulator->tree->isSuperTree() && sequence_length != super_alisimulator->tree->getAlnNSite())
+    int num_sites_per_state = (src_tree->aln->seq_type == SEQ_CODON) ? 3 : 1;
+    sequence.resize(super_alisimulator->params->alisim_sequence_length / num_sites_per_state);
+    if (super_alisimulator->tree->isSuperTree() && sequence.size() != super_alisimulator->tree->getAlnNSite()) {
         outError("The length of the ancestral sequence must be equal to the total length of all partitions");
-    
-    sequence.resize(sequence_length);
+    }
     ostringstream err_str;
     int num_error = 0;
-    if (src_tree->aln->seq_type == SEQ_CODON)
-    {
-        int site_index = 0;
-        for (int i = 0; i < sequence_length; i++, site_index += num_sites_per_state)
-        {
+    size_t str_pos = 0;
+    for (size_t site = 0; site < sequence.size(); ++site) {
+        if (src_tree->aln->seq_type == SEQ_CODON) {
             // NHANLT: potential improvement
             // change to use pointer of sequence_str to avoid accessing sequence_str[]
-            sequence[i] = src_tree->aln->getCodonStateTypeFromSites(src_tree->aln->convertState(sequence_str[site_index], SEQ_DNA), src_tree->aln->convertState(sequence_str[site_index+1], SEQ_DNA), src_tree->aln->convertState(sequence_str[site_index+2], SEQ_DNA), sequence_name, site_index, err_str, num_error);
+            sequence[site] = src_tree->aln->getCodonStateTypeFromSites(
+                src_tree->aln->convertState(sequence_str[str_pos], SEQ_DNA),
+                src_tree->aln->convertState(sequence_str[str_pos+1], SEQ_DNA),
+                src_tree->aln->convertState(sequence_str[str_pos+2], SEQ_DNA),
+                sequence_name, str_pos, err_str, num_error);
+        } else {
+            sequence[site] = src_tree->aln->convertState(sequence_str[str_pos]);
+            // handle invalid/unknown states
+            if (sequence[site] >= max_num_states) {
+                sequence[site] = random_int(max_num_states);
+            }
         }
+        str_pos += num_sites_per_state;
     }
-    else
-    {
-        for (int i = 0; i < sequence_length; i++)
-        {
-            sequence[i] = src_tree->aln->convertState(sequence_str[i]);
-        
-            // Handle invalid/unknown state
-            if (sequence[i] >= max_num_states)
-                sequence[i] = random_int(max_num_states);
-        }
-    }
-    
     // show error from ancestral sequence (if any)
     if (num_error)
         outError(err_str.str());
-    
     // show warning
     outWarning("Using an ancestral sequence with base frequencies that are not compatible with the specification of the model may lead to unexpected results.");
 }
@@ -952,7 +948,6 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
         {
             PhyloSuperTree* super_tree = ((PhyloSuperTree*) super_alisimulator->tree);
             int total_expected_num_states = super_tree->getAlnNSite();
-            
             // override sequence_length by the total length of all partitions
             int total_length = computeTotalSequenceLengthAllPartitions(super_tree);
             if (super_alisimulator->tree->params->alisim_sequence_length != total_length)
@@ -961,7 +956,6 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
                 outWarning("The sequence_length is now set equally to the total length of all partitions");
                 super_alisimulator->refreshExpectedNumSites();
             }
-            
             for (int partition_index = 0; partition_index < super_tree->size(); partition_index++)
             {
                 // update the alignment_id, taking into account the partition index, so that we use different random seed for each partition in each alignment
@@ -969,42 +963,27 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
                 // get variables
                 IQTree *current_tree = (IQTree*) super_tree->at(partition_index);
                 int expected_num_states_current_tree = current_tree->aln->getNSite();
-                int num_sites_per_state = super_tree->at(partition_index)->aln->seq_type == SEQ_CODON?3:1;
-                
-                // create position_spec in case aln_files are specified in a directory
-                if (super_alisimulator->params->partition_file && isDirectory(super_alisimulator->params->partition_file))
-                {
-                    int total_num_states = super_tree->at(partition_index)->aln->getNSite();
-                    if (num_sites_per_state != 1)
-                        total_num_states *= num_sites_per_state;
-                    ((SuperAlignment*) super_tree->aln)->partitions[partition_index]->CharSet::position_spec = "1-" + convertIntToString(total_num_states);
+                ASSERT(expected_num_states_current_tree);
+                string info_spec = current_tree->aln->position_spec;
+                if (info_spec.empty() || info_spec == "*") {
+                    // position_spec is missing -> subalignment uses a whole file
+                    // set position_spec to the actual length of the subalignment
+                    int num_sites_per_state = (current_tree->aln->seq_type == SEQ_CODON) ? 3 : 1;
+                    int expected_num_sites_current_tree = expected_num_states_current_tree * num_sites_per_state;
+                    info_spec = "1-" + convertIntToString(expected_num_sites_current_tree);
+                    current_tree->aln->position_spec = info_spec;
                 }
-                
-                // extract site_ids of the partition
-                string info_spec_str = ((SuperAlignment*) super_tree->aln)->partitions[partition_index]->CharSet::position_spec;
-                // convert position_spec from "*" to "start-end"
-                if (!info_spec_str.compare("*") && super_tree->at(partition_index)->aln->getNSite() > 0)
-                {
-                    int total_num_states = super_tree->at(partition_index)->aln->getNSite();
-                    if (num_sites_per_state != 1)
-                        total_num_states *= num_sites_per_state;
-                    
-                    info_spec_str = "1-" + convertIntToString(total_num_states);
-                    ((SuperAlignment*) super_tree->aln)->partitions[partition_index]->CharSet::position_spec = info_spec_str;
-                }
-                
-                const char* info_spec = info_spec_str.c_str();
-                IntVector site_ids;
-                extractSiteID(current_tree->aln, info_spec, site_ids, false, total_expected_num_states);
-
                 // extract the ancestral sequence for the current partition from the full ancestral_sequence
                 vector<short int> ancestral_sequence_current_tree;
                 if (ancestral_sequence.size() > 0)
                 {
+                    // extract site_ids of the partition
+                    IntVector site_ids;
+                    Alignment::extractSiteID(info_spec, site_ids, current_tree->aln->genetic_code,
+                                             total_expected_num_states);
                     ASSERT(site_ids.size() == expected_num_states_current_tree);
-                    ancestral_sequence_current_tree.resize(expected_num_states_current_tree);
-                    
                     // extract sites one by one from the full ancestral_sequence
+                    ancestral_sequence_current_tree.resize(expected_num_states_current_tree);
                     for (int j = 0; j < ancestral_sequence_current_tree.size(); j++)
                         ancestral_sequence_current_tree[j] = ancestral_sequence[site_ids[j]];
                 }
@@ -1390,7 +1369,6 @@ void mergeAndWriteSequencesToFiles(string file_path, AliSimulator *alisimulator,
     {
         PhyloSuperTree *super_tree = ((PhyloSuperTree *)alisimulator->tree);
         int total_expected_num_states = super_tree->getAlnNSite();
-        
         // merge phylotrees using the same alignment file and the same sequence_type and the same num_states (morph) with each other -> write sequences to the corresponding output files
         for (int i = 0; i < super_tree->size(); i++)
         {
@@ -1427,10 +1405,10 @@ void mergeAndWriteSequencesToFiles(string file_path, AliSimulator *alisimulator,
                     if (!super_tree->at(i)->aln->aln_file.compare(current_tree->aln->aln_file) && super_tree->at(i)->aln->seq_type == super_tree->at(j)->aln->seq_type && super_tree->at(i)->aln->num_states == super_tree->at(j)->aln->num_states)
                     {
                         // extract site_ids of the partition
-                        const char* info_spec = ((SuperAlignment*) super_tree->aln)->partitions[j]->CharSet::position_spec.c_str();
                         IntVector site_ids;
-                        extractSiteID(current_tree->aln, info_spec, site_ids, false, total_expected_num_states);
-                        
+                        Alignment::extractSiteID(current_tree->aln->position_spec, site_ids,
+                                                 current_tree->aln->genetic_code,
+                                                 total_expected_num_states);
                         // copy alignment from the current tree to the super_tree
                         copySequencesToSuperTree(site_ids, total_expected_num_states, current_tree, current_tree->aln->STATE_UNKNOWN, super_tree->root, super_tree->root);
                         
