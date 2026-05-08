@@ -50,26 +50,21 @@ int Substitution::parseState(const std::string& old_state_str, Alignment* const 
 {
     // init a state
     int state = 0;
-    
-    // parse the state regarding their sequence type
-    // CODON
-    if (aln->seq_type == SEQ_CODON)
-    {
+    // parse the state depending on its sequence type
+    if (aln->seq_type == SEQ_CODON) {
         // validate input
         ASSERT(old_state_str.length() == 3);
-        
         // dummy variables
-        std:string sequence_name;
-        ostringstream err_str;
         int num_error = 0;
-        
         // parse the codon
-        state = aln->getCodonStateTypeFromSites(aln->convertState(old_state_str[0], SEQ_DNA), aln->convertState(old_state_str[1], SEQ_DNA), aln->convertState(old_state_str[2], SEQ_DNA), sequence_name, 0, err_str, num_error);
-    }
-    // Other data types
-    else
+        state = aln->getCodonStateTypeFromSites(
+            aln->convertState(old_state_str[0], SEQ_DNA),
+            aln->convertState(old_state_str[1], SEQ_DNA),
+            aln->convertState(old_state_str[2], SEQ_DNA),
+            nullptr, "noname", 0, num_error);
+    } else {
         state = aln->convertState(old_state_str[0], aln->seq_type);
-    
+    }
     // return the state
     return state;
 }

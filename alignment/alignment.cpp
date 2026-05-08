@@ -65,9 +65,8 @@ char genetic_code25[] = "KNKNTTTTRSRSIIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVV*Y*YSSS
 
 boost::bimap<int, char*> genetic_code_map;
 
-Alignment::Alignment()
-        : vector<Pattern>()
-{
+Alignment::Alignment() {
+    name = "Noname";
     num_states = 0;
     frac_const_sites = 0.0;
     frac_invariant_sites = 0.0;
@@ -93,38 +92,28 @@ Alignment::~Alignment() {
     ptn_state_freq.clear();
 }
 
-string &Alignment::getSeqName(int i) {
-    ASSERT(i >= 0 && i < (int)seq_names.size());
-    return seq_names[i];
+void Alignment::addSeqName(const string &seq_name) {
+    ASSERT(seq_name != "");
+    seq_names.push_back(seq_name);
 }
 
-void Alignment::addSeqName(string seq_name)
-{
-    if (!seq_name.empty())
-    {
-        seq_names.resize(seq_names.size()+1);
-        seq_names[seq_names.size()-1] = seq_name;
-    }
-}
-
-vector<string>& Alignment::getSeqNames() {
-	return seq_names;
-}
-
-int Alignment::getSeqID(string &seq_name) {
-    for (size_t i = 0; i < getNSeq(); i++)
-        if (seq_name == getSeqName(i)) {
-            return i;
+int Alignment::getSeqID(const string &seq_name) const {
+    for (size_t seq = 0; seq < getNSeq(); ++seq) {
+        if (seq_name == seq_names[seq]) {
+            return seq;
         }
+    }
     return -1;
 }
 
-int Alignment::getMaxSeqNameLength() {
+int Alignment::getMaxSeqNameLength() const {
     int len = 0;
-    for (size_t i = 0; i < getNSeq(); i++)
-        if (getSeqName(i).length() > len) {
-            len = getSeqName(i).length();
+    for (size_t seq = 0; seq < getNSeq(); ++seq) {
+        int seq_name_len = seq_names[seq].size();
+        if (len < seq_name_len) {
+            len = seq_name_len;
         }
+    }
     return len;
 }
 
@@ -496,8 +485,7 @@ Alignment *Alignment::removeIdenticalSeq(string not_remove, bool keep_two, StrVe
                 keep_seqs.emplace_back(seq1);
             }
         }
-        Alignment *aln = new Alignment;
-        aln->extractSubAlignment(this, keep_seqs, 0);
+        Alignment *aln = extractSubAlignment(keep_seqs, 0);
         //cout << "NOTE: Identified " << removed_seqs.size()
         //  << " sequences as duplicates." << endl;
         if (verbose_mode >= VB_MED) {
@@ -522,15 +510,6 @@ void Alignment::adjustHash(StateType v, size_t& hash) const {
 void Alignment::adjustHash(bool v, size_t& hash) const {
     hash ^= std::hash<bool>()(v) + 0x9e3779b9
                      + (hash<<6) + (hash>>2);
-}
-
-bool Alignment::isGapOnlySeq(size_t seq_id) {
-    ASSERT(seq_id < getNSeq());
-    for (iterator it = begin(); it != end(); it++)
-        if ((*it)[seq_id] != STATE_UNKNOWN) {
-            return false;
-        }
-    return true;
 }
 
 // added by TD
@@ -629,175 +608,141 @@ vector<float> Alignment::computeSummaryStats(int seq1_idx, int seq2_idx) {
     return stats;
 }
 
-Alignment *Alignment::replaceAmbiguousChars() {
-
-    IntVector patterns;
-    
-    for (size_t idx = 0; idx < getNPattern(); idx++) {
-        patterns.push_back(idx);
-    }
-
-    Alignment *aln = new Alignment;
-    aln->extractPatterns(this, patterns);
-
-    for (size_t idx = 0; idx < aln->size(); idx++) {
-        for (size_t i = 0; i < getNSeq(); i++) {
-            if (aln->at(idx)[i] > 3) {
-                uint32_t base;
+Alignment *Alignment::replaceAmbiguousChars() const {
+    ASSERT(seq_type == SEQ_DNA);
+    Alignment *aln = copyAlignment();
+    for (iterator it = aln->begin(); it != aln->end(); ++it) {
+        for (Pattern::iterator i = it->begin(); i != it->end(); ++i) {
+            if (*i > 3) {
+                StateType base;
                 //mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
-                switch(aln->at(idx)[i]) {
-                    case 6: { // M: A or C
-                        base = random_int(2); // todo: here input pointer to random number stream
-                        //std::uniform_int_distribution<size_t> dist(0, 1);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = (StateType) base;
-                    }
-                        break;
-                    case 8: { // R: A or G
-                        base = random_int(2);
-                        //std::uniform_int_distribution<size_t> dist(0, 1);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 0 ? (StateType) base: (StateType) 2;
-                    }
-                        break;
-                    case 9: { // S: C or G
-                        base = random_int(2);
-                        //std::uniform_int_distribution<size_t> dist(1, 2);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 0 ? 2 : base;
-                    }
-                        break;
-                    case 10: { // V: A or C or G
-                        base = random_int(3);
-                        //std::uniform_int_distribution<size_t> dist(0, 2);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base;
-                    }
-                        break;
-                    case 12: { // W: A or T
-                        base = random_int(2);
-                        //std::uniform_int_distribution<size_t> dist(0, 1);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 0 ? (StateType) base: (StateType) 3;
-                    }
-                        break;
-                    case 13: { // Y: C or T
-                        base = random_int(2);
-                        //std::uniform_int_distribution<size_t> dist(1, 2);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 1 ? (StateType) base: (StateType) 3;
-                    }
-                        break;
-                    case 14: { // H: A or C or T
-                        base = random_int(3);
-                        //std::uniform_int_distribution<size_t> dist(0, 2);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 2 ? (StateType) 3 : (StateType) base;
-                    }
-                        break;
-                    case 15: { // K: G or T
-                        base = random_int(2);
-                        //std::uniform_int_distribution<size_t> dist(2, 3);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 0 ? (StateType) 2 : (StateType) 3;
-                    }
-                        break;
-                    case 16: { // D: A or G or T
-                        base = random_int(3);
-                        //std::uniform_int_distribution<size_t> dist(1, 3);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 1 ? (StateType) 3 : (StateType) base;
-                    }
-                        break;
-                    case 17: { // B: C or G or T
-                        base = random_int(3);
-                        //std::uniform_int_distribution<size_t> dist(1, 3);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = base == 0 ? (StateType) 3 : (StateType) base;
-                    }
-                    case 18: { // N
-                        base = random_int(4);
-                        //std::uniform_int_distribution<size_t> dist(0, 3);
-                        //base = dist(rng);
-                        aln->at(idx)[i] = (StateType) base;
-                    }
-                        break;
-                    default:
-                        throw "Ambiguous character not known!";
+                switch (*i) {
+                case 6: // M: A or C
+                    base = random_int(2); // todo: here input pointer to random number stream
+                    //std::uniform_int_distribution<size_t> dist(0, 1);
+                    //base = dist(rng);
+                    break;
+                case 8: // R: A or G
+                    base = random_int(2) * 2;
+                    //std::uniform_int_distribution<size_t> dist(0, 1);
+                    //base = dist(rng);
+                    break;
+                case 9: // S: C or G
+                    base = random_int(2) + 1;
+                    //std::uniform_int_distribution<size_t> dist(1, 2);
+                    //base = dist(rng);
+                    break;
+                case 10: // V: A or C or G
+                    base = random_int(3);
+                    //std::uniform_int_distribution<size_t> dist(0, 2);
+                    //base = dist(rng);
+                    break;
+                case 12: // W: A or T
+                    base = random_int(2) * 3;
+                    //std::uniform_int_distribution<size_t> dist(0, 1);
+                    //base = dist(rng);
+                    break;
+                case 13: // Y: C or T
+                    base = random_int(2) * 2 + 1;
+                    //std::uniform_int_distribution<size_t> dist(1, 2);
+                    //base = dist(rng);
+                    break;
+                case 14: // H: A or C or T
+                    base = random_int(3) * 3 % 5;
+                    //std::uniform_int_distribution<size_t> dist(0, 2);
+                    //base = dist(rng);
+                    break;
+                case 15: // K: G or T
+                    base = random_int(2) + 2;
+                    //std::uniform_int_distribution<size_t> dist(2, 3);
+                    //base = dist(rng);
+                    break;
+                case 16: // D: A or G or T
+                    base = random_int(3) * 3 % 4;
+                    //std::uniform_int_distribution<size_t> dist(1, 3);
+                    //base = dist(rng);
+                    break;
+                case 17: // B: C or G or T
+                    base = random_int(3) + 1;
+                    //std::uniform_int_distribution<size_t> dist(1, 3);
+                    //base = dist(rng);
+                    break;
+                case 18: // N: A or C or G or T
+                    base = random_int(4);
+                    //std::uniform_int_distribution<size_t> dist(0, 3);
+                    //base = dist(rng);
+                    break;
+                default:
+                    throw "Ambiguous character not known!";
                 }
+                *i = base;
             }
         }
     }
     return aln;
-
 }
 
 // added by TD
 // todo: make 0.7 a parameter for the user to change
-Alignment *Alignment::removeAndFillUpGappySites() {
-
-    IntVector keep_patterns;
-
+Alignment *Alignment::removeAndFillUpGappySites() const {
+    size_t nsite = getNSite();
+    size_t nptn = getNPattern();
     // remove all sites with > 70% gaps
-    for (size_t idx = 0; idx < getNPattern(); idx++) {
-        size_t count_gaps = 0;
-        Pattern pattern = getPattern(idx);
-        for (size_t i = 0; i < getNSeq(); i++) {
-            if (pattern[i] == STATE_UNKNOWN) {
-                count_gaps++;
-            }
-        }
-        if (count_gaps / getNSeq() <= 0.7) {
-            keep_patterns.push_back(idx);
+    BoolVector keep_pattern(nptn, true);
+    for (size_t ptn = 0; ptn < nptn; ++ptn) {
+        size_t gap_chars = at(ptn).countGapChar(STATE_UNKNOWN);
+        if (double(gap_chars) / getNSeq() > 0.7) {
+            keep_pattern[ptn] = false;
         }
     }
-
-    Alignment *aln = new Alignment;
-    aln->extractPatterns(this, keep_patterns);
-
-    for (size_t idx = 0; idx < aln->size(); idx++) {
-        vector<size_t> freqs = aln->at(idx).freqs;
-        uint32_t most_frequent_base = std::max_element(freqs.begin(), freqs.end()) - freqs.begin();
-        for (size_t i = 0; i < getNSeq(); i++) {
-            if (aln->at(idx)[i] == STATE_UNKNOWN) {
-                // fill up gap with most frequent base
-                aln->at(idx)[i] = (StateType)most_frequent_base;
+    IntVector site_id; // to preserve site order
+    for (size_t site = 0; site < nsite; ++site) {
+        if (keep_pattern[site_pattern[site]]) {
+            site_id.push_back(site);
+        }
+    }
+    Alignment *aln = extractSites(site_id);
+    // fill up gaps in the remaining sites with their most frequent states
+    for (iterator it = aln->begin(); it != aln->end(); ++it) {
+        StateType most_frequent_state = std::max_element(it->freqs.begin(), it->freqs.end()) - it->freqs.begin();
+        for (Pattern::iterator i = it->begin(); i != it->end(); ++i) {
+            if (*i == STATE_UNKNOWN) {
+                *i = most_frequent_state;
             }
         }
     }
-
     return aln;
-
 }
 
 Alignment *Alignment::removeGappySeq() {
-	IntVector keep_seqs;
-	size_t nseq = getNSeq();
-	for (size_t i = 0; i < nseq; i++)
-		if (! isGapOnlySeq(i)) {
-			keep_seqs.push_back(i);
-		}
-	if (keep_seqs.size() == nseq)
-		return this;
+    size_t nseq = getNSeq();
+    IntVector kept_seqs;
+    for (size_t seq = 0; seq < nseq; ++seq) {
+        if (!isGapOnlySeq(seq)) {
+            kept_seqs.push_back(seq);
+        }
+    }
+    if (kept_seqs.size() == nseq) {
+        return this;
+    }
     // 2015-12-03: if resulting alignment has too few seqs, try to add some back
-    if (keep_seqs.size() < 3 && getNSeq() >= 3) {
-        for (size_t i = 0; i < nseq && keep_seqs.size() < 3; i++) {
-            if (isGapOnlySeq(i)) {
-                keep_seqs.push_back(i);
+    if (getNSeq() >= 3) {
+        for (size_t seq = 0; seq < nseq && kept_seqs.size() < 3; ++seq) {
+            if (isGapOnlySeq(seq)) {
+                kept_seqs.push_back(seq);
             }
         }
     }
-	Alignment *aln = new Alignment;
-	aln->extractSubAlignment(this, keep_seqs, 0);
-	return aln;
+    Alignment *aln = extractSubAlignment(kept_seqs, 0);
+    return aln;
 }
 
-void Alignment::checkGappySeq(bool force_error) {
+void Alignment::checkGappySeq(bool force_error) const {
     size_t nseq = getNSeq();
-    int wrong_seq = 0;
-    for (size_t i = 0; i < nseq; i++) {
-        if (isGapOnlySeq(i)) {
-            outWarning("Sequence " + getSeqName(i) + " contains only gaps or missing data");
+    size_t wrong_seq = 0;
+    for (size_t seq = 0; seq < nseq; ++seq) {
+        if (isGapOnlySeq(seq)) {
+            outWarning("Sequence " + getSeqName(seq) + " contains only gaps or missing data");
             wrong_seq++;
         }
     }
@@ -806,26 +751,25 @@ void Alignment::checkGappySeq(bool force_error) {
     }
 }
 
-Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, string model) : vector<Pattern>() {
-    name = "Noname";
+bool Alignment::isGapOnlySeq(int seq) const {
+    for (const_iterator it = begin(); it != end(); ++it) {
+        if (it->at(seq) != STATE_UNKNOWN) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, string model)
+: Alignment() {
     this->model_name = model;
     if (sequence_type) {
         this->sequence_type = sequence_type;
     }
     aln_file = filename;
-    num_states = 0;
-    frac_const_sites = 0.0;
-    frac_invariant_sites = 0.0;
-    codon_table = nullptr;
-    genetic_code = nullptr;
-    non_stop_codon = nullptr;
-    seq_type = SEQ_UNKNOWN;
-    STATE_UNKNOWN = 126;
-    pars_lower_bound = nullptr;
     double readStart = getRealTime();
     cout << "Reading alignment file " << filename << " ... ";
     intype = detectInputFile(filename);
-
     try {
         if (intype == IN_NEXUS) {
             cout << "Nexus format detected" << endl;
@@ -862,17 +806,15 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
     if (verbose_mode >= VB_MED) {
         cout << "Time to read input file was " << (getRealTime() - readStart) << " sec." << endl;
     }
-    if (getNSeq() < 3)
-    {
+    if (getNSeq() < 3) {
         outError("Alignment must have at least 3 sequences");
     }
     double constCountStart = getRealTime();
-    countConstSite();
+    countConstSites();
     if (verbose_mode >= VB_MED) {
         cout << "Time to count constant sites was " << (getRealTime() - constCountStart) << " sec." << endl;
     }
-    if (Params::getInstance().compute_seq_composition)
-    {
+    if (Params::getInstance().compute_seq_composition) {
         cout << "Alignment has " << getNSeq() << " sequences with " << getNSite()
              << " columns, " << getNPattern() << " distinct patterns" << endl
              << num_informative_sites << " parsimony-informative, "
@@ -901,33 +843,17 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
 
 }
 
-Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model) : vector<Pattern>() {
-    name = "Noname";
+Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model)
+: Alignment() {
     this->model_name = model;
     if (sequence_type) {
         this->sequence_type = sequence_type;
     }
-    num_states = 0;
-    frac_const_sites = 0.0;
-    frac_invariant_sites = 0.0;
-    codon_table = nullptr;
-    genetic_code = nullptr;
-    non_stop_codon = nullptr;
-    seq_type = SEQ_UNKNOWN;
-    STATE_UNKNOWN = 126;
-    pars_lower_bound = nullptr;
-    
     extractDataBlock(data_block);
-    if (verbose_mode >= VB_DEBUG) {
-        data_block->Report(cout);
-    }
-
     if (getNSeq() < 3) {
         outError("Alignment must have at least 3 sequences");
     }
-    
-    countConstSite();
-    
+    countConstSites();
     if (Params::getInstance().compute_seq_composition) {
         cout << "Alignment has " << getNSeq() << " sequences with " << getNSite()
         << " columns, " << getNPattern() << " distinct patterns" << endl
@@ -957,38 +883,26 @@ Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model
     
 }
 
-Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, string model) : vector<Pattern>() {
-    name = "Noname";
+Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, string model)
+: Alignment() {
     this->model_name = model;
-    if (sequence_type)
+    if (sequence_type) {
         this->sequence_type = sequence_type;
-    num_states = 0;
-    frac_const_sites = 0.0;
-    frac_invariant_sites = 0.0;
-    codon_table = NULL;
-    genetic_code = NULL;
-    non_stop_codon = NULL;
-    seq_type = SEQ_UNKNOWN;
-    STATE_UNKNOWN = 126;
-    pars_lower_bound = NULL;
+    }
     double readStart = getRealTime();
-
     readStrVec(names, seqs, sequence_type);
-    
     if (verbose_mode >= VB_MED) {
         cout << "Time to read input file was " << (getRealTime() - readStart) << " sec." << endl;
     }
-    if (getNSeq() < 3)
-    {
+    if (getNSeq() < 3) {
         outError("Alignment must have at least 3 sequences");
     }
     double constCountStart = getRealTime();
-    countConstSite();
+    countConstSites();
     if (verbose_mode >= VB_MED) {
         cout << "Time to count constant sites was " << (getRealTime() - constCountStart) << " sec." << endl;
     }
-    if (Params::getInstance().compute_seq_composition)
-    {
+    if (Params::getInstance().compute_seq_composition) {
         cout << "Alignment has " << getNSeq() << " sequences with " << getNSite()
              << " columns, " << getNPattern() << " distinct patterns" << endl
              << num_informative_sites << " parsimony-informative, "
@@ -1109,14 +1023,8 @@ int Alignment::readNexus(char *filename) {
 
     if (char_block->GetNTax() > 0) {
         extractDataBlock(char_block);
-        if (verbose_mode >= VB_DEBUG) {
-            char_block->Report(cout);
-        }
     } else {
         extractDataBlock(data_block);
-        if (verbose_mode >= VB_DEBUG) {
-            data_block->Report(cout);
-        }
     }
 
     delete trees_block;
@@ -1129,16 +1037,20 @@ int Alignment::readNexus(char *filename) {
 
 void Alignment::computeUnknownState() {
     switch (seq_type) {
-    case SEQ_DNA: STATE_UNKNOWN = 18; break;
-    case SEQ_PROTEIN: STATE_UNKNOWN = 23; break;
-    case SEQ_POMO: {
-        if (pomo_sampling_method == SAMPLING_SAMPLED) {
-            STATE_UNKNOWN = num_states;
+    case SEQ_DNA:
+        STATE_UNKNOWN = 18;
+        return;
+    case SEQ_PROTEIN:
+        STATE_UNKNOWN = 23;
+        return;
+    case SEQ_POMO:
+        if (pomo_sampling_method != SAMPLING_SAMPLED) {
+            STATE_UNKNOWN = 0xffffffff; // only dummy, will be initialized later
+            return;
         }
-        else STATE_UNKNOWN = 0xffffffff; // only dummy, will be initialized later
-        break;
-    }
-    default: STATE_UNKNOWN = num_states; break;
+    default:
+        STATE_UNKNOWN = num_states;
+        return;
     }
 }
 
@@ -1177,17 +1089,20 @@ int getDataBlockMorphStates(NxsCharactersBlock *data_block) {
 }
 
 void Alignment::extractDataBlock(NxsCharactersBlock *data_block) {
-    int nseq = data_block->GetNTax();
-    int nsite = data_block->GetNCharTotal();
+    size_t nseq = data_block->GetNTax();
+    size_t nsite = data_block->GetNCharTotal();
     char *symbols = nullptr;
-    //num_states = strlen(symbols);
     char char_to_state[NUM_CHAR];
     char state_to_char[NUM_CHAR];
-    
     if (!data_block->GetMatrix()) {
         outError("MATRIX command undeclared or invalid");
     }
-    
+    if (data_block->taxa->GetNumTaxonLabels() == 0) {
+        outError("MATRIX not found, make sure nexus command before MATRIX ends with semi-colon (;)");
+    }
+    if (data_block->taxa->GetNumTaxonLabels() != nseq) {
+        outError("ntax is different from number of MATRIX rows");
+    }
     NxsCharactersBlock::DataTypesEnum data_type = (NxsCharactersBlock::DataTypesEnum)data_block->GetDataType();
     if (data_type == NxsCharactersBlock::continuous) {
         outError("Continuous characters not supported");
@@ -1195,18 +1110,14 @@ void Alignment::extractDataBlock(NxsCharactersBlock *data_block) {
                data_type == NxsCharactersBlock::nucleotide)
     {
         num_states = 4;
-        if (data_type == NxsCharactersBlock::rna) {
-            symbols = symbols_rna;
-        } else {
-            symbols = symbols_dna;
-        }
+        symbols = (data_type == NxsCharactersBlock::rna) ? symbols_rna : symbols_dna;
         seq_type = SEQ_DNA;
     } else if (data_type == NxsCharactersBlock::protein) {
         num_states = 20;
         symbols = symbols_protein;
         seq_type = SEQ_PROTEIN;
     } else {
-    	// standard morphological character
+        // standard morphological character
 //        num_states = data_block->GetMaxObsNumStates();
         num_states = getDataBlockMorphStates(data_block);
         if (num_states > 32) {
@@ -1215,14 +1126,9 @@ void Alignment::extractDataBlock(NxsCharactersBlock *data_block) {
         if (num_states < 2) {
             outError("Number of states can not be below 2");
         }
-        if (num_states == 2) {
-            seq_type = SEQ_BINARY;
-        } else {
-            seq_type = SEQ_MORPH;
-        }
         symbols = symbols_morph;
+        seq_type = (num_states == 2) ? SEQ_BINARY : SEQ_MORPH;
     }
-
     computeUnknownState();
     memset(char_to_state, STATE_UNKNOWN, NUM_CHAR);
     memset(state_to_char, '?', NUM_CHAR);
@@ -1231,29 +1137,16 @@ void Alignment::extractDataBlock(NxsCharactersBlock *data_block) {
         state_to_char[i] = symbols[i];
     }
     state_to_char[(int)STATE_UNKNOWN] = '-';
-
-
-    int seq, site;
-
-    if (data_block->taxa->GetNumTaxonLabels() == 0) {
-        outError("MATRIX not found, make sure nexus command before MATRIX ends with semi-colon (;)");
-    }
-
-    if (data_block->taxa->GetNumTaxonLabels() != nseq) {
-        outError("ntax is different from number of matrix rows");
-    }
-
-    for (seq = 0; seq < nseq; seq++) {
+    // fill seq_names
+    for (size_t seq = 0; seq < nseq; ++seq) {
         seq_names.push_back(data_block->GetTaxonLabel(seq));
     }
-
-    site_pattern.resize(nsite, -1);
-
+    // fill patterns
+    ASSERT(empty());
     int num_gaps_only = 0;
-
-    for (site = 0; site < nsite; site++) {
+    for (size_t site = 0; site < nsite; ++site) {
         Pattern pat;
-        for (seq = 0; seq < nseq; seq++) {
+        for (size_t seq = 0; seq < nseq; ++seq) {
             int nstate = data_block->GetNumStates(seq, site);
             if (nstate == 0) {
                 pat.push_back(STATE_UNKNOWN);
@@ -1279,17 +1172,24 @@ void Alignment::extractDataBlock(NxsCharactersBlock *data_block) {
                 pat.push_back(STATE_UNKNOWN);
             }
         }
-        num_gaps_only += addPattern(pat, site);
+        bool gaps_only;
+        addPattern(pat, &gaps_only);
+        num_gaps_only += (gaps_only) ? 1 : 0;
     }
-    if ( 0 < num_gaps_only ) {
+    updateConstPatterns();
+    if (num_gaps_only) {
         cout << "WARNING: " << num_gaps_only << " sites contain only gaps or ambiguous characters." << endl;
     }
     if (verbose_mode >= VB_MAX) {
-        for (site = 0; site < size(); site++) {
-            for (seq = 0; seq < nseq; seq++)
-                cout << state_to_char[(int)(*this)[site][seq]];
-            cout << "  " << (*this)[site].frequency << endl;
+        for (size_t ptn = 0; ptn < size(); ++ptn) {
+            for (size_t seq = 0; seq < nseq; ++seq) {
+                cout << state_to_char[(int)at(ptn)[seq]];
+            }
+            cout << "  " << at(ptn).frequency << endl;
         }
+    }
+    if (verbose_mode >= VB_DEBUG) {
+        data_block->Report(cout);
     }
 }
 
@@ -1329,10 +1229,7 @@ void Alignment::extractSequences(char *filename, char *sequence_type, StrVector 
     }
 }
 
-/**
-	determine if the pattern is constant. update the is_const variable.
-*/
-void Alignment::computeConst(Pattern &pat) {
+void Alignment::computeConst(Pattern &pat) const {
     bool is_const = true;
     bool is_invariant = false;
     bool is_informative = false;
@@ -1522,92 +1419,69 @@ void Alignment::printSiteInfo(const char* filename) {
     }
 }
 
-bool Alignment::addPatternLazy(Pattern &pat, int site, int freq, bool& gaps_only) {
-    //Returns true if the pattern was actually added, false
-    //if it was identified as a duplicate (and handled by
-    //increasing he frequency of an existing pattern)
-    // check if pattern contains only gaps
-    gaps_only = true;
-    for (Pattern::iterator it = pat.begin(); it != pat.end(); it++)
-        if ((*it) != STATE_UNKNOWN) {
-            gaps_only = false;
-            break;
-        }
-    if (gaps_only) {
+bool Alignment::addPattern(const Pattern &pat, bool *gaps_only) {
+    // check if the pattern contains only gaps
+    bool gappy = pat.isGapOnly(STATE_UNKNOWN);
+    if (gappy) {
         if (verbose_mode >= VB_DEBUG) {
-            cout << "Site " << site << " contains only gaps or ambiguous characters" << endl;
+            cout << "Site " << getNSite()
+                 << " contains only gaps or ambiguous characters" << endl;
         }
     }
-    PatternIntMap::iterator pat_it = pattern_index.find(pat);
-    if (pat_it == pattern_index.end()) { // not found
-        pat.frequency = freq;
-        //We don't do computeConst(pat); here, that's why
-        //there's a "Lazy" in this member function's name!
-        //We do that in addPattern...
+    if (gaps_only) {
+        *gaps_only = gappy;
+    }
+    // check whether the pattern already exists in the alignment
+    int ptn = -1;
+    PatternIntMap::iterator it = pattern_index.find(pat);
+    bool add = (pattern_index.end() == it);
+    if (add) { // pattern not found, add it
+        ptn = size();
         push_back(pat);
-        pattern_index[back()] = size()-1;
-        site_pattern[site] = size()-1;
-        return true;
-    } else {
-        int index = pat_it->second;
-        at(index).frequency += freq;
-        site_pattern[site] = index;
-        return false;
+        pattern_index[back()] = ptn;
+    } else { // pattern found, increase its frequency
+        ptn = it->second;
+        at(ptn).frequency += pat.frequency;
     }
+    // add new sites to account for the pattern frequency
+    for (int i = 0; i < pat.frequency; ++i) {
+        site_pattern.push_back(ptn);
+    }
+    return add;
 }
 
-bool Alignment::addPattern(Pattern &pat, int site, int freq) {
-    bool gaps_only = false;
-    if (addPatternLazy(pat, site, freq, gaps_only)) {
-        computeConst(back());
-    }
-    return gaps_only;
-}
-
-void Alignment::updatePatterns(size_t oldPatternCount) {
-    size_t patternCount = size();
+void Alignment::updateConstPatterns(size_t startPtn) {
+    size_t nptn = size();
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif
-    for (size_t patIndex = oldPatternCount; patIndex < patternCount; ++patIndex ) {
-        computeConst(at(patIndex));
+    for (size_t ptn = startPtn; ptn < nptn; ++ptn) {
+        computeConst(at(ptn));
     }
 }
 
-void Alignment::addConstPatterns(char *freq_const_patterns) {
-	IntVector vec;
-	convert_int_vec(freq_const_patterns, vec);
-    if (vec.size() != num_states) {
+void Alignment::addConstPatterns(const char *freq_const_patterns) {
+    IntVector const_freq; // state to const pattern frequency
+    convert_int_vec(freq_const_patterns, const_freq);
+    if (const_freq.size() != num_states) {
         outError("Const pattern frequency vector has different number of states: ", freq_const_patterns);
     }
-
-    size_t nsite = getNSite();
-    size_t orig_nsite = getNSite();
-	for (size_t i = 0; i < vec.size(); i++) {
-		nsite += vec[i];
-        if (vec[i] < 0) {
+    size_t nseq = getNSeq();
+    size_t orig_nptn = size();
+    for (StateType state = 0; state < num_states; ++state) {
+        if (const_freq[state] < 0) {
             outError("Const pattern frequency must be non-negative");
         }
-	}
-    site_pattern.resize(nsite, -1);
-	size_t nseq = getNSeq();
-	nsite = orig_nsite;
-    size_t oldPatternCount = size(); //JB 27-Jul-2020 (Parallelize)
-    for (size_t i = 0; i < vec.size(); i++) {
-        if (vec[i] > 0) {
+        int ptnf = const_freq[state];
+        if (ptnf > 0) {
             Pattern pat;
-            pat.resize(nseq, i);
-            //if (pattern_index.find(pat) != pattern_index.end()) {
-            //  outWarning("Constant pattern of all " + convertStateBackStr(i) + " already exists");
-            //}
-            for (int j = 0; j < vec[i]; j++) {
-                bool gaps_only;
-                addPatternLazy(pat, nsite++, 1, gaps_only); //JB 27-Jul-2020 (Parallelize)
-            }
+            pat.resize(nseq, state);
+            pat.frequency = ptnf;
+            addPattern(pat);
         }
     }
-    updatePatterns(oldPatternCount); //JB 27-Jul-20 (Parallelize)
-    countConstSite();
+    updateConstPatterns(orig_nptn);
+    countConstSites();
 }
 
 void Alignment::orderPatternByNumChars(int pat_type) {
@@ -1686,45 +1560,41 @@ void Alignment::orderPatternByNumChars(int pat_type) {
 //    cout << ordered_pattern.size() << " ordered_pattern" << endl;
 }
 
-void Alignment::ungroupSitePattern()
-{
-	vector<Pattern> stored_pat = (*this);
-	clear();
-	for (size_t i = 0; i < getNSite(); ++i) {
-		Pattern pat = stored_pat[getPatternID(i)];
-		pat.frequency = 1;
-		push_back(pat);
-		site_pattern[i] = i;
-	}
-	pattern_index.clear();
+void Alignment::ungroupSitePattern() {
+    IntVector site_group;
+    for (size_t site = 0; site < getNSite(); ++site) {
+        site_group.push_back(site);
+    }
+    regroupSitePattern(site_group);
 }
 
-void Alignment::regroupSitePattern(int groups, IntVector& site_group)
-{
-	vector<Pattern> stored_pat = (*this);
-	IntVector stored_site_pattern = site_pattern;
-	clear();
-	site_pattern.clear();
-	site_pattern.resize(stored_site_pattern.size(), -1);
-	size_t count = 0;
-	for (int g = 0; g < groups; g++) {
-		pattern_index.clear();
-		for (size_t i = 0; i < site_group.size(); ++i)
-		if (site_group[i] == g) {
-			count++;
-			Pattern pat = stored_pat[stored_site_pattern[i]];
-			addPattern(pat, i);
-		}
-	}
-	ASSERT(count == stored_site_pattern.size());
-	count = 0;
-	for (iterator it = begin(); it != end(); ++it)
-		count += it->frequency;
-	ASSERT(count == getNSite());
-	pattern_index.clear();
-	//printPhylip("/dev/stdout");
+void Alignment::regroupSitePattern(const IntVector &site_group) {
+    ASSERT(site_group.size() == getNSite());
+    // subdivide patterns based on their assignment to the provided groups
+    vector<Pattern> stored_pat = (*this);
+    IntVector stored_site_pattern = site_pattern;
+    site_pattern.clear();
+    pattern_index.clear();
+    clear();
+    IntVector new_to_old_pattern;
+    for (size_t site = 0; site < stored_site_pattern.size(); ++site) {
+        Pattern pat = stored_pat[stored_site_pattern[site]];
+        pat.frequency = 1;
+        pat.group = site_group[site];
+        bool added = addPattern(pat);
+        if (added) {
+            new_to_old_pattern.push_back(stored_site_pattern[site]);
+        }
+    }
+    // refill the existing pattern-specific parameters
+    if (isSSF()) {
+        vector<double*> stored_ptn_state_freq = ptn_state_freq;
+        ptn_state_freq.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_state_freq.push_back(stored_ptn_state_freq[new_to_old_pattern[ptn]]);
+        }
+    }
 }
-
 
 /**
 	detect the data type of the input sequences
@@ -1799,22 +1669,21 @@ SeqType Alignment::detectSequenceType(StrVector &sequences) {
     return SEQ_UNKNOWN;
 }
 
-void Alignment::buildStateMap(char *map, SeqType seq_type) {
-    memset(map, STATE_INVALID, NUM_CHAR);
+void Alignment::buildStateMap(char *map) const {
     ASSERT(STATE_UNKNOWN < 126);
+    memset(map, STATE_INVALID, NUM_CHAR);
     map[(unsigned char)'?'] = STATE_UNKNOWN;
     map[(unsigned char)'-'] = STATE_UNKNOWN;
     map[(unsigned char)'~'] = STATE_UNKNOWN;
     map[(unsigned char)'.'] = STATE_UNKNOWN;
     map[(unsigned char)'!'] = STATE_UNKNOWN; // frame shift
-    int len;
     switch (seq_type) {
     case SEQ_BINARY:
         map[(unsigned char)'0'] = 0;
         map[(unsigned char)'1'] = 1;
         return;
-    case SEQ_DNA: // DNA
-	case SEQ_CODON:
+    case SEQ_DNA:
+    case SEQ_CODON:
         map[(unsigned char)'A'] = 0;
         map[(unsigned char)'C'] = 1;
         map[(unsigned char)'G'] = 2;
@@ -1833,12 +1702,11 @@ void Alignment::buildStateMap(char *map, SeqType seq_type) {
         map[(unsigned char)'D'] = 1+4+8+3; // A or G or T
         map[(unsigned char)'V'] = 1+2+4+3; // A or G or C
         return;
-    case SEQ_PROTEIN: // Protein
-        for (int i = 0; i < 20; i++)
+    case SEQ_PROTEIN:
+        for (int i = 0; i < 20; ++i) {
             map[(int)symbols_protein[i]] = i;
+        }
         map[(int)symbols_protein[20]] = STATE_UNKNOWN;
-//		map[(unsigned char)'B'] = 4+8+19; // N or D
-//		map[(unsigned char)'Z'] = 32+64+19; // Q or E
         map[(unsigned char)'B'] = 20; // N or D
         map[(unsigned char)'Z'] = 21; // Q or E
         map[(unsigned char)'J'] = 22; // I or L
@@ -1847,13 +1715,14 @@ void Alignment::buildStateMap(char *map, SeqType seq_type) {
         map[(unsigned char)'O'] = STATE_UNKNOWN; // 22nd amino acid
         return;
     case SEQ_MULTISTATE:
-        for (int i = 0; i <= STATE_UNKNOWN; i++)
+        for (int i = 0; i < STATE_UNKNOWN; ++i) {
             map[i] = i;
+        }
         return;
-    case SEQ_MORPH: // Protein
-    	len = strlen(symbols_morph);
-        for (int i = 0; i < len; i++)
+    case SEQ_MORPH:
+        for (int i = 0; i < STATE_UNKNOWN; ++i) {
             map[(int)symbols_morph[i]] = i;
+        }
         return;
     default:
         return;
@@ -2088,78 +1957,64 @@ void Alignment::convertStateStr(string &str, SeqType seq_type) {
 }
 */
 
-boost::bimap<int, char*> getGeneticCodeMap() {
-    if (!genetic_code_map.empty()) return genetic_code_map;
-
-    genetic_code_map.insert({1, genetic_code1});
-    genetic_code_map.insert({2, genetic_code2});
-    genetic_code_map.insert({3, genetic_code3});
-    genetic_code_map.insert({4, genetic_code4});
-    genetic_code_map.insert({5, genetic_code5});
-    genetic_code_map.insert({6, genetic_code6});
-    genetic_code_map.insert({9, genetic_code9});
-    genetic_code_map.insert({10, genetic_code10});
-    genetic_code_map.insert({11, genetic_code11});
-    genetic_code_map.insert({12, genetic_code12});
-    genetic_code_map.insert({13, genetic_code13});
-    genetic_code_map.insert({14, genetic_code14});
-    genetic_code_map.insert({16, genetic_code16});
-    genetic_code_map.insert({21, genetic_code21});
-    genetic_code_map.insert({22, genetic_code22});
-    genetic_code_map.insert({23, genetic_code23});
-    genetic_code_map.insert({24, genetic_code24});
-    genetic_code_map.insert({25, genetic_code25});
-
+static boost::bimap<int, char*> getGeneticCodeMap() {
+    if (genetic_code_map.empty()) {
+        genetic_code_map.insert({1, genetic_code1});
+        genetic_code_map.insert({2, genetic_code2});
+        genetic_code_map.insert({3, genetic_code3});
+        genetic_code_map.insert({4, genetic_code4});
+        genetic_code_map.insert({5, genetic_code5});
+        genetic_code_map.insert({6, genetic_code6});
+        genetic_code_map.insert({9, genetic_code9});
+        genetic_code_map.insert({10, genetic_code10});
+        genetic_code_map.insert({11, genetic_code11});
+        genetic_code_map.insert({12, genetic_code12});
+        genetic_code_map.insert({13, genetic_code13});
+        genetic_code_map.insert({14, genetic_code14});
+        genetic_code_map.insert({16, genetic_code16});
+        genetic_code_map.insert({21, genetic_code21});
+        genetic_code_map.insert({22, genetic_code22});
+        genetic_code_map.insert({23, genetic_code23});
+        genetic_code_map.insert({24, genetic_code24});
+        genetic_code_map.insert({25, genetic_code25});
+    }
     return genetic_code_map;
 }
 
-void Alignment::initCodon(char *gene_code_id) {
+void Alignment::initCodon(const char *gene_code_id) {
     // build index from 64 codons to non-stop codons
-	int transl_table = 1;
-	if (strlen(gene_code_id) > 0) {
-		try {
-			transl_table = convert_int(gene_code_id);
-		} catch (string &str) {
-			outError("Wrong genetic code ", gene_code_id);
-		}
-		auto code_map = getGeneticCodeMap();
-		auto found = code_map.left.find(transl_table);
-		if (found == code_map.left.end()) {
-			outError("Wrong genetic code ", gene_code_id);
-			return;
-		}
-		genetic_code = found->second;
-	} else {
-		genetic_code = genetic_code1;
-	}
-	ASSERT(strlen(genetic_code) == 64);
-
-	int codon;
-	num_states = 0;
-	for (codon = 0; codon < strlen(genetic_code); codon++)
-        if (genetic_code[codon] != '*') {
-            num_states++; // only count non-stop codons
+    int transl_table = 1;
+    if (strlen(gene_code_id) > 0) {
+        try {
+            transl_table = convert_int(gene_code_id);
+        } catch (string &str) {
+            outError("Wrong genetic code ", gene_code_id);
         }
-	codon_table = new char[num_states];
-	non_stop_codon = new char[strlen(genetic_code)];
-	int state = 0;
-	for (int codon = 0; codon < strlen(genetic_code); codon++) {
-		if (genetic_code[codon] != '*') {
-			non_stop_codon[codon] = state++;
-			codon_table[(int)non_stop_codon[codon]] = codon;
-		} else {
-			non_stop_codon[codon] = STATE_INVALID;
-		}
-	}
-//	num_states = strlen(genetic_code);
-//	codon_table = new char[num_states];
-//	non_stop_codon = new char[strlen(genetic_code)];
-//	int state = 0;
-//	for (int codon = 0; codon < strlen(genetic_code); codon++) {
-//		non_stop_codon[codon] = state++;
-//		codon_table[(int)non_stop_codon[codon]] = codon;
-//	}
-//	cout << "num_states = " << num_states << endl;
+    }
+    auto code_map = getGeneticCodeMap();
+    auto found = code_map.left.find(transl_table);
+    if (found == code_map.left.end()) {
+        outError("Wrong genetic code ", gene_code_id);
+    }
+    genetic_code = found->second;
+    ASSERT(strlen(genetic_code) == 64);
+    num_states = 0;
+    for (int codon = 0; codon < strlen(genetic_code); ++codon) {
+        if (genetic_code[codon] != '*') {
+            num_states++; // count only non-stop codons
+        }
+    }
+    codon_table = new char[num_states];
+    non_stop_codon = new char[strlen(genetic_code)];
+    int state = 0;
+    for (int codon = 0; codon < strlen(genetic_code); ++codon) {
+        if (genetic_code[codon] != '*') {
+            non_stop_codon[codon] = state++;
+            codon_table[(int)non_stop_codon[codon]] = codon;
+        } else {
+            non_stop_codon[codon] = STATE_INVALID;
+        }
+    }
 }
 
 int Alignment::getGeneticCodeId() {
@@ -2171,20 +2026,25 @@ int Alignment::getGeneticCodeId() {
     return found->second;
 }
 
-int getMorphStates(StrVector &sequences) {
-	char maxstate = 0;
-	for (StrVector::iterator it = sequences.begin(); it != sequences.end(); it++)
-		for (string::iterator pos = it->begin(); pos != it->end(); pos++)
-            if ((*pos) > maxstate && isalnum(*pos)) {
+static int getMorphStates(const StrVector &sequences) {
+    int nstate = 0;
+    char maxstate = 0;
+    for (StrVector::const_iterator it = sequences.begin(); it != sequences.end(); ++it) {
+        for (string::const_iterator pos = it->begin(); pos != it->end(); ++pos) {
+            if (*pos > maxstate && isalnum(*pos)) {
                 maxstate = *pos;
             }
+        }
+    }
     if (maxstate >= '0' && maxstate <= '9') {
-        return (maxstate - '0' + 1);
+        nstate = (int)(maxstate - '0' + 1);
+    } else if (maxstate >= 'A' && maxstate <= 'V') {
+        nstate = (int)(maxstate - 'A' + 11);
     }
-    if (maxstate >= 'A' && maxstate <= 'V') {
-        return (maxstate - 'A' + 11);
+    if (nstate < 2 || nstate > 32) {
+        throw "Invalid number of MORPH states";
     }
-	return 0;
+    return nstate;
 }
 
 SeqType Alignment::getSeqType(const char *sequence_type) {
@@ -2231,30 +2091,23 @@ string Alignment::getSeqTypeStr(SeqType sequence_type) {
 }
 
 int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq, int nsite) {
-    int seq_id;
-    ostringstream err_str;
-    codon_table = nullptr;
-    genetic_code = nullptr;
-    non_stop_codon = nullptr;
-
     if (nseq != seq_names.size()) {
         throw "Different number of sequences than specified";
     }
+    ostringstream err_str;
+    /* now check that all sequence names are correct */
     unordered_set<string> namesSeen;
     double seqCheckStart = getRealTime();
-    /* now check that all sequence names are correct */
-    for (seq_id = 0; seq_id < nseq; seq_id ++) {
-        ostringstream err_str;
-        if (seq_names[seq_id] == "") {
-            err_str << "Sequence number " << seq_id+1 << " has no names\n";
+    for (size_t seq = 0; seq < nseq; ++seq) {
+        if (seq_names[seq] == "") {
+            err_str << "Sequence number " << seq+1 << " has no name\n";
         }
         // check that all the names are different
-        if (!namesSeen.insert(seq_names[seq_id]).second) {
-            err_str << "The sequence name " << seq_names[seq_id] << " is duplicated\n";
+        if (!namesSeen.insert(seq_names[seq]).second) {
+            err_str << "The sequence name " << seq_names[seq] << " is duplicated\n";
         }
     }
-    if (err_str.str() != "")
-    {
+    if (err_str.str() != "") {
         throw err_str.str();
     }
     if (verbose_mode >= VB_MED) {
@@ -2262,26 +2115,18 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
         cout << "Duplicate sequence name check took " << (getRealTime()-seqCheckStart) << " seconds." << endl;
     }
     /* now check that all sequences have the same length */
-    for (seq_id = 0; seq_id < nseq; seq_id ++) {
-        if (sequences[seq_id].length() != nsite) {
-            err_str << "Sequence " << seq_names[seq_id] << " contains ";
-            if (sequences[seq_id].length() < nsite) {
-                err_str << "not enough";
-            } else {
-                err_str << "too many";
-            }
-
-            err_str << " characters (" << sequences[seq_id].length() << ")\n";
+    for (size_t seq = 0; seq < nseq; ++seq) {
+        if (sequences[seq].length() != nsite) {
+            err_str << "Sequence " << seq_names[seq] << " contains "
+                    << ((sequences[seq].length() < nsite) ? "not enough" : "too many")
+                    << " characters (" << sequences[seq].length() << ")\n";
         }
     }
-
     if (err_str.str() != "") {
         throw err_str.str();
     }
-
     /* now check data type */
     seq_type = detectSequenceType(sequences);
-
     switch (seq_type) {
     case SEQ_BINARY:
         num_states = 2;
@@ -2297,9 +2142,6 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
         break;
     case SEQ_MORPH:
         num_states = getMorphStates(sequences);
-        if (num_states < 2 || num_states > 32) {
-            throw "Invalid number of states.";
-        }
         cout << "Alignment most likely contains " << num_states << "-state morphological data" << endl;
         break;
     case SEQ_POMO:
@@ -2307,7 +2149,7 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
         break;
     default:
         if (!sequence_type) {
-            throw "Unknown sequence type.";
+            throw "Unknown sequence type";
         }
     }
     bool nt2aa = false;
@@ -2322,110 +2164,75 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
         } else if (strcmp(sequence_type, "AA") == 0 || strcmp(sequence_type, "PROT") == 0) {
             num_states = 20;
             user_seq_type = SEQ_PROTEIN;
-        } else if (strncmp(sequence_type, "NT2AA", 5) == 0) {
-            if (seq_type != SEQ_DNA) {
-                outWarning("Sequence type detected as non DNA!");
-            }
-            initCodon(&sequence_type[5]);
-            seq_type = user_seq_type = SEQ_PROTEIN;
-            num_states = 20;
-            nt2aa = true;
-            cout << "Translating to amino-acid sequences with genetic code " << &sequence_type[5] << " ..." << endl;
         } else if (strcmp(sequence_type, "NUM") == 0 || strcmp(sequence_type, "MORPH") == 0) {
             num_states = getMorphStates(sequences);
-            if (num_states < 2 || num_states > 32) {
-                throw "Invalid number of states";
-            }
             user_seq_type = SEQ_MORPH;
         } else if (strcmp(sequence_type, "TINA") == 0 || strcmp(sequence_type, "MULTI") == 0) {
             cout << "Multi-state data with " << num_states << " alphabets" << endl;
             user_seq_type = SEQ_MULTISTATE;
-        } else if (strncmp(sequence_type, "CODON", 5) == 0) {
+        } else if (strncmp(sequence_type, "CODON", 5) == 0 || strncmp(sequence_type, "NT2AA", 5) == 0) {
             if (seq_type != SEQ_DNA) {
-                outWarning("You want to use codon models but the sequences were not detected as DNA");
+                outWarning("You want to use codon models, but the sequences were not detected as DNA/RNA");
             }
             seq_type = user_seq_type = SEQ_CODON;
-        	initCodon(&sequence_type[5]);
-            cout << "Converting to codon sequences with genetic code " << &sequence_type[5] << " ..." << endl;
+            initCodon(&sequence_type[5]);
+            if (strncmp(sequence_type, "NT2AA", 5) == 0) {
+                nt2aa = true;
+                cout << "Translating to amino-acid sequences with genetic code ";
+            } else {
+                cout << "Converting to codon sequences with genetic code ";
+            }
+            cout << &sequence_type[5] << " ..." << endl;
         } else {
-            throw "Invalid sequence type.";
+            throw "Invalid sequence type";
         }
         if (user_seq_type != seq_type && seq_type != SEQ_UNKNOWN) {
             outWarning("Your specified sequence type is different from the detected one");
         }
         seq_type = user_seq_type;
     }
-
     // added by TD
     if (Params::getInstance().use_nn_model && seq_type != SEQ_DNA) {
         throw "Can't combine neural network model selection with non DNA/RNA alignments!";
     }
-
-    //initStateSpace(seq_type);
-    
-    // now convert to patterns
-    int site, seq, num_gaps_only = 0;
-
-    char char_to_state[NUM_CHAR];
-    char AA_to_state[NUM_CHAR];
     computeUnknownState();
+    char char_to_state[NUM_CHAR];
+    buildStateMap(char_to_state);
+    char *AA_to_state = nullptr;
     if (nt2aa) {
-        buildStateMap(char_to_state, SEQ_DNA);
-        buildStateMap(AA_to_state, SEQ_PROTEIN);
-    } else
-        buildStateMap(char_to_state, seq_type);
-
-    Pattern pat;
-    pat.resize(nseq);
-    int step = ((seq_type == SEQ_CODON || nt2aa) ? 3 : 1);
-    if (nsite % step != 0) {
-        outError("Number of sites is not multiple of 3");
+        seq_type = SEQ_PROTEIN;
+        num_states = 20;
+        computeUnknownState();
+        AA_to_state = new char[NUM_CHAR];
+        buildStateMap(AA_to_state);
     }
-    site_pattern.resize(nsite/step, -1);
-    clear();
-    pattern_index.clear();
+    int step = (genetic_code) ? 3 : 1;
+    if (nsite % step != 0) {
+        throw "Number of sites is not multiple of 3";
+    }
+    /* fill patterns */
+    ASSERT(empty());
     int num_error = 0;
-    
+    int num_gaps_only = 0;
     progress_display progress(nsite, "Constructing alignment", "examined", "site");
-    for (site = 0; site < nsite; site+=step) {
-        for (seq = 0; seq < nseq; seq++) {
-            //char state = convertState(sequences[seq][site], seq_type);
-            char state = char_to_state[(int)(sequences[seq][site])];
-            if (seq_type == SEQ_CODON || nt2aa) {
-            	// special treatment for codon
-            	char state2 = char_to_state[(int)(sequences[seq][site+1])];
-            	char state3 = char_to_state[(int)(sequences[seq][site+2])];
-            	if (state < 4 && state2 < 4 && state3 < 4) {
-//            		state = non_stop_codon[state*16 + state2*4 + state3];
-            		state = state*16 + state2*4 + state3;
-            		if (genetic_code[(int)state] == '*') {
-                        cout << "Info: Sequence " << seq_names[seq] << " has stop codon " <<
-                        		sequences[seq][site] << sequences[seq][site+1] << sequences[seq][site+2] <<
-                        		" at site " << site+1 << " being treated as missing data" << endl;
-                        //num_error++;
-                        state = STATE_UNKNOWN;
-            		} else if (nt2aa) {
-                        state = AA_to_state[(int)genetic_code[(int)state]];
-                    } else {
-                        state = non_stop_codon[(int)state];
-                    }
-            	} else if (state == STATE_INVALID || state2 == STATE_INVALID || state3 == STATE_INVALID) {
-            		state = STATE_INVALID;
-            	} else {
-            		if (state != STATE_UNKNOWN || state2 != STATE_UNKNOWN || state3 != STATE_UNKNOWN) {
-            			ostringstream warn_str;
-                        warn_str << "Sequence " << seq_names[seq] << " has ambiguous character " <<
-                        		sequences[seq][site] << sequences[seq][site+1] << sequences[seq][site+2] <<
-                        		" at site " << site+1;
-                        outWarning(warn_str.str());
-            		}
-            		state = STATE_UNKNOWN;
-            	}
+    for (size_t site = 0; site < nsite; site += step) {
+        Pattern pat;
+        for (size_t seq = 0; seq < nseq; ++seq) {
+            StateType state = char_to_state[(int)(sequences[seq][site])];
+            if (genetic_code) {
+                // special treatment for codon
+                StateType state2 = char_to_state[(int)(sequences[seq][site+1])];
+                StateType state3 = char_to_state[(int)(sequences[seq][site+2])];
+                state = getCodonStateTypeFromSites(state, state2, state3,
+                                                   AA_to_state,
+                                                   seq_names[seq], site,
+                                                   num_error);
             }
             if (state == STATE_INVALID) {
                 if (num_error < 100) {
-                    err_str << "Sequence " << seq_names[seq] << " has invalid character " << sequences[seq][site];
-                    if (seq_type == SEQ_CODON) {
+                    err_str << "Sequence " << seq_names[seq] << " has invalid character "
+                            << sequences[seq][site];
+                    if (step == 3) {
                         err_str << sequences[seq][site+1] << sequences[seq][site+2];
                     }
                     err_str << " at site " << site+1 << endl;
@@ -2434,18 +2241,18 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
                 }
                 num_error++;
             }
-            pat[seq] = state;
+            pat.push_back(state);
         }
-        if (!num_error)
-        {
+        if (!num_error) {
             bool gaps_only;
-            addPatternLazy(pat, site/step, 1, gaps_only);
-            num_gaps_only += gaps_only ? 1 : 0;
+            addPattern(pat, &gaps_only);
+            num_gaps_only += (gaps_only) ? 1 : 0;
         }
         progress += step;
     }
     progress.done();
-    updatePatterns(0);
+    delete [] AA_to_state;
+    updateConstPatterns();
     if (num_gaps_only) {
         cout << "WARNING: " << num_gaps_only << " sites contain only gaps or ambiguous characters." << endl;
     }
@@ -3053,7 +2860,9 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
     int value;                  // Actual int value.
     int line_num = 0;           // Line number counter.
     int field_num;              // Field number counter.
-    int site_count = 0;         // Site / base counter.
+    int site_count = 0;         // Added site counter.
+    int su_site_count = 0;      // Added site-with-unknown counter.
+    int fails = 0;              // Not-added site counter.
     // Delimiters
 //    char const field_delim = '\t';
     char const value_delim = ',';
@@ -3063,8 +2872,6 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
     // Sampled vector of nucleotide base counts (N individuals are
     // sampled out of =values=).
     IntVector sampled_values;
-    // Iterator to loop over bases.
-    IntVector::iterator i;
 
     // Variables to convert sampled_values to a state in the pattern.
     int sum;
@@ -3088,7 +2895,6 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
     string ftype, npop_str, nsites_str;
 
     bool everything_ok = true;
-    int fails = 0;
 
     // Access model_name in global parameters; needed to get N and
     // sampling method.
@@ -3112,15 +2918,13 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
         }
         try {
             N = convert_int(params.model_name.substr(n_pos_start+2,length).c_str());
-        }
-        catch (string str) {
+        } catch (string str) {
             cout << "The model string is faulty." << endl;
             cout << "The virtual population size N is not clear when reading in data." << endl;
             cout << "Use, e.g., \"+N7\"." << endl;
             cout << "For each run, N can only be set once." << endl;
             outError(str);
         }
-
         if (((N != 10) && (N != 2) && (N % 2 == 0)) || (N < 2) || (N > 19)) {
             outError("Custom virtual population size of PoMo not 2, 10 or any other odd number between 3 and 19.");
         }
@@ -3145,11 +2949,9 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
       pomo_sampling_method = SAMPLING_SAMPLED;
       count_sampling_methods += 1;
     }
-
     if (count_sampling_methods > 1) {
         outError("Multiple sampling methods specified.");
     }
-
     // Print error if sequence type is given (not supported anymore).
     if (sequence_type) {
         cout << "Counts files are auto detected." << endl;
@@ -3178,25 +2980,18 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
     num_states = nnuc + nnuc*(nnuc-1)/2*(N-1);
     seq_type = SEQ_POMO;
 
-    // Set UNKNOWN_STATE.  This state is set if no information is in
-    // the alignment.  If we use partial likelihood we do not know the
-    // number of different patterns in the alignment yet and hence,
-    // cannot set the variable STATE_UNKNOWN yet (see
-    // `state_unknown_buffer`).
+    // Set STATE_UNKNOWN. This state is set if no information is in
+    // the alignment. If we use partial likelihood, we do not know the
+    // number of different patterns in the alignment yet, and hence
+    // cannot set the variable STATE_UNKNOWN yet (see su_ptn_id).
     computeUnknownState();
 
-    // Use a buffer for STATE_UNKNOWN.  I.e., if an unknown state is
-    // encountered, the pattern is added to this buffer.  Only after
-    // all sites have been read in, the patterns from this temporal
-    // buffer are added to the normal alignment because then, the
-    // value of STATE_UNKNOWN is known.
-    vector<Pattern> su_buffer;
-    // The site numbers of the patterns that include unknown states.
-    IntVector su_site_counts;
-    int su_number = 0;
+    // The indices of the patterns that include unknown states.
+    // After all sites have been read in, the value of STATE_UNKNOWN
+    // is calculated and these patterns get their STATE_UNKNOWN rewritten.
+    IntVector su_ptn_id;
 
-    // BQM: not neccessary, su_site_count will be equal to su_site_counts.size()
-    //    int su_site_count = 0;
+    // Whether the current site includes unknown states.
     bool includes_state_unknown = false;
 
     // Variables to calculate mean number of samples per population.
@@ -3234,17 +3029,14 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
         err_str << "Counts-File identification line could not be read.";
         throw err_str.str();
     }
+    if (!nsites) {
+        err_str << "Number of sites is 0.";
+        throw err_str.str();
+    }
     cout << endl;
     cout << "----------------------------------------------------------------------" << endl;
     cout << "Number of populations:     " << npop << endl;
     cout << "Number of sites:           " << nsites << endl;
-
-    if (nsites > 0) {
-        site_pattern.resize(nsites);
-    } else {
-        err_str << "Number of sites is 0.";
-        throw err_str.str();
-    }
 
     // Skip comments.
     do {
@@ -3255,7 +3047,6 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
 
     // Headerline.
     istringstream ss2(line);
-
     for (field_num = 0; (ss2 >> field); field_num++) {
         if (field_num == 0) {
             if ((field.compare("Chrom") != 0) && (field.compare("CHROM") != 0)) {
@@ -3281,9 +3072,10 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
 
     // Data.
     // Loop over sites.
+    ASSERT(empty());
     for ( ; getline(in, line); ) {
         line_num++;
-    	field_num = 0;
+        field_num = 0;
         pattern.clear();
         everything_ok = true;
         includes_state_unknown = false;
@@ -3302,29 +3094,28 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
             istringstream valuestream(field);
             // Loop over bases within one population.
             for (; getline(valuestream, val_str, value_delim);) {
-            	try {
-            		value = convert_int(val_str.c_str());
-            	} catch(string &str) {
-            		err_str << "Could not read value " << val_str << " on line " << line_num << ".";
-            		throw err_str.str();
-            	}
-            	values.push_back(value);
+                try {
+                    value = convert_int(val_str.c_str());
+                } catch(string &str) {
+                    err_str << "Could not read value " << val_str << " on line " << line_num << ".";
+                    throw err_str.str();
+                }
+                values.push_back(value);
             }
             if (values.size() != nnuc) {
                 err_str << "Number of bases does not match on line " << line_num << ".";
                 throw err_str.str();
             }
-
             // Read in the data.
             sum = 0;
             count = 0;
             id1 = -1;
             id2 = -1;
             // Sum over elements and count non-zero elements.
-            for(i = values.begin(); i != values.end(); ++i) {
+            for (IntVector::iterator i = values.begin(); i != values.end(); ++i) {
                 // `i` is an iterator object that points to some
                 // element of `value`.
-            	if (*i != 0) {
+                if (*i != 0) {
                     // `i - values.begin()` ranges from 0 to 3 and
                     // determines the nucleotide or allele type.
                     if (id1 == -1) {
@@ -3332,9 +3123,9 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
                     } else {
                         id2 = i - values.begin();
                     }
-            		count++;
-                	sum += *i;
-            	}
+                    count++;
+                    sum += *i;
+                }
             }
             // Determine state (cf. above).
             if (count == 1) {
@@ -3362,7 +3153,7 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
             }
             else if (count == 0) {
                 state = STATE_UNKNOWN;
-                su_number++;
+                su_site_count++;
                 includes_state_unknown = true;
             }
             else if (count > 2) {
@@ -3371,8 +3162,8 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
                     std::cout << line_num << "." << std::endl;
                 }
                 everything_ok = false;
-            	// err_str << "More than 2 bases are present on line " << line_num << ".";
-            	// throw err_str.str();
+                // err_str << "More than 2 bases are present on line " << line_num << ".";
+                // throw err_str.str();
             }
             // Now we deal with the important polymorphic states with two alleles.
             else if (count == 2) {
@@ -3424,7 +3215,6 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
                 err_str << "Unexpected error on line number " << line_num << ".";
                 throw err_str.str();
             }
-
             // Now we have the state to build a pattern ;-).
             pattern.push_back(state);
         }
@@ -3435,28 +3225,18 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
         // Pattern has been built and is now added to the vector of
         // patterns.
         if (everything_ok == true) {
-            if (includes_state_unknown) {
-//                su_site_count++;
-                if (pomo_sampling_method == SAMPLING_WEIGHTED_BINOM ||
-                    pomo_sampling_method == SAMPLING_WEIGHTED_HYPER) {
-                    su_buffer.push_back(pattern);
-                    su_site_counts.push_back(site_count);
-                }
-                // Add pattern if we use random sampling because then,
-                // STATE_UNKNOWN = num_states is well defined already at
-                // this stage.
-                else
-                    addPattern(pattern, site_count);
-
-                // BQM: it is neccessary to always increase site_count
-                site_count++;
+            site_count++;
+            bool added = addPattern(pattern);
+            if (added && includes_state_unknown &&
+                (pomo_sampling_method == SAMPLING_WEIGHTED_BINOM ||
+                 pomo_sampling_method == SAMPLING_WEIGHTED_HYPER)) {
+                    int ptn = size() - 1;
+                    su_ptn_id.push_back(ptn);
+                    // If we use SAMPLING_SAMPLED, however,
+                    // STATE_UNKNOWN = num_states is well defined already
+                    // at this stage.
             }
-            else {
-                addPattern(pattern, site_count);
-                site_count++;
-            }
-        }
-        else {
+        } else {
             fails++;
             if (verbose_mode >= VB_MAX) {
                 cout << "WARNING: Pattern on line " <<
@@ -3472,27 +3252,25 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
 
     if (pomo_sampling_method == SAMPLING_WEIGHTED_BINOM ||
         pomo_sampling_method == SAMPLING_WEIGHTED_HYPER) {
+        StateType ORIG_STATE_UNKNOWN = STATE_UNKNOWN;
         // Now we can correctly set STATE_UNKNOWN.
         STATE_UNKNOWN = pomo_sampled_states.size() + num_states;
-
-        // Process sites that include an unknown state.
-        for (vector<Pattern>::iterator pat_it = su_buffer.begin();
-             pat_it != su_buffer.end(); pat_it++) {
-            for (Pattern::iterator sp_it = pat_it->begin(); sp_it != pat_it->end(); sp_it++) {
-                if (*sp_it == 0xffffffff) {
-                    *sp_it = STATE_UNKNOWN;
+        // Process patterns that include an unknown state.
+        for (IntVector::iterator it = su_ptn_id.begin(); it != su_ptn_id.end(); ++it) {
+            int ptn = *it;
+            for (Pattern::iterator i = at(ptn).begin(); i != at(ptn).end(); ++i) {
+                if (*i == ORIG_STATE_UNKNOWN) {
+                    *i = STATE_UNKNOWN;
                 }
             }
         }
-
-        for (unsigned int i = 0; i < su_buffer.size(); i++) {
-            addPattern(su_buffer[i], su_site_counts[i]);
-        }
     }
 
+    updateConstPatterns();
+
     cout << "---" << endl;
-    cout << "Normal sites:              " << site_count - su_site_counts.size() << endl;
-    cout << "Sites with unknown states: " << su_site_counts.size() << endl;
+    cout << "Normal sites:              " << site_count - su_site_count << endl;
+    cout << "Sites with unknown states: " << su_site_count << endl;
     cout << "Total sites read:          " << site_count << endl;
     cout << "Fails:                     " << fails << endl;
     if (pomo_sampling_method == SAMPLING_WEIGHTED_BINOM ||
@@ -3514,8 +3292,6 @@ int Alignment::readCountsFormat(char* filename, char* sequence_type) {
         cout << "may be numerically unstable." << endl << endl;
         cout << "----------------------------------------------------------------------" << endl;
     }
-
-    site_pattern.resize(site_count);
 
     in.clear();
     // set the failbit again
@@ -3613,7 +3389,7 @@ int Alignment::buildRetainingSites(const char *aln_site_list, IntVector &kept_si
     int j;
     if (exclude_sites & EXCLUDE_GAP) {
         for (j = 0; j < kept_sites.size(); j++)
-            if (kept_sites[j] && at(site_pattern[j]).computeAmbiguousChar(num_states) > 0) {
+            if (kept_sites[j] && at(site_pattern[j]).countAmbiguousChar(num_states) > 0) {
                 kept_sites[j] = 0;
             }
     }
@@ -3828,434 +3604,326 @@ void Alignment::printAlignment(InputType format, ostream &out, const char* file_
     }
 }
 
-void Alignment::extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa, IntVector *kept_partitions) {
-    IntVector::iterator it;
-    for (it = seq_id.begin(); it != seq_id.end(); it++) {
-        ASSERT(*it >= 0 && *it < aln->getNSeq());
-        seq_names.push_back(aln->getSeqName(*it));
+Alignment *Alignment::initAlignmentCopy() const {
+    Alignment *aln = new Alignment;
+    // CharSet members
+    aln->name = name;
+    aln->position_spec = position_spec;
+    aln->model_name = model_name;
+    aln->aln_file = aln_file;
+    aln->sequence_type = sequence_type;
+    aln->char_partition = char_partition;
+    aln->tree_len = tree_len;
+    // Alignment members
+    aln->seq_names = seq_names;
+    aln->seq_type = seq_type;
+    aln->num_states = num_states;
+    aln->STATE_UNKNOWN = STATE_UNKNOWN;
+    if (aln->seq_type == SEQ_CODON) {
+        aln->genetic_code = genetic_code;
+        aln->codon_table = new char[num_states];
+        memcpy(aln->codon_table, codon_table, num_states);
+        aln->non_stop_codon = new char[strlen(genetic_code)];
+        memcpy(aln->non_stop_codon, non_stop_codon, strlen(genetic_code));
+    } else if (aln->seq_type == SEQ_POMO) {
+        aln->virtual_pop_size = virtual_pop_size;
+        aln->pomo_sampling_method = pomo_sampling_method;
+        aln->pomo_sampled_states = pomo_sampled_states;
+        aln->pomo_sampled_states_index = pomo_sampled_states_index;
     }
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-	genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-    	codon_table = new char[num_states];
-    	memcpy(codon_table, aln->codon_table, num_states);
-    	non_stop_codon = new char[strlen(genetic_code)];
-    	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
+    return aln;
+}
+
+Alignment* Alignment::extractSubAlignment(const IntVector &seq_id,
+                                          int min_true_chars, int,
+                                          IntVector *kept_partitions) const {
+    Alignment* aln = initAlignmentCopy();
+    aln->seq_names.clear();
+    for (IntVector::const_iterator it = seq_id.begin(); it != seq_id.end(); ++it) {
+        ASSERT(*it >= 0 && *it < getNSeq());
+        aln->seq_names.push_back(getSeqName(*it));
     }
-    site_pattern.resize(aln->getNSite(), -1);
-    clear();
-    pattern_index.clear();
-    size_t removed_sites = 0;
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    
-    progress_display progress(aln->getNSite(), "Identifying sites to remove", "examined", "site");
-    size_t oldPatternCount = size(); //JB 27-Jul-2020 Parallelized
-    int    siteMod = 0; //site # modulo 100.
-    size_t seqCount = seq_id.size();
-    for (size_t site = 0; site < aln->getNSite(); ++site) {
-        iterator pit = aln->begin() + (aln->getPatternID(site));
+    size_t nsite = getNSite();
+    size_t total_chars = seq_id.size();
+    progress_display progress(nsite, "Identifying sites to remove", "examined", "site");
+    size_t siteMod = 0; // number of examined sites modulo 100
+    for (size_t site = 0; site < nsite; ++site) {
+        int ptn = getPatternID(site);
         Pattern pat;
-        for (it = seq_id.begin(); it != seq_id.end(); ++it) {
-            pat.push_back ( (*pit)[*it] );
+        for (IntVector::const_iterator it = seq_id.begin(); it != seq_id.end(); ++it) {
+            StateType state = at(ptn)[*it];
+            pat.push_back(state);
         }
-        size_t gap_chars = pat.computeGapChar(num_states, STATE_UNKNOWN);
-        size_t true_char = seqCount - gap_chars;
-        if (true_char < min_true_char) {
-            removed_sites++;
+        pat.group = at(ptn).group;
+        size_t gap_chars = pat.countGapChar(STATE_UNKNOWN);
+        size_t true_chars = total_chars - gap_chars;
+        if (true_chars >= min_true_chars) {
+            bool added = aln->addPattern(pat);
+            if (isSSF() && added) {
+                // a new pattern is added, copy its state frequency vector
+                double *state_freqs = nullptr;
+                if (ptn_state_freq[ptn]) {
+                    state_freqs = new double[num_states];
+                    memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                }
+                aln->ptn_state_freq.push_back(state_freqs);
+            }
         }
-        else {
-            bool gaps_only = false;
-            addPatternLazy(pat, site-removed_sites, 1, gaps_only); //JB 27-Jul-2020 Parallelized
-        }
-        if (siteMod == 100 ) {
+        // site is examined, add to progress
+        siteMod++;
+        if (siteMod == 100) {
             progress += 100;
-            siteMod  = 0;
+            siteMod = 0;
         }
-        ++siteMod;
     }
     progress.done();
-    updatePatterns(oldPatternCount); //JB 27-Jul-2020 Parallelized
-    site_pattern.resize(aln->getNSite() - removed_sites);
-    verbose_mode = save_mode;
-    countConstSite();
-//    buildSeqStates();
-    ASSERT(size() <= aln->size());
-    if (kept_partitions) {
+    aln->updateConstPatterns();
+    aln->countConstSites();
+    ASSERT(aln->size() <= size());
+    if (aln->empty()) {
+        delete aln;
+        aln = nullptr;
+    } else if (kept_partitions) {
         kept_partitions->push_back(0);
     }
+    return aln;
 }
 
-
-void Alignment::extractPatterns(Alignment *aln, IntVector &ptn_id) {
-    for (size_t i = 0; i < aln->getNSeq(); ++i) {
-        seq_names.push_back(aln->getSeqName(i));
-    }
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-        codon_table = new char[num_states];
-        memcpy(codon_table, aln->codon_table, num_states);
-        non_stop_codon = new char[strlen(genetic_code)];
-        memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
-    }
-    site_pattern.resize(aln->getNSite(), -1);
-    clear();
-    pattern_index.clear();
-    int site = 0;
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    for (size_t i = 0; i != ptn_id.size(); ++i) {
-        ASSERT(ptn_id[i] >= 0 && ptn_id[i] < aln->getNPattern());
-        Pattern pat = aln->at(ptn_id[i]);
-        addPattern(pat, site, aln->at(ptn_id[i]).frequency);
-        for (int j = 0; j < aln->at(ptn_id[i]).frequency; j++)
-            site_pattern[site++] = size()-1;
-    }
-    site_pattern.resize(site);
-    verbose_mode = save_mode;
-    countConstSite();
-//    buildSeqStates();
-    ASSERT(size() <= aln->size());
-}
-
-void Alignment::extractPatternFreqs(Alignment *aln, IntVector &ptn_freq) {
-    ASSERT(ptn_freq.size() <= aln->getNPattern());
-    for (size_t i = 0; i < aln->getNSeq(); ++i) {
-        seq_names.push_back(aln->getSeqName(i));
-    }
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-    	codon_table = new char[num_states];
-    	memcpy(codon_table, aln->codon_table, num_states);
-    	non_stop_codon = new char[strlen(genetic_code)];
-    	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
-    }
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(accumulate(ptn_freq.begin(), ptn_freq.end(), 0), -1);
-    clear();
-    pattern_index.clear();
-    int site = 0;
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    for (size_t i = 0; i != ptn_freq.size(); ++i)
-        if (ptn_freq[i]) {
-            ASSERT(ptn_freq[i] > 0);
-            Pattern pat = aln->at(i);
-            addPattern(pat, site, ptn_freq[i]);
-            for (int j = 0; j < ptn_freq[i]; j++)
-                site_pattern[site++] = size()-1;
-        }
-    site_pattern.resize(site);
-    verbose_mode = save_mode;
-    countConstSite();
-    ASSERT(size() <= aln->size());
-}
-
-void Alignment::extractSites(Alignment *aln, IntVector &site_id) {
-    for (size_t i = 0; i < aln->getNSeq(); ++i) {
-        seq_names.push_back(aln->getSeqName(i));
-    }
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-        codon_table = new char[num_states];
-        memcpy(codon_table, aln->codon_table, num_states);
-        non_stop_codon = new char[strlen(genetic_code)];
-        memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
-    }
-    site_pattern.resize(site_id.size(), -1);
-    clear();
-    pattern_index.clear();
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    for (size_t i = 0; i != site_id.size(); i++) {
-        Pattern pat = aln->getPattern(site_id[i]);
-        addPattern(pat, i);
-    }
-    verbose_mode = save_mode;
-    countConstSite();
-    // sanity check
-    for (iterator it = begin(); it != end(); it++) {
-        if (it->at(0) == -1) {
-            ASSERT(0);
+Alignment *Alignment::extractPatterns(const IntVector &ptn_id) const {
+    Alignment *aln = initAlignmentCopy();
+    for (IntVector::const_iterator it = ptn_id.begin(); it != ptn_id.end(); ++it) {
+        ASSERT(*it >= 0 && *it < getNPattern());
+        int ptn = *it;
+        Pattern pat = at(ptn);
+        bool added = aln->addPattern(pat);
+        if (isSSF() && added) {
+            // a new pattern is added, copy its state frequency vector
+            double *state_freqs = nullptr;
+            if (ptn_state_freq[ptn]) {
+                state_freqs = new double[num_states];
+                memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+            }
+            aln->ptn_state_freq.push_back(state_freqs);
         }
     }
-    //cout << getNSite() << " positions were extracted" << endl;
-    //cout << __func__ << " " << num_states << endl;
+    aln->countConstSites();
+    ASSERT(aln->size() <= size());
+    return aln;
 }
 
+Alignment *Alignment::extractPatternFreqs(const IntVector &ptn_freq) const {
+    Alignment *aln = initAlignmentCopy();
+    for (size_t i = 0; i != ptn_freq.size(); ++i) {
+        ASSERT(ptn_freq[i] > 0 && i < getNPattern());
+        int ptn = i;
+        int ptnf = ptn_freq[i];
+        if (ptnf != 0) {
+            Pattern pat = at(ptn);
+            pat.frequency = ptnf;
+            bool added = aln->addPattern(pat);
+            if (isSSF() && added) {
+                // a new pattern is added, copy its state frequency vector
+                double *state_freqs = nullptr;
+                if (ptn_state_freq[ptn]) {
+                    state_freqs = new double[num_states];
+                    memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                }
+                aln->ptn_state_freq.push_back(state_freqs);
+            }
+        }
+    }
+    aln->countConstSites();
+    ASSERT(aln->size() <= size());
+    return aln;
+}
 
-/**
-    get Codon StateType from input sites
-*/
-StateType Alignment::getCodonStateTypeFromSites(char state, char state2, char state3, string sequence_name, int site_index, ostringstream &err_str, int &num_error){
+Alignment *Alignment::extractSites(const IntVector &site_id) const {
+    Alignment *aln = initAlignmentCopy();
+    for (IntVector::const_iterator it = site_id.begin(); it != site_id.end(); ++it) {
+        ASSERT(*it >= 0 && *it < getNSite());
+        int site = *it;
+        int ptn = getPatternID(site);
+        Pattern pat = at(ptn);
+        pat.frequency = 1;
+        bool added = aln->addPattern(pat);
+        if (isSSF() && added) {
+            // a new pattern is added, copy its state frequency vector
+            double *state_freqs = nullptr;
+            if (ptn_state_freq[ptn]) {
+                state_freqs = new double[num_states];
+                memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+            }
+            aln->ptn_state_freq.push_back(state_freqs);
+        }
+    }
+    aln->countConstSites();
+    ASSERT(aln->size() <= size());
+    return aln;
+}
+
+Alignment *Alignment::extractSites(const string &spec) const {
+    IntVector site_id;
+    extractSiteID(spec, site_id, genetic_code, getNSite());
+    return extractSites(site_id);
+}
+
+StateType Alignment::getCodonStateTypeFromSites(
+    StateType state, StateType state2, StateType state3,
+    const char *AA_to_state, const string &seq_name, int site,
+    int &num_error, ostringstream *err_str) const
+{
+    ASSERT(genetic_code);
     if (state < 4 && state2 < 4 && state3 < 4) {
-//                    state = non_stop_codon[state*16 + state2*4 + state3];
-        state = state*16 + state2*4 + state3;
-        if (genetic_code[(int)state] == '*') {
-            err_str << "Sequence " << sequence_name << " has stop codon at site " << site_index+1 << endl;
-            num_error++;
+        int codon = state*16 + state2*4 + state3;
+        if (genetic_code[codon] == '*') {
+            ostringstream warn_str;
+            warn_str << "Sequence " << seq_name << " has stop codon "
+                     << "at site " << site+1 << " being treated as missing data";
+            outWarning(warn_str.str());
             state = STATE_UNKNOWN;
+        } else if (AA_to_state) {
+            state = AA_to_state[(int)genetic_code[codon]];
         } else {
-            state = non_stop_codon[(int)state];
+            state = non_stop_codon[codon];
         }
     } else if (state == STATE_INVALID || state2 == STATE_INVALID || state3 == STATE_INVALID) {
         state = STATE_INVALID;
     } else {
         if (state != STATE_UNKNOWN || state2 != STATE_UNKNOWN || state3 != STATE_UNKNOWN) {
             ostringstream warn_str;
-            warn_str << "Sequence " << sequence_name << " has ambiguous character at site " << site_index+1;
+            warn_str << "Sequence " << seq_name << " has ambiguous character "
+                     << "at site " << site+1;
             outWarning(warn_str.str());
         }
         state = STATE_UNKNOWN;
     }
-    if (state == STATE_INVALID) {
+    if (err_str && state == STATE_INVALID) {
         if (num_error < 100) {
-            err_str << "Sequence " << sequence_name << " has invalid character at site " << site_index+1 << endl;
+            *err_str << "Sequence " << seq_name << " has invalid character "
+                     << "at site " << site+1 << endl;
         } else if (num_error == 100) {
-            err_str << "...many more..." << endl;
+            *err_str << "...many more..." << endl;
         }
         num_error++;
     }
-    return (int)state;
+    return state;
 }
 
-void Alignment::convertToCodonOrAA(Alignment *aln, char *gene_code_id, bool nt2aa) {
-    if (aln->seq_type != SEQ_DNA) {
-        outError("Cannot convert non-DNA alignment into codon alignment");
+Alignment *Alignment::convertToCodonOrAA(const char *gene_code_id, bool nt2aa) const {
+    if (seq_type != SEQ_DNA) {
+        outError("Cannot convert non-DNA alignment into codon");
     }
-    if (aln->getNSite() % 3 != 0) {
-        outError("Sequence length is not divisible by 3 when converting to codon sequences");
+    if (getNSite() % 3 != 0) {
+        outError("Sequence length is not divisible by 3 when converting into codon");
     }
-    char AA_to_state[NUM_CHAR];
-    for (size_t i = 0; i < aln->getNSeq(); i++) {
-        seq_names.push_back(aln->getSeqName(i));
-    }
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-//    num_states = aln->num_states;
-    seq_type = SEQ_CODON;
-    initCodon(gene_code_id);
+    Alignment *aln = initAlignmentCopy();
+    aln->seq_type = SEQ_CODON;
+    aln->initCodon(gene_code_id);
+    aln->computeUnknownState();
+    char *AA_to_state = nullptr;
     if (nt2aa) {
-        seq_type = SEQ_PROTEIN;
-        num_states = 20;
+        aln->seq_type = SEQ_PROTEIN;
+        aln->num_states = 20;
+        aln->computeUnknownState();
+        AA_to_state = new char[NUM_CHAR];
+        aln->buildStateMap(AA_to_state);
     }
-
-    computeUnknownState();
-
-    if (nt2aa) {
-        buildStateMap(AA_to_state, SEQ_PROTEIN);
-    }
-
-    site_pattern.resize(aln->getNSite()/3, -1);
-    clear();
-    pattern_index.clear();
-    int step = ((seq_type == SEQ_CODON || nt2aa) ? 3 : 1);
-
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    size_t nsite = aln->getNSite();
-    size_t nseq = aln->getNSeq();
+    size_t nsite = getNSite();
+    size_t nseq = getNSeq();
     Pattern pat;
     pat.resize(nseq);
     int num_error = 0;
     ostringstream err_str;
-
-    for (size_t site = 0; site < nsite; site+=step) {
+    for (size_t site = 0; site < nsite; site += 3) {
         for (size_t seq = 0; seq < nseq; ++seq) {
-            //char state = convertState(sequences[seq][site], seq_type);
-            char state = aln->at(aln->getPatternID(site))[seq];
-            // special treatment for codon
-            char state2 = aln->at(aln->getPatternID(site+1))[seq];
-            char state3 = aln->at(aln->getPatternID(site+2))[seq];
-            if (state < 4 && state2 < 4 && state3 < 4) {
-//            		state = non_stop_codon[state*16 + state2*4 + state3];
-                state = state*16 + state2*4 + state3;
-                if (genetic_code[(int)state] == '*') {
-                    err_str << "Sequence " << seq_names[seq] << " has stop codon "
-                            << " at site " << site+1 << endl;
-                    num_error++;
-                    state = STATE_UNKNOWN;
-                } else if (nt2aa) {
-                    state = AA_to_state[(int)genetic_code[(int)state]];
-                } else {
-                    state = non_stop_codon[(int)state];
-                }
-            } else if (state == STATE_INVALID || state2 == STATE_INVALID || state3 == STATE_INVALID) {
-                state = STATE_INVALID;
-            } else {
-                if (state != STATE_UNKNOWN || state2 != STATE_UNKNOWN || state3 != STATE_UNKNOWN) {
-                    ostringstream warn_str;
-                    warn_str << "Sequence " << seq_names[seq] << " has ambiguous character " <<
-                        " at site " << site+1;
-                    outWarning(warn_str.str());
-                }
-                state = STATE_UNKNOWN;
-            }
-            if (state == STATE_INVALID) {
-                if (num_error < 100) {
-                    err_str << "Sequence " << seq_names[seq] << " has invalid character ";
-                    err_str << " at site " << site+1 << endl;
-                } else if (num_error == 100) {
-                    err_str << "...many more..." << endl;
-                }
-                num_error++;
-            }
+            StateType state = at(getPatternID(site))[seq];
+            StateType state2 = at(getPatternID(site+1))[seq];
+            StateType state3 = at(getPatternID(site+2))[seq];
+            state = aln->getCodonStateTypeFromSites(state, state2, state3,
+                                                    AA_to_state,
+                                                    seq_names[seq], site,
+                                                    num_error, &err_str);
             pat[seq] = state;
         }
         if (!num_error) {
-            addPattern(pat, site/step);
+            aln->addPattern(pat);
         }
     }
     if (num_error) {
         outError(err_str.str());
     }
-    verbose_mode = save_mode;
-    countConstSite();
-//    buildSeqStates();
-    // sanity check
-    for (iterator it = begin(); it != end(); it++) {
-        if (it->at(0) == -1) {
-            ASSERT(0);
-        }
-    }
-
+    delete [] AA_to_state;
+    aln->updateConstPatterns();
+    aln->countConstSites();
+    return aln;
 }
 
-Alignment *Alignment::convertCodonToAA() {
-    Alignment *res = new Alignment;
+Alignment *Alignment::convertCodonToAA() const {
     if (seq_type != SEQ_CODON) {
         outError("Cannot convert non-codon alignment into AA");
     }
+    Alignment *aln = initAlignmentCopy();
+    aln->seq_type = SEQ_PROTEIN;
+    aln->num_states = 20;
+    aln->computeUnknownState();
     char AA_to_state[NUM_CHAR];
-    for (size_t i = 0; i < getNSeq(); ++i) {
-        res->seq_names.push_back(getSeqName(i));
-    }
-    res->name = name;
-    res->model_name = model_name;
-    res->sequence_type = sequence_type;
-    res->position_spec = position_spec;
-    res->aln_file = aln_file;
-    res->seq_type = SEQ_PROTEIN;
-    res->num_states = 20;
-    
-    res->computeUnknownState();
-    
-    res->buildStateMap(AA_to_state, SEQ_PROTEIN);
-
-    res->site_pattern.resize(getNSite(), -1);
-    res->clear();
-    res->pattern_index.clear();
-    
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
+    aln->buildStateMap(AA_to_state);
     size_t nsite = getNSite();
     size_t nseq = getNSeq();
     Pattern pat;
     pat.resize(nseq);
-    
     for (size_t site = 0; site < nsite; ++site) {
         for (size_t seq = 0; seq < nseq; ++seq) {
             StateType state = at(getPatternID(site))[seq];
             if (state == STATE_UNKNOWN) {
-                state = res->STATE_UNKNOWN;
+                state = aln->STATE_UNKNOWN;
             } else {
                 state = AA_to_state[(int)genetic_code[(int)codon_table[state]]];
             }
             pat[seq] = state;
         }
-        res->addPattern(pat, site);
+        aln->addPattern(pat);
     }
-    verbose_mode = save_mode;
-    res->countConstSite();
-    return res;
+    aln->updateConstPatterns();
+    aln->countConstSites();
+    return aln;
 }
 
-Alignment *Alignment::convertCodonToDNA() {
-    Alignment *res = new Alignment;
+Alignment *Alignment::convertCodonToDNA() const {
     if (seq_type != SEQ_CODON) {
         outError("Cannot convert non-codon alignment into DNA");
     }
-    for (size_t i = 0; i < getNSeq(); ++i) {
-        res->seq_names.push_back(getSeqName(i));
-    }
-    res->name = name;
-    res->model_name = model_name;
-    res->sequence_type = sequence_type;
-    res->position_spec = position_spec;
-    res->aln_file = aln_file;
-    res->seq_type = SEQ_DNA;
-    res->num_states = 4;
-    
-    res->computeUnknownState();
-    
-    res->site_pattern.resize(getNSite()*3, -1);
-    res->clear();
-    res->pattern_index.clear();
-    
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
+    Alignment *aln = initAlignmentCopy();
+    aln->seq_type = SEQ_DNA;
+    aln->num_states = 4;
+    aln->computeUnknownState();
     size_t nsite = getNSite();
     size_t nseq = getNSeq();
     Pattern pat[3];
     pat[0].resize(nseq);
     pat[1].resize(nseq);
     pat[2].resize(nseq);
-
     for (size_t site = 0; site < nsite; ++site) {
         for (size_t seq = 0; seq < nseq; ++seq) {
             StateType state = at(getPatternID(site))[seq];
             if (state == STATE_UNKNOWN) {
                 for (int i = 0; i < 3; ++i) {
-                    pat[i][seq] = res->STATE_UNKNOWN;
+                    pat[i][seq] = aln->STATE_UNKNOWN;
                 }
             } else {
-                state = codon_table[state];
-                pat[0][seq] = state/16;
-                pat[1][seq] = (state%16)/4;
-                pat[2][seq] = state%4;
+                int codon = codon_table[state];
+                pat[0][seq] = codon / 16;
+                pat[1][seq] = (codon % 16) / 4;
+                pat[2][seq] = codon % 4;
             }
         }
         for (int i = 0; i < 3; ++i) {
-            res->addPattern(pat[i], site*3+i);
+            aln->addPattern(pat[i]);
         }
     }
-    verbose_mode = save_mode;
-    res->countConstSite();
-//    res->buildSeqStates();
-    return res;
+    aln->updateConstPatterns();
+    aln->countConstSites();
+    return aln;
 }
 
 static const char *convert_site_range(const char *str, int &lower, int &upper,
@@ -4367,12 +4035,6 @@ void Alignment::extractSiteID(const string &spec, IntVector &site_id,
     ASSERT(!site_id.empty());
 }
 
-void Alignment::extractSites(Alignment *aln, const char* spec, bool nt2aa) {
-    IntVector site_id;
-    extractSiteID(string(spec), site_id, aln->seq_type == SEQ_CODON || nt2aa, aln->getNSite());
-    extractSites(aln, site_id);
-}
-
 void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq, const char *spec) {
     if (aln->isSuperAlignment()) {
         outError("Internal error: ", __func__);
@@ -4382,7 +4044,6 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     sequence_type = aln->sequence_type;
     position_spec = aln->position_spec;
     aln_file = aln->aln_file;
-    size_t nsite = aln->getNSite();
     seq_names.insert(seq_names.begin(), aln->seq_names.begin(), aln->seq_names.end());
     num_states = aln->num_states;
     seq_type = aln->seq_type;
@@ -4394,9 +4055,9 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
     }
     STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(nsite, -1);
-    clear();
+    site_pattern.clear();
     pattern_index.clear();
+    clear();
 
     // 2016-07-05: copy variables for PoMo
     pomo_sampled_states = aln->pomo_sampled_states;
@@ -4404,35 +4065,30 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     pomo_sampling_method = aln->pomo_sampling_method;
     virtual_pop_size = aln->virtual_pop_size;
 
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
     if (pattern_freq) {
         pattern_freq->resize(0);
         pattern_freq->resize(aln->getNPattern(), 0);
     }
-
     if (aln->isSSF() && spec) {
         // resampling also the per-site state frequency vector
         outError("Unsupported bootstrap feature, pls contact the developers");
     }
-    
     if (Params::getInstance().jackknife_prop > 0.0 && spec) {
         outError((string)"Unsupported jackknife with sampling " + spec);
     }
-
-	IntVector site_vec;
+    IntVector site_vec;
     if (!spec) {
-		// standard bootstrap
-        int added_sites = 0;
+        // standard bootstrap
+        size_t nsite = aln->getNSite();
         IntVector sample;
         random_resampling(nsite, sample);
         for (size_t site = 0; site < nsite; ++site) {
             for (int rep = 0; rep < sample[site]; ++rep) {
-                int ptn_id = aln->getPatternID(site);
-                Pattern pat = aln->at(ptn_id);
-                int nptn = getNPattern();
-                addPattern(pat, added_sites);
-                if (aln->isSSF() && getNPattern() > nptn) {
+                int ptn = aln->getPatternID(site);
+                Pattern pat = aln->at(ptn);
+                pat.frequency = 1;
+                bool added = addPattern(pat);
+                if (aln->isSSF() && added) {
                     // a new pattern is added, copy state frequency vector
                     double *state_freq = nullptr;
                     if (aln->ptn_state_freq[ptn]) {
@@ -4442,13 +4098,9 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
                     ptn_state_freq.push_back(state_freq);
                 }
                 if (pattern_freq) {
-                    ((*pattern_freq)[ptn_id])++;
+                    ((*pattern_freq)[ptn])++;
                 }
-                added_sites++;
             }
-        }
-        if (added_sites < nsite) {
-            site_pattern.resize(added_sites);
         }
     } else if (strncmp(spec, "GENESITE,", 9) == 0) {
 		// resampling genes, then resampling sites within resampled genes
@@ -4470,7 +4122,8 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
 				site = random_int(site_vec[part]) + begin_site[part];
 				int ptn = aln->getPatternID(site);
 				Pattern pat = aln->at(ptn);
-				addPattern(pat, site);
+                                pat.frequency = 1;
+				addPattern(pat);
                 if (pattern_freq) {
                     ((*pattern_freq)[ptn])++;
                 }
@@ -4495,7 +4148,8 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
 			for (site = begin_site[part]; site < begin_site[part] + site_vec[part]; site++) {
 				int ptn = aln->getPatternID(site);
 				Pattern pat = aln->at(ptn);
-				addPattern(pat, site);
+                                pat.frequency = 1;
+				addPattern(pat);
                 if (pattern_freq) {
                     ((*pattern_freq)[ptn])++;
                 }
@@ -4507,22 +4161,19 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         if (site_vec.size() % 2 != 0) {
             outError("Bootstrap specification length is not divisible by 2");
         }
-    	nsite = 0;
     	int begin_site = 0, out_site = 0;
-    	for (size_t part = 0; part < site_vec.size(); part+=2)
-    		nsite += site_vec[part+1];
-    	site_pattern.resize(nsite, -1);
     	for (size_t part = 0; part < site_vec.size(); part+=2) {
             if (begin_site + site_vec[part] > aln->getNSite()) {
                 outError("Sum of lengths exceeded alignment length");
             }
     		for (size_t site = 0; site < site_vec[part+1]; ++site) {
-    			int site_id = random_int(site_vec[part]) + begin_site;
-    			int ptn_id = aln->getPatternID(site_id);
-    			Pattern pat = aln->at(ptn_id);
-    			addPattern(pat, site + out_site);
+    			int random_site = random_int(site_vec[part]) + begin_site;
+    			int ptn = aln->getPatternID(random_site);
+    			Pattern pat = aln->at(ptn);
+                        pat.frequency = 1;
+    			addPattern(pat);
                 if (pattern_freq) {
-                    ((*pattern_freq)[ptn_id])++;
+                    ((*pattern_freq)[ptn])++;
                 }
     		}
     		begin_site += site_vec[part];
@@ -4532,9 +4183,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     if (aln->isSSF()) {
         ASSERT(ptn_state_freq.size() == getNPattern());
     }
-    verbose_mode = save_mode;
-    countConstSite();
-//    buildSeqStates();
+    countConstSites();
 }
 
 void Alignment::createBootstrapAlignment(IntVector &pattern_freq, const char *spec) {
@@ -4700,57 +4349,78 @@ void Alignment::buildFromPatternFreq(Alignment & aln, IntVector new_pattern_freq
 }
 */
 
-void Alignment::createGapMaskedAlignment(Alignment *masked_aln, Alignment *aln) {
-    if (masked_aln->getNSeq() != aln->getNSeq()) {
+Alignment *Alignment::copyAlignment() const {
+    IntVector site_id;
+    for (size_t site = 0; site < getNSite(); ++site) {
+        site_id.push_back(site);
+    }
+    return extractSites(site_id);
+}
+
+Alignment *Alignment::createGapMaskedAlignment(const Alignment *masked_aln) const {
+    if (masked_aln->getNSeq() != getNSeq()) {
         outError("Different number of sequences in masked alignment");
     }
-    if (masked_aln->getNSite() != aln->getNSite()) {
+    if (masked_aln->getNSite() != getNSite()) {
         outError("Different number of sites in masked alignment");
     }
-    size_t nsite = aln->getNSite();
-    size_t nseq = aln->getNSeq();
-    seq_names.insert(seq_names.begin(), aln->seq_names.begin(), aln->seq_names.end());
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-    	codon_table = new char[num_states];
-    	memcpy(codon_table, aln->codon_table, num_states);
-    	non_stop_codon = new char[strlen(genetic_code)];
-    	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
-    }
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(nsite, -1);
-    clear();
-    pattern_index.clear();
-    IntVector name_map;
-    for (StrVector::iterator it = seq_names.begin(); it != seq_names.end(); it++) {
-        int seq_id = masked_aln->getSeqID(*it);
-        if (seq_id < 0) {
+    Alignment *aln = initAlignmentCopy();
+    size_t nsite = getNSite();
+    size_t nseq = getNSeq();
+    IntVector seq_map;
+    for (StrVector::const_iterator it = seq_names.begin(); it != seq_names.end(); ++it) {
+        int masked_seq = masked_aln->getSeqID(*it);
+        if (masked_seq < 0) {
             outError("Masked alignment does not contain taxon ", *it);
         }
-        name_map.push_back(seq_id);
+        seq_map.push_back(masked_seq);
     }
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
     for (size_t site = 0; site < nsite; ++site) {
-        int ptn_id = aln->getPatternID(site);
-        Pattern pat = aln->at(ptn_id);
+        Pattern pat = at(getPatternID(site));
         Pattern masked_pat = masked_aln->at(masked_aln->getPatternID(site));
         for (size_t seq = 0; seq < nseq; ++seq) {
-            if (masked_pat[name_map[seq]] == STATE_UNKNOWN) {
+            if (masked_pat[seq_map[seq]] == STATE_UNKNOWN) {
                 pat[seq] = STATE_UNKNOWN;
             }
         }
-        addPattern(pat, site);
+        pat.frequency = 1;
+        aln->addPattern(pat);
     }
-    verbose_mode = save_mode;
-    countConstSite();
+    aln->updateConstPatterns();
+    aln->countConstSites();
+    return aln;
+}
+
+void Alignment::concatenateAlignment(const Alignment *other) {
+    if (getNSeq() != other->getNSeq()) {
+        outError("Different number of sequences in two alignments");
+    }
+    if (num_states != other->num_states) {
+        outError("Different number of states in two alignments");
+    }
+    if (seq_type != other->seq_type) {
+        outError("Different data type in two alignments");
+    }
+    size_t other_nsite = other->getNSite();
+    size_t nseq = getNSeq();
+    IntVector seq_map;
+    for (StrVector::const_iterator it = seq_names.begin(); it != seq_names.end(); ++it) {
+        int other_seq = other->getSeqID(*it);
+        if (other_seq < 0) {
+            outError("The other alignment does not contain taxon ", *it);
+        }
+        seq_map.push_back(other_seq);
+    }
+    for (size_t site = 0; site < other_nsite; ++site) {
+        Pattern other_pat = other->at(other->getPatternID(site));
+        Pattern pat = other_pat;
+        for (size_t seq = 0; seq < nseq; ++seq) {
+            pat[seq] = other_pat[seq_map[seq]];
+        }
+        pat.frequency = 1;
+        addPattern(pat);
+    }
+    countConstSites();
 }
 
 void Alignment::shuffleAlignment() {
@@ -4760,85 +4430,13 @@ void Alignment::shuffleAlignment() {
     my_random_shuffle(site_pattern.begin(), site_pattern.end());
 }
 
-
-void Alignment::concatenateAlignment(Alignment *aln) {
-    if (getNSeq() != aln->getNSeq()) {
-        outError("Different number of sequences in two alignments");
-    }
-    if (num_states != aln->num_states) {
-        outError("Different number of states in two alignments");
-    }
-    if (seq_type != aln->seq_type) {
-        outError("Different data type in two alignments");
-    }
-    size_t nsite = aln->getNSite();
-    size_t cur_sites = getNSite();
-    site_pattern.resize(cur_sites + nsite , -1);
-    IntVector name_map;
-    for (StrVector::iterator it = seq_names.begin(); it != seq_names.end(); it++) {
-        int seq_id = aln->getSeqID(*it);
-        if (seq_id < 0) {
-            outError("The other alignment does not contain taxon ", *it);
-        }
-        name_map.push_back(seq_id);
-    }
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    for (size_t site = 0; site < nsite; site++) {
-        Pattern pat = aln->at(aln->getPatternID(site));
-        Pattern new_pat = pat;
-        for (size_t i = 0; i < name_map.size(); i++) {
-            new_pat[i] = pat[name_map[i]];
-        }
-        addPattern(new_pat, site + cur_sites);
-    }
-    verbose_mode = save_mode;
-    countConstSite();
-}
-
-void Alignment::copyAlignment(Alignment *aln) {
-    size_t nsite = aln->getNSite();
-    seq_names.insert(seq_names.begin(), aln->seq_names.begin(), aln->seq_names.end());
-    name = aln->name;
-    model_name = aln->model_name;
-    sequence_type = aln->sequence_type;
-    position_spec = aln->position_spec;
-    aln_file = aln->aln_file;
-    num_states = aln->num_states;
-    seq_type = aln->seq_type;
-    genetic_code = aln->genetic_code;
-    if (seq_type == SEQ_CODON) {
-    	codon_table = new char[num_states];
-    	memcpy(codon_table, aln->codon_table, num_states);
-    	non_stop_codon = new char[strlen(genetic_code)];
-    	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
-    }
-    STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(nsite, -1);
-    clear();
-    pattern_index.clear();
-    VerboseMode save_mode = verbose_mode;
-    verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
-    for (size_t site = 0; site < nsite; ++site) {
-        int site_id = site;
-        int ptn_id = aln->getPatternID(site_id);
-        Pattern pat = aln->at(ptn_id);
-        addPattern(pat, site);
-    }
-    verbose_mode = save_mode;
-    countConstSite();
-//    buildSeqStates();
-}
-
-void Alignment::countConstSite() {
+void Alignment::countConstSites() {
     int num_const_sites = 0;
-    num_informative_sites = 0;
-    num_variant_sites = 0;
     int num_invariant_sites = 0;
-    num_parsimony_sites = 0;
-    for (iterator it = begin(); it != end(); it++) {
-        if ((*it).isConst()) {
-            num_const_sites += (*it).frequency;
+    num_informative_sites = num_variant_sites = num_parsimony_sites = 0;
+    for (const_iterator it = begin(); it != end(); ++it) {
+        if (it->isConst()) {
+            num_const_sites += it->frequency;
         }
         if (it->isInformative()) {
             num_informative_sites += it->frequency;
@@ -4849,8 +4447,8 @@ void Alignment::countConstSite() {
             num_variant_sites += it->frequency;
         }
     }
-    frac_const_sites = ((double)num_const_sites) / getNSite();
-    frac_invariant_sites = ((double)num_invariant_sites) / getNSite();
+    frac_const_sites = double(num_const_sites) / getNSite();
+    frac_invariant_sites = double(num_invariant_sites) / getNSite();
 }
 
 /**
@@ -5282,7 +4880,7 @@ void Alignment::computeStateFreq (double *state_freq, size_t num_unknown_states)
     delete [] state_count;
 }
 
-int Alignment::convertPomoState(int state) {
+int Alignment::convertPomoState(int state) const {
   // This map from an observed state to a PoMo state influences parsimony
   // construction and the +I likelihood computation. It should not make too much
   // of a difference though.
@@ -5516,7 +5114,7 @@ void Alignment::computeStateFreqPerSequence (double *freq_per_sequence) {
 //
 //}
 
-void Alignment::getAppearance(StateType state, double *state_app) {
+void Alignment::getAppearance(StateType state, double *state_app) const {
     int i;
     if (state == STATE_UNKNOWN) {
         for (i = 0; i < num_states; i++) {
@@ -5560,7 +5158,7 @@ void Alignment::getAppearance(StateType state, double *state_app) {
 	}
 }
 
-void Alignment::getAppearance(StateType state, StateBitset &state_app) {
+void Alignment::getAppearance(StateType state, StateBitset &state_app) const {
 
 	int i;
     if (state == STATE_UNKNOWN) {
@@ -6271,11 +5869,11 @@ void Alignment::printSiteGaps(const char *filename) {
         int nsite = getNSite();
         out << nsite << endl << "Site_Gap  ";
         for (size_t site = 0; site < getNSite(); ++site) {
-            out << " " << at(getPatternID(site)).computeGapChar(num_states, STATE_UNKNOWN);
+            out << " " << at(getPatternID(site)).countGapChar(STATE_UNKNOWN);
         }
         out << endl << "Site_Ambi ";
         for (size_t site = 0; site < getNSite(); ++site) {
-            out << " " << at(getPatternID(site)).computeAmbiguousChar(num_states);
+            out << " " << at(getPatternID(site)).countAmbiguousChar(num_states);
         }
         out << endl;
         out.close();
@@ -6479,6 +6077,7 @@ double Alignment::multinomialProb (IntVector &pattern_freq)
 
 bool Alignment::readSiteStateFreq(const char* site_freq_file)
 {
+    ASSERT(!empty());
     ASSERT(ptn_state_freq.empty());
     cout << endl << "Reading site-specific state frequency file " << site_freq_file << " ..." << endl;
     bool aln_changed = false;
@@ -6509,9 +6108,6 @@ bool Alignment::readSiteStateFreq(const char* site_freq_file)
             iss >> site_spec;
             IntVector site_id; // sites specified in a single line
             extractSiteID(site_spec, site_id, genetic_code, nsite);
-            if (site_id.size() == 0) {
-                throw "No site ID specified";
-            }
             if (site_id.size() > 1) {
                 throw "Multiple site IDs in a single line: " + site_spec;
             }
@@ -6607,7 +6203,7 @@ bool Alignment::readSiteStateFreq(const char* site_freq_file)
     // if needed, subdivide patterns so that sites in each new pattern have same freqs
     if (aln_changed) {
         cout << "Regrouping alignment sites..." << endl;
-        regroupSitePattern(models.size(), site_model);
+        regroupSitePattern(site_model);
         // refill the pattern_first_site map
         pattern_first_site = IntVector(getNPattern(), -1);
         for (size_t site = 0; site < nsite; ++site) {

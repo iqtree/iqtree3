@@ -1501,7 +1501,10 @@ void runModelFinder(Params &params, IQTree &iqtree, ModelCheckpoint &model_info,
         if (params.use_nn_model) {
             cout << "We are using the neural network to select the model of sequence evolution because "
             "option --use-nn-model is set to " << params.use_nn_model << endl;
-            Alignment *alignment = (iqtree.aln->removeAndFillUpGappySites())->replaceAmbiguousChars();
+            Alignment *alignment;
+            Alignment *trimmed_aln = iqtree.aln->removeAndFillUpGappySites();
+            alignment = trimmed_aln->replaceAmbiguousChars();
+            delete trimmed_aln;
             NeuralNetwork nn(alignment);
             iqtree.aln->model_name = nn.doModelInference();
             best_subst_name = iqtree.aln->model_name;
@@ -2929,7 +2932,10 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
                 cout << "Using NN" << endl;
                 // todo: to work with multi-threading: pass along the random number streams to the rngs in the stochastic functions
                 // determine substitution model using neural network
-                Alignment *alignment = (in_tree->aln->removeAndFillUpGappySites())->replaceAmbiguousChars(); // todo: here
+                Alignment *alignment;
+                Alignment *trimmed_aln = in_tree->aln->removeAndFillUpGappySites();
+                alignment = trimmed_aln->replaceAmbiguousChars(); // todo: here
+                delete trimmed_aln;
                 NeuralNetwork nn(alignment);
                 string model_name = nn.doModelInference(); // todo: here
                 string rate_name = "";

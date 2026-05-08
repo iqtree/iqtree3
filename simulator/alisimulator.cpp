@@ -149,8 +149,7 @@ void AliSimulator::initializeIQTreeFromTreeFile()
             Pattern pat;
             pat.resize(current_tree->aln->getNSeq(), current_tree->aln->STATE_UNKNOWN);
             pat.frequency = expected_num_states_current_tree;
-            current_tree->aln->push_back(pat);
-            current_tree->aln->site_pattern.resize(expected_num_states_current_tree, 0);
+            current_tree->aln->addPattern(pat);
             
             // initialize the model for the current partition
             initializeModel(current_tree, current_tree->aln->model_name);

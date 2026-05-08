@@ -654,7 +654,7 @@ void retrieveAncestralSequenceFromInputFile(AliSimulator *super_alisimulator, ve
                 src_tree->aln->convertState(sequence_str[str_pos], SEQ_DNA),
                 src_tree->aln->convertState(sequence_str[str_pos+1], SEQ_DNA),
                 src_tree->aln->convertState(sequence_str[str_pos+2], SEQ_DNA),
-                sequence_name, str_pos, err_str, num_error);
+                nullptr, sequence_name, str_pos, num_error, &err_str);
         } else {
             sequence[site] = src_tree->aln->convertState(sequence_str[str_pos]);
             // handle invalid/unknown states
