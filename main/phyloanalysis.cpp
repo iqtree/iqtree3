@@ -1304,6 +1304,8 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         }
         if (params.print_ufboot_trees)
         cout << "  UFBoot trees:                  " << params.out_prefix << ".ufboot" << endl;
+        if (params.print_boot_site_weights)
+            cout << "  " << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
 
     }
 
@@ -3574,6 +3576,11 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     if (params.online_bootstrap && params.gbo_replicates > 0) {
         cout << "Generating " << params.gbo_replicates << " samples for ultrafast "
         << RESAMPLE_NAME << " (seed: " << params.ran_seed << ")..." << endl;
+        if (params.bootstrap_spec && strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0 &&
+                params.collapse_zero_branch_boot) {
+            outWarning("Near-zero branch collapsing (-czbb/--polytomy-boot) is not applied "
+                       "for Bayesian bootstrap with UFBoot.");
+        }
     }
 
     iqtree->initSettings(params);
@@ -4542,6 +4549,8 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     bootaln_name += ".bootaln";
     string bootlh_name = params.out_prefix;
     bootlh_name += ".bootlh";
+    string bootweights_name = params.out_prefix;
+    bootweights_name += ".bootweights";
     int bootSample = 0;
     if (tree->getCheckpoint()->get("bootSample", bootSample)) {
         cout << "CHECKPOINT: " << bootSample << " bootstrap analyses restored" << endl;
@@ -4565,6 +4574,17 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
             tree_out.close();
         } catch (ios::failure) {
             outError(ERR_WRITE_OUTPUT, bootaln_name);
+        }
+
+        // empty the bootweights file
+        if (params.print_boot_site_weights)
+        try {
+            ofstream wt_out;
+            wt_out.exceptions(ios::failbit | ios::badbit);
+            wt_out.open(bootweights_name.c_str());
+            wt_out.close();
+        } catch (ios::failure) {
+            outError(ERR_WRITE_OUTPUT, bootweights_name);
         }
     }
 
@@ -4637,6 +4657,22 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
                 bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
         }
 
+        if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+            try {
+                ofstream wt_out;
+                wt_out.exceptions(ios::failbit | ios::badbit);
+                wt_out.open(bootweights_name.c_str(), ios_base::out | ios_base::app);
+                const DoubleVector &wt = bootstrap_alignment->boot_site_weights;
+                for (size_t i = 0; i < wt.size(); ++i) {
+                    if (i > 0) wt_out << " ";
+                    wt_out << wt[i];
+                }
+                wt_out << "\n";
+            } catch (ios::failure) {
+                outError(ERR_WRITE_OUTPUT, bootweights_name);
+            }
+        }
+
         if (!tree->constraintTree.empty()) {
             boot_tree->constraintTree.readConstraint(tree->constraintTree);
         }
@@ -4646,6 +4682,13 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
         boot_tree->num_precision = tree->num_precision;
 
         runTreeReconstruction(params, boot_tree);
+
+        if (params.collapse_zero_branch_boot && !params.collapse_zero_branch) {
+            cout << "Collapsing near-zero internal branches in the bootstrap tree... ";
+            cout << boot_tree->collapseInternalBranches(nullptr, nullptr, params.min_branch_length*4);
+            cout << " collapsed" << endl;
+        }
+
         // read in the output tree file
         stringstream ss;
         boot_tree->printTree(ss);
@@ -4778,6 +4821,8 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     cout << "Non-parametric " << RESAMPLE_NAME << " results written to:" << endl;
     if (params.print_bootaln)
         cout << RESAMPLE_NAME_I << " alignments:     " << params.out_prefix << ".bootaln" << endl;
+    if (params.print_boot_site_weights)
+        cout << "  " << RESAMPLE_NAME_I << " site weights:   " << params.out_prefix << ".bootweights" << endl;
     cout << "  " << RESAMPLE_NAME_I << " trees:          " << params.out_prefix << ".boottrees" << endl;
     if (params.consensus_type == CT_CONSENSUS_TREE)
         cout << "  Consensus tree:           " << params.out_prefix << ".contree" << endl;
@@ -5234,13 +5279,27 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     if (tree->isTreeMix()) {
         ((IQTreeMix*) tree)->setMinBranchLen(params);
     } else if (params.min_branch_length <= 0.0) {
-        params.min_branch_length = 1e-6;
-        if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
-            params.min_branch_length = 0.1 / (tree->getAlnNSite());
-            tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+        const bool bayes_boot = (params.num_bootstrap_samples > 0 &&
+                                 params.bootstrap_spec &&
+                                 strncasecmp(params.bootstrap_spec, "BAYES", 5) == 0);
+        if (bayes_boot && params.collapse_zero_branch_boot) {
+            // Set blmin so that the collapse threshold (4*blmin) equals 0.1/ali_len,
+            // matching the default PhyML cutoff used in the Bayesian bootstrap paper.
+            params.min_branch_length = 0.025 / tree->getAlnNSite();
+            tree->num_precision = max((int)ceil(-log10(params.min_branch_length))+1, 6);
             cout.precision(12);
-            cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+            cout << "NOTE: minimal branch length is automatically set to " << params.min_branch_length
+                 << " for Bayesian bootstrap (collapse threshold = 0.1/" << tree->getAlnNSite() << ")" << endl;
             cout.precision(3);
+        } else {
+            params.min_branch_length = 1e-6;
+            if (!tree->isSuperTree() && tree->getAlnNSite() >= 100000) {
+                params.min_branch_length = 0.1 / (tree->getAlnNSite());
+                tree->num_precision = max((int)ceil(-log10(Params::getInstance().min_branch_length))+1, 6);
+                cout.precision(12);
+                cout << "NOTE: minimal branch length is reduced to " << params.min_branch_length << " for long alignment" << endl;
+                cout.precision(3);
+            }
         }
         // Increase the minimum branch length if PoMo is used.
         if (alignment->seq_type == SEQ_POMO) {

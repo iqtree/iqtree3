@@ -852,6 +852,13 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
     {
         outError("Alignment must have at least 3 sequences");
     }
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
+    }
+    
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {
@@ -887,6 +894,179 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
 
 }
 
+void Alignment::readSiteSpecFloatWeights()
+{
+    const string& site_float_weights_file =
+        Params::getInstance().site_float_weights_file;
+    ASSERT(site_float_weights_file != "");
+
+    std::cout << "Reading site-specific floating weights from file "
+        << site_float_weights_file << "..." << std::endl;
+
+    std::ifstream in(site_float_weights_file);
+    if (!in)
+    {
+        throw std::runtime_error(
+            "Failed to open site-specific floating weight file: " + site_float_weights_file);
+    }
+
+    // pre-allocate the memory
+    DoubleVector site_float_weights;
+    // update aln->ori_num_sites, if it's not been set
+    if (!(ori_num_sites > 0))
+    {
+        ori_num_sites = getNSite();
+    }
+    site_float_weights.reserve(ori_num_sites);
+
+    std::string token;
+    while (in >> token)
+    {
+        double weight;
+        try
+        {
+            size_t pos = 0;
+            weight = convert_double(token.c_str());
+        }
+        catch (...)
+        {
+            throw std::runtime_error(
+                "Invalid site weight '" + token +
+                "': weights must be positive floating-point numbers");
+        }
+
+        if (!(weight > 0.0))
+        {
+            throw std::runtime_error(
+                "Site floating weights must be positive (found " + token + ")");
+        }
+
+        site_float_weights.push_back(weight);
+    }
+
+    // Check the number of weights
+    if (site_float_weights.size() != ori_num_sites)
+    {
+        throw std::runtime_error(
+            "The number of floating weights ("
+            + convertIntToString(site_float_weights.size())
+            + ") differs from the number of sites ("
+            + convertIntToString(ori_num_sites) + ")!");
+    }
+    
+    // initialize all ptn_freq at 0
+    pattern_weight.resize(getNPattern(), 0.0);
+    
+    // integrate the site-specific floating weights into the pattern frequencies
+    total_site_float_weight = 0.0;
+    for (size_t i = 0; i < site_float_weights.size(); ++i)
+    {
+        pattern_weight[site_pattern[i]] += site_float_weights[i];
+        
+        // update total_site_float_weight
+        total_site_float_weight += site_float_weights[i];
+    }
+    
+    // Show info
+    std::cout << "Total site floating weight: " << total_site_float_weight << std::endl;
+}
+
+void Alignment::integrateSiteSpecWeights()
+{
+    const string& site_weights_file = Params::getInstance().site_weights_file;
+    ASSERT(site_weights_file != "");
+    
+    std::cout << "Reading site-specific weights from file " << site_weights_file << "..." << std::endl;
+    
+    // read site-specific weights from file
+    std::ifstream in(site_weights_file);
+    if (!in)
+    {
+        throw std::runtime_error("Failed to open site-specific weight file: " + site_weights_file);
+    }
+    
+    // pre-allocate the memory
+    std::vector<int> site_weights;
+    site_weights.reserve(getNSite());
+    
+    // read the weights
+    std::string token;
+    int total_weight = 0;
+    while (in >> token)
+    {
+        // Check that the token consists of digits only
+        if (token.empty() ||
+            !std::all_of(token.begin(), token.end(),
+                         [](unsigned char c) { return std::isdigit(c); }))
+        {
+            throw std::runtime_error(
+                "Invalid site weight '" + token +
+                "': weights must be positive integers");
+        }
+        
+        // validate the weights
+        int weight = convert_int(token.c_str());
+        if (weight <= 0)
+        {
+            throw std::runtime_error(
+                "Site weights must be positive integers (found " + token + ")");
+        }
+        site_weights.push_back(weight);
+        total_weight += weight;
+    }
+    
+    // Check the number of weights
+    if (site_weights.size() != getNSite())
+    {
+        throw std::runtime_error("The number of weights ("
+            + convertIntToString(site_weights.size())
+            + ") differs from the number of sites ("
+            + convertIntToString(getNSite()) + ")!");
+    }
+    
+    // Show info
+    std::cout << "Total site weight: " << total_weight << std::endl;
+    
+    // expand the alignment (adding columns according to the site weights)
+    size_t expanding_site_id = site_pattern.size();
+    // record the original number of sites before expanding the site_pattern
+    ori_num_sites = expanding_site_id;
+    site_pattern.resize(total_weight);
+    
+    // integrate the site-specific weights into the pattern frequencies
+    for (size_t i = 0; i < site_weights.size(); ++i)
+    {
+        // extract the pattern id of the current site
+        const int site_pattern_id = site_pattern[i];
+        
+        // update the freq of the pattern according to the site weight
+        at(site_pattern_id).frequency += (site_weights[i] - 1);
+        
+        // set the pattern id to expanded sites
+        for (int j = 0; j < site_weights[i] - 1; ++j)
+        {
+            site_pattern[expanding_site_id++] = site_pattern_id;
+        }
+    }
+}
+
+void Alignment::createBayesBootWeights(DoubleVector &site_weights, int *rstream)
+{
+    size_t nsite = getNSite();
+    site_weights.resize(nsite);
+    double sum = 0.0;
+    // Draw n independent Exponential(1) samples — this gives a
+    // Dirichlet(1,...,1) distribution after normalization (Rubin 1981).
+    for (size_t i = 0; i < nsite; ++i) {
+        site_weights[i] = random_double_exponential_distribution(1.0, rstream);
+        sum += site_weights[i];
+    }
+    // Normalize so weights sum to nsite (expected weight per site = 1.0)
+    const double scale = (double)nsite / sum;
+    for (size_t i = 0; i < nsite; ++i)
+        site_weights[i] *= scale;
+}
+
 Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model) : vector<Pattern>() {
     name = "Noname";
     this->model_name = model;
@@ -910,6 +1090,12 @@ Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model
 
     if (getNSeq() < 3) {
         outError("Alignment must have at least 3 sequences");
+    }
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
     }
     
     countConstSite();
@@ -968,6 +1154,13 @@ Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, str
     {
         outError("Alignment must have at least 3 sequences");
     }
+    
+    // integrate site-specific weights, if specified
+    if (Params::getInstance().site_weights_file != "")
+    {
+        integrateSiteSpecWeights();
+    }
+    
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {
@@ -4384,7 +4577,12 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     	memcpy(non_stop_codon, aln->non_stop_codon, strlen(genetic_code));
     }
     STATE_UNKNOWN = aln->STATE_UNKNOWN;
-    site_pattern.resize(nsite, -1);
+    // For Bayesian bootstrap we keep the original site→pattern mapping unchanged;
+    // all other modes start with site_pattern filled with -1 (unassigned).
+    if (spec && strncasecmp(spec, "BAYES", 5) == 0)
+        site_pattern = aln->site_pattern;
+    else
+        site_pattern.resize(nsite, -1);
     clear();
     pattern_index.clear();
 
@@ -4407,7 +4605,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
             outError("Unsupported bootstrap feature, pls contact the developers");
         }
     }
-    
+
     if (Params::getInstance().jackknife_prop > 0.0 && spec) {
         outError((string)"Unsupported jackknife with sampling " + spec);
     }
@@ -4418,6 +4616,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         int added_sites = 0;
         IntVector sample;
         random_resampling(nsite, sample);
+        boot_site_weights.assign(sample.begin(), sample.end());
         for (size_t site = 0; site < nsite; ++site) {
             for (int rep = 0; rep < sample[site]; ++rep) {
                 int ptn_id = aln->getPatternID(site);
@@ -4439,6 +4638,36 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         if (added_sites < nsite) {
             site_pattern.resize(added_sites);
         }
+    } else if (strncasecmp(spec, "BAYES", 5) == 0) {
+        // Bayesian bootstrap (Rubin 1981): Dirichlet(1,...,1) site weights.
+        // Float weights → ML via pattern_weight[]; scaled integer frequencies → parsimony.
+        int pars_scale = (spec[5] == ':') ? max(1, convert_int(spec + 6)) : 10;
+        const size_t nptn = aln->getNPattern();
+        DoubleVector site_weights;
+        createBayesBootWeights(site_weights);
+        boot_site_weights = site_weights;
+        // Accumulate per-pattern float weights
+        vector<double> ptn_float_weight(nptn, 0.0);
+        for (size_t i = 0; i < nsite; ++i)
+            ptn_float_weight[aln->getPatternID(i)] += site_weights[i];
+        // Per-pattern integer frequencies for parsimony (min 1 so no site is silenced)
+        for (size_t ptn = 0; ptn < nptn; ++ptn) {
+            Pattern pat = aln->at(ptn);
+            pat.frequency = max(1, (int)round(ptn_float_weight[ptn] * pars_scale));
+            push_back(pat);
+            pattern_index[pat] = ptn;
+        }
+        // Float weights for ML (picked up by PhyloTree::computePtnFreq)
+        pattern_weight.assign(ptn_float_weight.begin(), ptn_float_weight.end());
+        // Rebuild site_pattern to be consistent with scaled integer frequencies so that:
+        // (a) PLL's concatenateAlignments assertion holds for partition models, and
+        // (b) parsimony correctly uses Dirichlet-weighted frequencies.
+        // NOTE: do NOT set total_site_float_weight — getNSite() returns it when > 0
+        // and floating-point truncation (e.g. 1997.9999...) would give wrong site count.
+        site_pattern.clear();
+        for (size_t ptn = 0; ptn < nptn; ++ptn)
+            for (int rep = 0; rep < at(ptn).frequency; ++rep)
+                site_pattern.push_back(ptn);
     } else if (strncmp(spec, "GENESITE,", 9) == 0) {
 		// resampling genes, then resampling sites within resampled genes
 		convert_int_vec(spec+9, site_vec);
@@ -4524,6 +4753,13 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     }
     verbose_mode = save_mode;
     countConstSite();
+    // countConstSite() sums scaled frequencies, making frac_const/invariant_sites
+    // proportional to pars_scale rather than to the true site count.  Restore the
+    // original fractions from the source alignment so downstream code stays correct.
+    if (spec && strncasecmp(spec, "BAYES", 5) == 0) {
+        frac_const_sites     = aln->frac_const_sites;
+        frac_invariant_sites = aln->frac_invariant_sites;
+    }
 //    buildSeqStates();
 }
 

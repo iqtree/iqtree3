@@ -438,7 +438,12 @@ public:
             site_pattern.resize(expected_num_sites);
         }
         
-        return site_pattern.size();
+        // if site-specific floating weight are specified
+        // return the total weights
+        // otherwise, return the normal number of sites
+        return (total_site_float_weight > 0
+                ? total_site_float_weight
+                : site_pattern.size());
     }
 
     /**
@@ -919,6 +924,16 @@ public:
 	 * Virtual population size for PoMo model
 	 */
 	int virtual_pop_size;
+    
+    /**
+     * the original number of site before expanding alignment with site-specific weights
+     */
+    int ori_num_sites = -1;
+    
+    /**
+     * the total site-specific floating weights (if specified)
+     */
+    double total_site_float_weight = -1;
 
   // TODO DS: Maybe change default to SAMPLING_WEIGHTED_HYPER.
   /// The sampling method (defaults to SAMPLING_WEIGHTED_BINOM).
@@ -940,6 +955,18 @@ public:
     
     /** site to state frequency vector */
     vector<double*> site_state_freq;
+    
+    /** pattern weights
+        i.e., the pattern freqs that integrate site-specific floating weights
+     */
+    DoubleVector pattern_weight;
+
+    /**
+     * Per-site resample weights populated by createBootstrapAlignment().
+     * Standard bootstrap: integer counts (as doubles); Bayesian bootstrap: Dirichlet floats.
+     * Length = getNSite() of the source alignment.
+     */
+    DoubleVector boot_site_weights;
 
     /**
      * @return true if data type is SEQ_CODON and state is a stop codon
@@ -1064,6 +1091,20 @@ public:
      * @return id the genetic code id, or 0 if not a codon type
      */
     int getGeneticCodeId();
+    
+    /**
+        Read site-specific floating weights
+     */
+    void readSiteSpecFloatWeights();
+
+    /**
+     * Draw per-site Dirichlet(1,...,1) weights for Bayesian bootstrap.
+     * Samples getNSite() Exponential(1) values and normalizes so they sum
+     * to getNSite() (expected weight per site = 1.0).
+     * @param site_weights [OUT] per-site weights, length = getNSite()
+     * @param rstream      optional random stream (NULL = global randstream)
+     */
+    void createBayesBootWeights(DoubleVector &site_weights, int *rstream = NULL);
 
 protected:
 
@@ -1111,6 +1152,11 @@ private:
         Output a mutation into Maple file
      */
     void outputMutation(std::ofstream &out, char state_char, int32_t pos, int32_t length = -1);
+    
+    /**
+        Integrate site-specific weights
+     */
+    void integrateSiteSpecWeights();
 };
 
 

@@ -1550,6 +1550,9 @@ public:
     /** TRUE to collapse zero branches, default FALSE */
     bool collapse_zero_branch;
 
+    /** TRUE to collapse zero branches in bootstrap trees only, default FALSE */
+    bool collapse_zero_branch_boot;
+
     /**
             Way to summarize split weight in the consensus tree or network: SW_SUM, SW_AVG_ALL, or SW_AVG_PRESENT
      */
@@ -2387,6 +2390,9 @@ public:
     /** TRUE to print bootstrapped site frequency for e.g. PMSF */
     bool print_boot_site_freq;
 
+    /** TRUE to print per-site resample weights for each bootstrap replicate */
+    bool print_boot_site_weights;
+
 	/** true to print sub alignments of super alignment, default: false */
 	bool print_subaln;
 
@@ -2559,6 +2565,16 @@ public:
 
     /** neural network file that determines alpha rate (onnx format) */
     string nn_path_rates; // added by TD
+    
+    /**
+        user file used to specify site-specific weights
+    */
+    string site_weights_file;
+    
+    /**
+        user file used to specify site-specific floating weights
+    */
+    string site_float_weights_file;
 
     /**
     *  TRUE if multiple random streams are used
