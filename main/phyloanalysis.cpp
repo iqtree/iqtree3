@@ -6332,10 +6332,6 @@ void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
         delete orig_aln;
     }
 
-    // write SU alignment to file
-    string su_file = (string)params.out_prefix + ".su_aln.phy";
-    alignment->printAlignment(IN_PHYLIP, su_file.c_str());
-
     runPhyloAnalysis(params, checkpoint, tree, alignment, true);
     alignment = tree->aln;
     delete tree;
