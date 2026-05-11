@@ -19,6 +19,7 @@
  ***************************************************************************/
 
 #include <stdarg.h>
+#include <queue>
 #include "superalignment.h"
 #include "nclextra/msetsblock.h"
 #include "nclextra/myreader.h"
@@ -55,7 +56,7 @@ SuperAlignment::SuperAlignment(Params &params) : Alignment()
 {
     readFromParams(params);
     
-    init();
+    init(nullptr, params.marginal_lh_aic);
     
     // only show Degree of missing data if AliSim is inactive or an input alignment is supplied
     if (!(Params::getInstance().alisim_active && !Params::getInstance().alisim_inference_mode)) {
@@ -178,7 +179,7 @@ void SuperAlignment::readFromParams(Params &params) {
     }
 }
 
-void SuperAlignment::init(StrVector *sequence_names) {
+void SuperAlignment::init(StrVector *sequence_names, bool keep_order) {
     // start original code
     
     max_num_states = 0;
@@ -192,6 +193,52 @@ void SuperAlignment::init(StrVector *sequence_names) {
         taxa_index.resize(seq_names.size());
         for (auto i = taxa_index.begin(); i != taxa_index.end(); i++)
             i->resize(nsite, -1);
+    }
+
+    // 2025-12-9 Huaiyan: keep the sequence order in the superalignment same as partition alignments, do it once when applying mAIC to PartitionFinder.
+    // Uses topological sort (Kahn's algorithm) to merge the per-partition sequence orderings into a single consistent global order.
+    if (keep_order) {
+        // build a DAG: edge a->b means a appears immediately before b in some partition
+        unordered_map<string, unordered_set<string>> successors;
+        unordered_map<string, int> indegree;
+
+        for (auto *aln : partitions) {
+            size_t nseq = aln->getNSeq();
+            for (size_t seq = 0; seq < nseq; seq++) {
+                const string &name = aln->getSeqName(seq);
+                if (indegree.find(name) == indegree.end())
+                    indegree[name] = 0;
+            }
+            for (size_t i = 0; i + 1 < nseq; i++) {
+                const string &a = aln->getSeqName(i);
+                const string &b = aln->getSeqName(i + 1);
+                if (!successors[a].count(b)) {
+                    successors[a].insert(b);
+                    indegree[b]++;
+                }
+            }
+        }
+
+        // BFS from nodes with no predecessors
+        queue<string> q;
+        for (auto &entry : indegree) {
+            if (entry.second == 0)
+                q.push(entry.first);
+        }
+
+        while (!q.empty()) {
+            const string &x = q.front();
+            seq_names.push_back(x);
+            taxa_index.push_back(IntVector(nsite, -1));
+            for (const string &y : successors[x]) {
+                if (--indegree[y] == 0)
+                    q.push(y);
+            }
+            q.pop();
+        }
+
+        if (seq_names.size() != indegree.size())
+            outError("Conflicting sequence orders across partitions prevent consistent ordering for mAIC PartitionFinder.");
     }
 
     size_t site = 0;
