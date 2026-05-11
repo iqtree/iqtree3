@@ -65,7 +65,6 @@
 #include <stdlib.h>
 #include "vectorclass/instrset.h"
 #include "alignment/alignment.h"
-#include "alignment/superalignment.h"
 
 #include "utils/MPIHelper.h"
 
@@ -2591,13 +2590,7 @@ int main(int argc, char *argv[]) {
         runModelTamerAnalysis(Params::getInstance(), checkpoint);
     } else if (Params::getInstance().model_tamer_only && Params::getInstance().model_tamer < 100) {
         // ModelTamer only: generate SU datasets without model selection
-        if (Params::getInstance().partition_file) {
-            SuperAlignment *super_aln = new SuperAlignment(Params::getInstance());
-            super_aln->createSUPartitions(Params::getInstance());
-            delete super_aln;
-        } else {
-            createSUAlignment(Params::getInstance());
-        }
+        createSUAlignment(Params::getInstance());
     } else if ((Params::getInstance().aln_file || Params::getInstance().partition_file) &&
                Params::getInstance().consensus_type != CT_ASSIGN_SUPPORT_EXTENDED)
     {

@@ -6298,26 +6298,41 @@ void runRootstrap(Params &params) {
  * @param checkpoint checkpoint for resuming analysis
  */
 void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
-    IQTree *tree = nullptr;
-    Alignment *alignment = nullptr;
 
     if (params.partition_file) {
         // Partitioned data: apply SU to each partition independently
         SuperAlignment *super_aln = new SuperAlignment(params);
+
+        // apply SU per partition (AUTO estimates percentage per partition)
         super_aln->createSUPartitions(params);
-        alignment = (Alignment *)super_aln;
+
+        // run standard phylo analysis on the SU'd partitioned data
+        IQTree *tree = nullptr;
+        Alignment *alignment = (Alignment *)super_aln;
+        runPhyloAnalysis(params, checkpoint, tree, alignment, true);
+
+        alignment = tree->aln;
+        delete tree;
+        delete alignment;
+
     } else {
         // Single alignment
-        Alignment *orig_aln = createAlignment(params.aln_file, params.sequence_type,
-                                              params.intype, params.model_name);
+        Alignment *orig_alignment = createAlignment(params.aln_file, params.sequence_type,
+                                                    params.intype, params.model_name);
+
+        cout << "Original alignment: " << orig_alignment->getNSeq() << " sequences, "
+             << orig_alignment->getNSite() << " sites, "
+             << orig_alignment->getNPattern() << " distinct patterns" << endl;
 
         // auto-estimate percentage if --modeltamer AUTO
         if (params.model_tamer < 0) {
             params.model_tamer = estimateModelTamerPercent(
-                orig_aln->getNPattern(), orig_aln->seq_type == SEQ_PROTEIN);
+                orig_alignment->getNPattern(), orig_alignment->seq_type == SEQ_PROTEIN);
             if (params.model_tamer >= 100) {
-                cout << "ModelTamer AUTO: too few patterns, analyzing full MSA" << endl;
-                delete orig_aln;
+                cout << "ModelTamer AUTO: too few patterns, suggesting to analyze full MSA" << endl;
+                delete orig_alignment;
+                IQTree *tree = nullptr;
+                Alignment *alignment = nullptr;
                 runPhyloAnalysis(params, checkpoint, tree, alignment);
                 alignment = tree->aln;
                 delete tree;
@@ -6328,12 +6343,22 @@ void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
                  << params.model_tamer << "%" << endl;
         }
 
-        alignment = createSUAlignment(params, orig_aln);
-        delete orig_aln;
-    }
+        // create SU alignment
+        Alignment *su_alignment = createSUAlignment(params, orig_alignment);
 
-    runPhyloAnalysis(params, checkpoint, tree, alignment, true);
-    alignment = tree->aln;
-    delete tree;
-    delete alignment;
+        cout << "SU alignment: " << su_alignment->getNSeq() << " sequences, "
+             << su_alignment->getNSite() << " sites, "
+             << su_alignment->getNPattern() << " distinct patterns" << endl;
+
+        delete orig_alignment;
+
+        // run standard phylo analysis on the SU alignment
+        IQTree *tree = nullptr;
+        Alignment *alignment = su_alignment;
+        runPhyloAnalysis(params, checkpoint, tree, alignment, true);
+
+        alignment = tree->aln;
+        delete tree;
+        delete alignment;
+    }
 }

@@ -6849,8 +6849,10 @@ void Alignment::outputMutation(ofstream &out, char state_char, int32_t pos, int3
     out << endl;
 }
 
-Alignment *createSUAlignment(Params &params, Alignment *alignment) {
-    cout << endl << "Generating ModelTamer subsample-upsampling alignment..." << endl;
+Alignment *createSUAlignment(Params &params,Alignment *alignment) {
+    cout << endl;
+    cout << "Generating ModelTamer subsample-upsampling alignments..." << endl;
+    cout << endl;
 
     if (params.model_tamer_only) {
         alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
@@ -6858,30 +6860,34 @@ Alignment *createSUAlignment(Params &params, Alignment *alignment) {
 
     int n_sub = params.model_tamer_sub;
     int n_up = params.model_tamer_up;
-    std::mt19937 gen(params.ran_seed);
+    std::mt19937 gen;
+    gen.seed(params.ran_seed);
     int n_site = alignment->getNSite();
-    int n_ptn = alignment->getNPattern();
+    int n_target_site = static_cast<int>(ceil(params.model_tamer * n_site / 100.0)); //method 1: directly subsample sites
 
-    for (int i = 0; i < n_sub; i++) {
-        // compute target number of sites to subsample
-        int n_target_site;
+    for (int i=0; i<n_sub; i++ ) {
         if (params.model_tamer_method == 0) {
-            // ModelTamer method: estimate sites needed for target patterns
+            // original ModelTamer method
+            //1. estimated how many distinct pattern are needeed
+            int n_ptn = alignment->getNPattern();
             int n_target_ptn = static_cast<int>(ceil(params.model_tamer * n_ptn / 100.0));
-            vector<int> probe(n_site);
-            std::iota(probe.begin(), probe.end(), 0);
-            std::shuffle(probe.begin(), probe.end(), gen);
-            probe.resize(n_target_ptn);
-            Alignment *probe_aln = new Alignment();
-            probe_aln->extractSites(alignment, probe);
-            n_target_site = (n_target_ptn * n_target_ptn + probe_aln->getNPattern() - 1)
-                            / probe_aln->getNPattern();
-            delete probe_aln;
-        } else {
-            n_target_site = static_cast<int>(ceil(params.model_tamer * n_site / 100.0));
+
+            //2. initially subsample the estimated needed number of pattern
+            vector<int> init_sub_sites(n_site);
+            std::iota(init_sub_sites.begin(), init_sub_sites.end(), 0);
+            std::shuffle(init_sub_sites.begin(), init_sub_sites.end(), gen);
+            init_sub_sites.resize(n_target_ptn);
+            Alignment *init_sub_alignment = NULL;
+            init_sub_alignment = new Alignment();
+            init_sub_alignment ->extractSites(alignment, init_sub_sites);
+
+            //3. compute how many site are needed to subsample enough pattern
+            int n_init_ptn = init_sub_alignment->getNPattern();
+            n_target_site = (n_target_ptn * n_target_ptn + n_init_ptn - 1) / n_init_ptn; //ceil( (n_target_ptn/n_init_ptn) * n_target_ptn )
+
+            delete init_sub_alignment;
         }
-        // cap to avoid exceeding alignment length
-        if (n_target_site > n_site) n_target_site = n_site;
+        // else: method 1 has been done
 
         // subsample sites
         vector<int> sub_sites(n_site);
@@ -6889,34 +6895,33 @@ Alignment *createSUAlignment(Params &params, Alignment *alignment) {
         std::shuffle(sub_sites.begin(), sub_sites.end(), gen);
         sub_sites.resize(n_target_site);
 
-        for (int j = 0; j < n_up; j++) {
-            // upsample: draw n_site sites with replacement from subsampled sites
-            std::uniform_int_distribution<int> dist(0, n_target_site - 1);
+        for (int j=0; j<n_up; j++) {
+            // upsample sites
+            std::uniform_int_distribution<int> dist(0, n_target_site-1);
             vector<int> up_sites(n_site);
-            for (int k = 0; k < n_site; k++)
+            for (int k=0; k<n_site; k++) {
                 up_sites[k] = sub_sites[dist(gen)];
-
-            Alignment *su_aln = new Alignment();
-            su_aln->extractSites(alignment, up_sites);
-
-            double ptn_pct = 100.0 * su_aln->getNPattern() / n_ptn;
-
-            if (params.model_tamer_only) {
-                string filename = (string)params.out_prefix
-                    + ".s" + to_string(i + 1) + "u" + to_string(j + 1) + ".phy";
-                su_aln->printAlignment(params.aln_output_format, filename.c_str());
-                cout << fixed << setprecision(1) << ptn_pct
-                     << "% distinct patterns sampled (s" << i + 1 << "u" << j + 1 << ")" << endl;
-                delete su_aln;
-            } else {
-                cout << fixed << setprecision(1) << ptn_pct
-                     << "% distinct patterns sampled" << endl;
-                return su_aln;
             }
+
+            // create new alignment
+            Alignment *su_alignment = NULL;
+            su_alignment = new Alignment();
+            su_alignment->extractSites(alignment, up_sites);
+
+            double ptn_percent = 100.0*su_alignment->getNPattern()/alignment->getNPattern();
+            cout << ptn_percent << "% distinct site parttern are sampled in subsample round " << i+1 << " and upsample round " << j+1 << ". SU ";
+
+            string filename = (string)params.out_prefix + ".s" + to_string(i+1) + "u" + to_string(j+1) + ".phy";
+            su_alignment->printAlignment(params.aln_output_format, filename.c_str());
+
+            if (!params.model_tamer_only) {
+                return su_alignment;
+            }
+
+            delete su_alignment;
         }
     }
     cout << endl;
-    return nullptr;
 }
 
 double estimateModelTamerPercent(int num_ptn, bool is_protein) {

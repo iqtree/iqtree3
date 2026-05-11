@@ -2095,136 +2095,92 @@ void SuperAlignment::createSUPartitions(Params &params) {
     cout << endl << "Generating ModelTamer subsample-upsampling per partition..." << endl;
 
     std::mt19937 gen(params.ran_seed);
-    size_t npart = partitions.size();
+    bool is_auto = (params.model_tamer < 0);
 
-    // determine per-partition sampling percentage
-    vector<double> part_percent(npart);
-    bool all_skip = true;
-    for (size_t p = 0; p < npart; p++) {
-        if (params.model_tamer < 0) {  // AUTO
+    // estimate per-partition percentage for AUTO mode
+    vector<double> part_percent(partitions.size());
+    bool all_full = true;
+    for (size_t p = 0; p < partitions.size(); p++) {
+        if (is_auto) {
             part_percent[p] = estimateModelTamerPercent(
                 partitions[p]->getNPattern(), partitions[p]->seq_type == SEQ_PROTEIN);
         } else {
             part_percent[p] = params.model_tamer;
         }
-        if (part_percent[p] < 100.0) all_skip = false;
+        if (part_percent[p] < 100.0) all_full = false;
     }
 
-    if (all_skip) {
+    if (all_full) {
         cout << "ModelTamer AUTO: all partitions have too few patterns, analyzing full MSA" << endl;
         return;
     }
 
-    int n_sub = params.model_tamer_sub;
-    int n_up = params.model_tamer_up;
+    cout << "Subset\tType\tSeqs\tSites\tPtnOri\tPtnSU\tSU(%)\tName" << endl;
 
-    for (int i = 0; i < n_sub; i++) {
-        // subsample: compute target sites and draw subsampled site indices per partition
-        vector<int> n_target(npart, -1);
-        vector<vector<int>> sub_sites(npart);
+    for (size_t p = 0; p < partitions.size(); p++) {
+        Alignment *part_aln = partitions[p];
+        int n_site = part_aln->getNSite();
+        int n_ptn = part_aln->getNPattern();
 
-        for (size_t p = 0; p < npart; p++) {
-            if (part_percent[p] >= 100.0) continue;
-
-            Alignment *aln = partitions[p];
-            int n_site = aln->getNSite();
-            int n_ptn = aln->getNPattern();
-
-            if (params.model_tamer_method == 0) {
-                // ModelTamer method: estimate sites needed for target patterns
-                int n_target_ptn = static_cast<int>(ceil(part_percent[p] * n_ptn / 100.0));
-                vector<int> probe(n_site);
-                std::iota(probe.begin(), probe.end(), 0);
-                std::shuffle(probe.begin(), probe.end(), gen);
-                probe.resize(n_target_ptn);
-                Alignment *probe_aln = new Alignment();
-                probe_aln->extractSites(aln, probe);
-                n_target[p] = (n_target_ptn * n_target_ptn + probe_aln->getNPattern() - 1)
-                              / probe_aln->getNPattern();
-                delete probe_aln;
-            } else {
-                n_target[p] = static_cast<int>(ceil(part_percent[p] * n_site / 100.0));
-            }
-
-            sub_sites[p].resize(n_site);
-            std::iota(sub_sites[p].begin(), sub_sites[p].end(), 0);
-            std::shuffle(sub_sites[p].begin(), sub_sites[p].end(), gen);
-            sub_sites[p].resize(n_target[p]);
+        // skip SU for partitions that don't need subsampling
+        if (part_percent[p] >= 100.0) {
+            cout << p + 1 << "\t" << part_aln->sequence_type << "\t" << part_aln->getNSeq()
+                 << "\t" << n_site << "\t" << n_ptn << "\t" << n_ptn
+                 << "\t" << fixed << setprecision(1) << 100.0
+                 << "\t" << part_aln->name << " (skipped)" << endl;
+            continue;
         }
 
-        for (int j = 0; j < n_up; j++) {
-            // print replicate header (only for model_tamer_only with multiple replicates)
-            if (params.model_tamer_only && (n_sub > 1 || n_up > 1))
-                cout << endl << "Replicate s" << i + 1 << "u" << j + 1 << ":" << endl;
-            cout << "Subset\tType\tSeqs\tSites\tPtnOri\tPtnSU\tSU(%)\tName" << endl;
+        double pct = part_percent[p];
+        int n_target_site;
 
-            // upsample each partition
-            vector<Alignment*> su_parts(npart);
-            for (size_t p = 0; p < npart; p++) {
-                Alignment *aln = partitions[p];
-                int n_site = aln->getNSite();
-                int n_ptn = aln->getNPattern();
+        if (params.model_tamer_method == 0) {
+            // original ModelTamer method: estimate sites needed for target patterns
+            int n_target_ptn = static_cast<int>(ceil(pct * n_ptn / 100.0));
 
-                if (n_target[p] < 0) {
-                    // partition skipped (too few patterns for SU)
-                    cout << p + 1 << "\t" << aln->sequence_type << "\t" << aln->getNSeq()
-                         << "\t" << n_site << "\t" << n_ptn << "\t" << n_ptn
-                         << "\t" << fixed << setprecision(1) << 100.0
-                         << "\t" << aln->name << " (skipped)" << endl;
-                    su_parts[p] = aln;  // keep original pointer
-                    continue;
-                }
-
-                // upsample from subsampled sites
-                std::uniform_int_distribution<int> dist(0, n_target[p] - 1);
-                vector<int> up_sites(n_site);
-                for (int k = 0; k < n_site; k++)
-                    up_sites[k] = sub_sites[p][dist(gen)];
-
-                su_parts[p] = new Alignment();
-                su_parts[p]->extractSites(aln, up_sites);
-
-                double ptn_pct = 100.0 * su_parts[p]->getNPattern() / n_ptn;
-                cout << p + 1 << "\t" << aln->sequence_type << "\t" << aln->getNSeq()
-                     << "\t" << n_site << "\t" << n_ptn << "\t" << su_parts[p]->getNPattern()
-                     << "\t" << fixed << setprecision(1) << ptn_pct
-                     << "\t" << aln->name << endl;
-            }
-
-            if (params.model_tamer_only) {
-                // write concatenated SU alignment
-                string aln_file = (string)params.out_prefix
-                    + ".s" + to_string(i + 1) + "u" + to_string(j + 1) + ".phy";
-                vector<Alignment*> saved = partitions;
-                partitions = su_parts;
-                try {
-                    ofstream out;
-                    out.exceptions(ios::failbit | ios::badbit);
-                    out.open(aln_file);
-                    printCombinedAlignment(out);
-                    out.close();
-                    cout << "Alignment was printed to " << aln_file << endl;
-                } catch (ios::failure &) {
-                    outError(ERR_WRITE_OUTPUT, aln_file);
-                }
-                partitions = saved;
-                // clean up SU copies (skip those pointing to originals)
-                for (size_t p = 0; p < npart; p++)
-                    if (n_target[p] >= 0) delete su_parts[p];
-            } else {
-                // replace partitions with SU versions
-                for (size_t p = 0; p < npart; p++) {
-                    if (n_target[p] >= 0) {
-                        delete partitions[p];
-                        partitions[p] = su_parts[p];
-                    }
-                }
-            }
+            vector<int> init_sites(n_site);
+            std::iota(init_sites.begin(), init_sites.end(), 0);
+            std::shuffle(init_sites.begin(), init_sites.end(), gen);
+            init_sites.resize(n_target_ptn);
+            Alignment *init_aln = new Alignment();
+            init_aln->extractSites(part_aln, init_sites);
+            int n_init_ptn = init_aln->getNPattern();
+            n_target_site = (n_target_ptn * n_target_ptn + n_init_ptn - 1) / n_init_ptn;
+            delete init_aln;
+        } else {
+            n_target_site = static_cast<int>(ceil(pct * n_site / 100.0));
         }
+
+        // subsample
+        vector<int> sub_sites(n_site);
+        std::iota(sub_sites.begin(), sub_sites.end(), 0);
+        std::shuffle(sub_sites.begin(), sub_sites.end(), gen);
+        sub_sites.resize(n_target_site);
+
+        // upsample
+        std::uniform_int_distribution<int> dist(0, n_target_site - 1);
+        vector<int> up_sites(n_site);
+        for (int k = 0; k < n_site; k++) {
+            up_sites[k] = sub_sites[dist(gen)];
+        }
+
+        Alignment *su_part = new Alignment();
+        su_part->extractSites(part_aln, up_sites);
+
+        double ptn_percent = 100.0 * su_part->getNPattern() / n_ptn;
+
+        cout << p + 1 << "\t" << part_aln->sequence_type << "\t" << part_aln->getNSeq()
+             << "\t" << n_site << "\t" << n_ptn << "\t" << su_part->getNPattern()
+             << "\t" << fixed << setprecision(1) << ptn_percent
+             << "\t" << part_aln->name << endl;
+
+        // replace partition alignment with SU version
+        delete part_aln;
+        partitions[p] = su_part;
     }
 
-    if (!params.model_tamer_only) {
-        init();  // rebuild super alignment structure
-    }
     cout << endl;
+
+    // rebuild the super alignment structure
+    init();
 }
