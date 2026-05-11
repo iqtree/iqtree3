@@ -3253,54 +3253,50 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.est_from_one = true;
                 continue;
             }
-            if (strcmp(argv[cnt], "--modeltamer") == 0) {
+            if (strcmp(argv[cnt], "-mt") == 0 || strcmp(argv[cnt], "--modeltamer") == 0) {
                 cnt++;
                 if (cnt >= argc)
-                    throw "Use --modeltamer <percent|AUTO>";
-                if (strcmp(argv[cnt], "AUTO") == 0 || strcmp(argv[cnt], "auto") == 0) {
-                    params.model_tamer = -1; // AUTO: estimate percentage from data
-                } else {
-                    params.model_tamer = convert_double(argv[cnt]);
-                    if (params.model_tamer < 0 || params.model_tamer > 100)
-                        throw "--modeltamer percentage must be between 0 and 100";
-                }
+                    throw "Use -mt <percent>";
+                params.model_tamer = convert_double(argv[cnt]);
+                if (params.model_tamer < 0 || params.model_tamer > 100)
+                    throw "modeltamer percentage must be between 0 and 100";
                 continue;
             }
-            if (strcmp(argv[cnt], "--modeltameronly") == 0) {
+            if (strcmp(argv[cnt], "-mto") == 0 || strcmp(argv[cnt], "--modeltameronly") == 0) {
                 cnt++;
                 if (cnt >= argc)
-                    throw "Use --modeltameronly <percent>";
+                    throw "Use -mt <percent>";
                 params.model_tamer = convert_double(argv[cnt]);
                 params.model_tamer_only = true;
                 if (params.model_tamer < 0 || params.model_tamer > 100)
-                    throw "--modeltameronly percentage must be between 0 and 100";
+                    throw "modeltamer percentage must be between 0 and 100";
                 continue;
             }
-            if (strcmp(argv[cnt], "--modeltamer-sub") == 0) {
+            if (strcmp(argv[cnt], "-mt-sub") == 0 || strcmp(argv[cnt], "--modeltamer-sub") == 0) {
                 cnt++;
                 if (cnt >= argc)
-                    throw "Use --modeltamer-sub <#subsampling-time>";
+                    throw "Use -mt-sub <#subsampling-time>";
                 params.model_tamer_sub = convert_int(argv[cnt]);
                 if (params.model_tamer_sub < 1)
-                    throw "Wrong number of ModelTamer subsampling time for --modeltamer-sub. Must be at least 1";
+                    throw "Wrong number of ModelTamer subsampling time for -mt-sub. Must be at least 1";
                 continue;
             }
-            if (strcmp(argv[cnt], "--modeltamer-up") == 0) {
+            if (strcmp(argv[cnt], "-mt-up") == 0 || strcmp(argv[cnt], "--modeltamer-up") == 0) {
                 cnt++;
                 if (cnt >= argc)
-                    throw "Use --modeltamer-up <#upsampling-time>";
+                    throw "Use -mt-up <#upsampling-time>";
                 params.model_tamer_up = convert_int(argv[cnt]);
                 if (params.model_tamer_up < 1)
-                    throw "Wrong number of ModelTamer upsampling time for --modeltamer-up. Must be at least 1";
+                    throw "Wrong number of ModelTamer upsampling time for -mt-up. Must be at least 1";
                 continue;
             }
-            if (strcmp(argv[cnt], "--modeltamer-method") == 0) {
+            if (strcmp(argv[cnt], "-mt-method") == 0 || strcmp(argv[cnt], "--mt-method") == 0) {
                 cnt++;
                 if (cnt >= argc)
-                    throw "Use --modeltamer-method <0|1>";
+                    throw "Use -mt-method <0|1>";
                 params.model_tamer_method = convert_int(argv[cnt]);
                 if (params.model_tamer_method < 0 || params.model_tamer_method > 1)
-                    throw "Wrong option for --modeltamer-method. Only 0 or 1 is allowed.";
+                    throw "Wrong option for -mt-method. Only 0 or 1 is allowed.";
                 continue;
             }
 			if (strcmp(argv[cnt], "-a") == 0) {
