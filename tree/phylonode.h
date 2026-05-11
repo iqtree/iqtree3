@@ -45,11 +45,11 @@ public:
         @param alength length of branch
      */
     PhyloNeighbor(Node *anode, double alength) : Neighbor(anode, alength) {
-        partial_lh = NULL;
-        scale_num = NULL;
+        partial_lh = nullptr;
+        scale_num = nullptr;
         partial_lh_computed = 0;
         lh_scale_factor = 0.0;
-        partial_pars = NULL;
+        partial_pars = nullptr;
         direction = UNDEFINED_DIRECTION;
         size = 0;
     }
@@ -61,11 +61,11 @@ public:
         @param aid branch ID
      */
     PhyloNeighbor(Node *anode, double alength, int aid) : Neighbor(anode, alength, aid) {
-        partial_lh = NULL;
-        scale_num = NULL;
+        partial_lh = nullptr;
+        scale_num = nullptr;
         partial_lh_computed = 0;
         lh_scale_factor = 0.0;
-        partial_pars = NULL;
+        partial_pars = nullptr;
         direction = UNDEFINED_DIRECTION;
         size = 0;
     }
@@ -75,11 +75,11 @@ public:
      @param nei another Neighbor
      */
     PhyloNeighbor(PhyloNeighbor *nei) : Neighbor(nei) {
-        partial_lh = NULL;
-        scale_num = NULL;
+        partial_lh = nullptr;
+        scale_num = nullptr;
         partial_lh_computed = 0;
         lh_scale_factor = 0.0;
-        partial_pars = NULL;
+        partial_pars = nullptr;
         direction = nei->direction;
         size = nei->size;
     }
@@ -89,7 +89,7 @@ public:
      allocate a new Neighbor by just copying from this one
      @return pointer to newly created Neighbor
      */
-    virtual Neighbor* newNeighbor() {
+    virtual Neighbor* newNeighbor() override {
         return (new PhyloNeighbor(this));
     }
 
@@ -115,7 +115,7 @@ public:
 
     /**
         DEPRECATED, moved to PhyloTree
-        if partial_lh is NULL, reorient partial_lh (LM_PER_NODE technique)
+        if partial_lh is nullptr, reorient partial_lh (LM_PER_NODE technique)
         @param dad dad of this neighbor
     */
 //    void reorientPartialLh(Node *dad);
@@ -127,9 +127,10 @@ public:
 	return partial_lh;
 	}
 
-	double get_lh_scale_factor(){
+    // get_lh_scale_factor is only used in upperbounds.cpp but that function was commented so get_lh_scale_factor is never used anywhere else
+	/* double get_lh_scale_factor(){
 	return lh_scale_factor;
-	}
+	}*/
 
 	int get_partial_lh_computed(){
 	return partial_lh_computed;
@@ -138,10 +139,10 @@ public:
 	/**
 	 * true if this Neighbor is directed towards the root
 	 */
-	bool isTowardsRoot() {
+	/* bool isTowardsRoot() {
 		ASSERT(direction != UNDEFINED_DIRECTION);
 		return (direction == TOWARD_ROOT);
-	}
+	}*/
 
     int getSize() {
         return size;
@@ -229,7 +230,7 @@ public:
         @param length branch length
         @param id branch ID
      */
-    virtual void addNeighbor(Node *node, double length, int id = -1);
+    virtual void addNeighbor(Node *node, double length, int id = -1) override;
 
 
 

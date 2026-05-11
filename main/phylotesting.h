@@ -47,7 +47,7 @@ public:
         logl = 0.0;
         df = 0;
         tree_len = 0.0;
-        aln = NULL;
+        aln = nullptr;
         AIC_score = DBL_MAX;
         AICc_score = DBL_MAX;
         BIC_score = DBL_MAX;
@@ -810,6 +810,13 @@ int detectSeqType(const char *model_name, SeqType &seq_type);
 string convertSeqTypeToSeqTypeName(SeqType seq_type);
 
 string detectSeqTypeName(string model_name);
+
+/**
+ * get string name from a SeqType object
+ * @param seq_type input sequence type
+ * @return name
+ */
+string getSeqTypeName(SeqType seq_type);
 
 /****************************************************/
 /*    Q MATRICES NESTING CHECK                      */

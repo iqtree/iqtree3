@@ -76,3 +76,31 @@ string ModelBIN::getNameParams(bool show_fixed_params) {
     }
     return retname.str();
 }
+
+void ModelBIN::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    RateHeterogeneity* rate = phylo_tree->getRate();
+    bool equal_freq = (freq_type == FREQ_EQUAL);
+
+    // Free Rate should be substituted by +G (+I not supported)
+    bool has_gamma = rate->getGammaShape() != 0.0 || rate->isFreeRate();
+
+    // MrBayes's Binary Model is 'F81-like'.
+    out << "using MrBayes model F81" << (has_gamma ? "+G" : "") << (equal_freq ? "+FQ" : "") << "]" << endl;
+    if (rate->isFreeRate() || rate->getPInvar() > 0.0) {
+        out << "  [+I modifier ignored, not supported by MrBayes for binary data]" << endl;
+        outWarning("MrBayes does not support Invariable Sites with Binary Data! +I has been ignored!");
+    }
+
+    // Lset Parameters
+    out << "  lset applyto=(" << partition << ") rates=";
+    if (has_gamma) {
+        // Rate Categories + Gamma
+        out << "gamma";
+    } else
+        out << "equal";
+
+    out << ";" << endl;
+
+    if (equal_freq)
+        out << "  prset applyto=(" << partition << ") statefreqpr=fixed(equal);" << endl;
+}

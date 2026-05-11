@@ -174,7 +174,7 @@ public:
 		@return the minimum function value obtained
 	*/
 	double minimizeMultiDimen(double guess[], int ndim, double lower[], double upper[],
-		bool bound_check[], double gtol, double *hessian = NULL);
+		bool bound_check[], double gtol, double *hessian = nullptr);
 
 	/*****************************************************
 		NEW 2015-08-19: Multi dimensional optimization with L-BFGS-B method

@@ -483,6 +483,34 @@ void executeSimulation(Params& params, IQTree *&tree)
     else
         alisimulator = new AliSimulator(&params);
     
+    // validate the branch lengths, show a warning if users input a tree with very long branch lengths (maybe in generation unit instead of substitutions per site) and not scale or re-generate the branch lengths
+    if (!params.alisim_skip_bl_check && params.alisim_branch_scale >= 1.0 && !params.branch_distribution && alisimulator->tree)
+    {
+        // check a single tree
+        if (!(alisimulator->tree->isSuperTree() && params.partition_type == BRLEN_OPTIMIZE))
+        {
+            const double mean_bl = alisimulator->tree->treeLength() / alisimulator->tree->branchNum;
+            if (mean_bl >= 10.0)
+            {
+                outError("Extremely long mean branch length (" + convertDoubleToString(mean_bl) + ") detected. If your branch lengths are in generations rather than substitutions per site, please specify the population size using `-pop-size <NUM>` (or `population_size=<NUM> for the Python API). Otherwise, you can add `--skip-bl-check` to skip checking branch lengths.");
+            }
+        }
+        // check all trees in a super tree with unlinked branch lengths
+        else
+        {
+            PhyloSuperTree* super_tree = (PhyloSuperTree*) alisimulator->tree;
+            // loop over all partition trees
+            for (size_t i = 0; i < super_tree->size(); ++i)
+            {
+                const double mean_bl = super_tree->at(i)->treeLength() / alisimulator->tree->branchNum;
+                if (mean_bl >= 10.0)
+                {
+                    outError("Extremely long mean branch length (" + convertDoubleToString(mean_bl) + ") detected in partition tree " + convertIntToString(i + 1) + ". If your branch lengths are in generations rather than substitutions per site, please specify the population size using `-pop-size <NUM>` (or `population_size=<NUM> for the Python API). Otherwise, you can add `--skip-bl-check` to skip checking branch lengths.");
+                }
+            }
+        }
+    }
+    
     // only unroot tree and stop if the user just wants to do so
     if (alisimulator->params->alisim_only_unroot_tree)
     {
@@ -710,7 +738,7 @@ void addMutations2Tree(const std::vector<std::pair<std::string, std::string>>& n
 
     // create a mapping between each node name and a pair of pointers <dad_node, node>
     std::map<std::string, std::pair<Node*, Node*>> node_mapping;
-    createNodeMapping(node_mapping, tree->root, NULL);
+    createNodeMapping(node_mapping, tree->root, nullptr);
 
     // browse the list of node_mutations to add mutations of each node to the corresponding node in the tree
     for (const std::pair<std::string, std::string>& mutations : node_mutations)
@@ -874,7 +902,7 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
             site_locked_vec = new std::vector<bool>(super_alisimulator->expected_num_sites, false);
 
             // browse the tree to mark all locked sites
-            getLockedSites(super_alisimulator->tree->root, NULL, site_locked_vec, super_alisimulator->tree->aln);
+            getLockedSites(super_alisimulator->tree->root, nullptr, site_locked_vec, super_alisimulator->tree->aln);
         }
     }
 
@@ -1119,6 +1147,14 @@ void generateMultipleAlignmentsFromSingleTree(AliSimulator *super_alisimulator, 
                     break;
             }
         }
+        
+        // fix crashing issue because accessing to deallocated pointer
+        // delete first_insertion
+        if (super_alisimulator->first_insertion)
+        {
+            delete super_alisimulator->first_insertion;
+            super_alisimulator->first_insertion = nullptr;
+        }
     }
     
     // output full tree (with internal node names) if outputting internal sequences
@@ -1234,8 +1270,9 @@ void generatePartitionAlignmentFromSingleSimulator(AliSimulator *&alisimulator, 
         delete tmp_alisimulator;
 
         // bug fixes: avoid accessing to deallocated pointer
-        if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
-            alisimulator->first_insertion = nullptr;
+        // Update: we must keep first_insertion for partition model, this pointer will be deleted in a later step
+        /*if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0)
+            alisimulator->first_insertion = nullptr;*/
     }
 
 }
@@ -1247,7 +1284,7 @@ void writeSequencesToFile(string file_path, Alignment *aln, int sequence_length,
 {
     try {
             // init output_stream for Indels to output aln without gaps
-            ostream *out_indels = NULL;
+            ostream *out_indels = nullptr;
             bool write_indels_output = false;
             if (alisimulator->params->alisim_insertion_ratio + alisimulator->params->alisim_deletion_ratio > 0
                 && !alisimulator->params->alisim_no_export_sequence_wo_gaps)
@@ -1716,8 +1753,8 @@ void writeSeqsFromTmpDataAndGenomeTreesIndels(AliSimulator* alisimulator, int se
     in.open((Params::getInstance().alisim_output_filename + "_" + Params::getInstance().tmp_data_filename + "_" + convertIntToString(MPIHelper::getInstance().getProcessID())).c_str());
     
     // dummy variables
-    GenomeTree* genome_tree = NULL;
-    Insertion* previous_insertion = NULL;
+    GenomeTree* genome_tree = nullptr;
+    Insertion* previous_insertion = nullptr;
     int num_sites_per_state = alisimulator->tree->aln->seq_type == SEQ_CODON ? 3 : 1;
     int seq_length_times_num_sites_per_state = alisimulator->tree->aln->seq_type == SEQ_CODON ? (sequence_length * 3) : sequence_length;
     int rebuild_indel_his_step = alisimulator->params->rebuild_indel_history_param * alisimulator->tree->leafNum;
@@ -1753,7 +1790,7 @@ void writeSeqsFromTmpDataAndGenomeTreesIndels(AliSimulator* alisimulator, int se
         string pre_output = AliSimulator::exportPreOutputString(node, output_format, max_length_taxa_name);
         string output(seq_length_times_num_sites_per_state, '-');
         
-        // build a new genome tree from the list of insertions if the genome tree has not been initialized (~NULL)
+        // build a new genome tree from the list of insertions if the genome tree has not been initialized (~nullptr)
         if (!genome_tree)
         {
             genome_tree = new GenomeTree();
@@ -1802,7 +1839,7 @@ void writeSeqsFromTmpDataAndGenomeTreesIndels(AliSimulator* alisimulator, int se
         previous_insertion = node->sequence->insertion_pos;
         
         // delete the insertion_pos of this node as we updated its sequence.
-        node->sequence->insertion_pos = NULL;
+        node->sequence->insertion_pos = nullptr;
         
         // export sequence of a leaf node from original sequence and genome_tree if using Indels
         genome_tree->exportReadableCharacters(seq_ori, num_sites_per_state, state_mapping, output);

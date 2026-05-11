@@ -87,7 +87,7 @@ void Pruning::deleteExNode(LeafSet::iterator pos)
 	// delete from the tree
 	Node *node = *pos;
 	Node *innode = node->neighbors[0]->node;
-	Node *othernodes[2] = { NULL, NULL };
+	Node *othernodes[2] = { nullptr, nullptr };
 	int i;
 	NeighborVec::iterator it;
 	double length = 0;
@@ -97,9 +97,9 @@ void Pruning::deleteExNode(LeafSet::iterator pos)
 		//if ((*it)->node != node)
 	FOR_NEIGHBOR(innode, node, it)	{
 		length += (*it)->length;
-		if (othernodes[0] == NULL)
+		if (othernodes[0] == nullptr)
 			othernodes[0] = (*it)->node;
-		else if (othernodes[1] == NULL)
+		else if (othernodes[1] == nullptr)
 			othernodes[1] = (*it)->node;
 		else
 			should_merge = false;

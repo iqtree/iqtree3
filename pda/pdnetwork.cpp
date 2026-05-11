@@ -43,17 +43,17 @@ PDNetwork::PDNetwork(Params &params) : SplitGraph(params) {
 		readRootNode(ROOT_NAME);
 
 	// read the parameter file
-	if (params.param_file != NULL) 
+	if (params.param_file != nullptr) 
 		readParams(params);
 
-	if (params.budget_file != NULL) {
+	if (params.budget_file != nullptr) {
 		if (isPDArea())
 			pda->readBudgetAreaFile(params);
 		else
 			pda->readBudgetFile(params);
 	}
 	// identify the root
-	if (params.root != NULL) 
+	if (params.root != nullptr) 
 		readRootNode(params.root);
 
 	// initial PD min
@@ -61,13 +61,13 @@ PDNetwork::PDNetwork(Params &params) : SplitGraph(params) {
 		initPDMin();
 
 	// read the initial set of taxa, incoporate info into the split system
-	if (params.initial_file != NULL && params.eco_dag_file == NULL)
+	if (params.initial_file != nullptr && params.eco_dag_file == nullptr)
 		readInitialSet(params);
 
 	if (!initialset.empty() && !isPDArea())
 		proceedInitialSet();
 
-	if (params.initial_area_file != NULL)
+	if (params.initial_area_file != nullptr)
 		readInitialAreas(params);
 
 
@@ -374,7 +374,7 @@ void PDNetwork::enterFindPD(Params &params) {
 		} else {
 			int min_accepted = !isPDArea() + 1;
 			int sub_size = (params.sub_size >= min_accepted) ? params.sub_size : pda->getSubSize();
-			if (sub_size < min_accepted && params.pdtaxa_file == NULL) {
+			if (sub_size < min_accepted && params.pdtaxa_file == nullptr) {
 				outError(ERR_NO_K);
 			}
 			

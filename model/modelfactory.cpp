@@ -129,8 +129,8 @@ ModelsBlock *readModelsDefinition(Params &params) {
 }
 
 ModelFactory::ModelFactory() : CheckpointFactory() {
-    model = NULL;
-    site_rate = NULL;
+    model = nullptr;
+    site_rate = nullptr;
     store_trans_matrix = false;
     is_storing = false;
     joint_optimize = false;
@@ -185,7 +185,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     }
 
     /********* preprocessing model string ****************/
-    NxsModel *nxsmodel  = NULL;
+    NxsModel *nxsmodel  = nullptr;
 
     string new_model_str = "";
     size_t mix_pos;
@@ -696,7 +696,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         if (tree->aln->num_informative_sites != tree->getAlnNSite()) {
             if (!params.partition_file) {
                 string infsites_file = ((string)params.out_prefix + ".infsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, infsites_file.c_str(), false, NULL, EXCLUDE_UNINF);
+                tree->aln->printAlignment(params.aln_output_format, infsites_file.c_str(), false, nullptr, EXCLUDE_UNINF);
                 cerr << "For your convenience alignment with parsimony-informative sites printed to " << infsites_file << endl;
             }
             outError("Invalid use of +ASC_INF because of " + convertIntToString(tree->getAlnNSite() - tree->aln->num_informative_sites) +
@@ -714,7 +714,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         if (tree->aln->frac_invariant_sites > 0) {
             if (!params.partition_file) {
                 string varsites_file = ((string)params.out_prefix + ".varsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, NULL, EXCLUDE_INVAR);
+                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, nullptr, EXCLUDE_INVAR);
                 cerr << "For your convenience alignment with variable sites printed to " << varsites_file << endl;
             }
             outError("Invalid use of +ASC_MIS because of " + convertIntToString(tree->aln->frac_invariant_sites*tree->aln->getNSite()) +
@@ -748,7 +748,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 //                }
             if (!params.partition_file) {
                 string varsites_file = ((string)params.out_prefix + ".varsites.phy");
-                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, NULL, EXCLUDE_INVAR);
+                tree->aln->printAlignment(params.aln_output_format, varsites_file.c_str(), false, nullptr, EXCLUDE_INVAR);
                 cerr << "For your convenience alignment with variable sites printed to " << varsites_file << endl;
             }
             outError("Invalid use of +ASC because of " + convertIntToString(tree->aln->frac_invariant_sites*tree->aln->getNSite()) +
@@ -1104,6 +1104,7 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
     vector<string> nested_models;
     int nmix, i;
     double max_logl, cur_logl;
+    bool found_nested_model = false;
     map<string, vector<string> >::iterator itr;
 
     nmix = model->getNMixtures();
@@ -1128,20 +1129,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
         for (i = 0; i < nested_models.size(); i++) {
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_models[i] + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated (e.g. MF_IGNORED)
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_models[i] + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");
@@ -1179,20 +1183,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
             nested_mix_model = replaceLastQ(model_name, nested_models[i]);
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_mix_model + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_mix_model + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");

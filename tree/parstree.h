@@ -32,7 +32,7 @@ public:
     /**
      * destructor
      */
-    ~ParsTree();
+    ~ParsTree() override;
 
 //    /**
 //     * allocate for ptn_pars if needed
@@ -42,14 +42,14 @@ public:
     /*
      * For the starting phase: phyloanalysis.cpp
      */
-    virtual bool isParsimonyTree() {
+    /* virtual bool isParsimonyTree() {
         return true;
-    }
+    }*/
 
     void initParsData(Params* pars_params);
 
-	void printPatternScore();
-	UINT findMstScore(int ptn); // find minimum spanning tree score of a given pattern
+	// void printPatternScore();
+	// UINT findMstScore(int ptn); // find minimum spanning tree score of a given pattern
 
     /**************************************************************************
      * Data

@@ -79,6 +79,10 @@ const char* dna_model_names_nonrev[] = {"3.3b","4.5a","4.5b","5.6a","5.6b",
                                        "8.16","8.17","8.18","9.20a","9.20b","10.12",
                                        "10.34","12.12"};
 
+/* Additional names/alias for DNA models (provided by Robert McArthur)*/
+const char* dna_model_names_alias[] = {"JC69", "K2P", "HKY85", "TN93", "K3P", "STRSYM"};
+const char* dna_model_additional_lie_markov[] = {"2.2b", "3.3c", "3.4", "4.4b"};
+
 /* DNA models supported by PhyML/PartitionFinder */
 const char* dna_model_names_old[] ={"JC", "F81", "K80", "HKY", "TNe", "TN",
          "K81", "K81u", "TIMe", "TIM", "TVMe", "TVM", "SYM", "GTR"};
@@ -182,6 +186,9 @@ const char *aa_model_names_mitochondrial[] = {"mtREV", "mtART", "mtZOA", "mtMet"
 const char *aa_model_names_chloroplast[] = {"cpREV"};
 
 const char *aa_model_names_viral[] = {"HIVb", "HIVw", "FLU", "rtREV", "FLAVI"};
+
+/* Additional names/alias for Protein models (provided by Robert McArthur)*/
+const char *aa_model_names_additional[] = {"EAL", "ELM", "Poisson"};
 
 /* Protein frequency set */
 const char* aa_freq_names[] = {"", "+F"}; // default
@@ -561,6 +568,33 @@ int detectSeqType(const char *model_name, SeqType &seq_type) {
             if (std_genetic_code[i]) empirical_model = true;
             break;
         }
+    
+    // Consider other model alias
+    // Currently only apply when running AliSim to avoid causing bugs to other features
+    if (Params::getInstance().alisim_active)
+    {
+        copyCString(dna_model_names_alias, sizeof(dna_model_names_alias)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_DNA;
+                break;
+            }
+        
+        copyCString(dna_model_additional_lie_markov, sizeof(dna_model_additional_lie_markov)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_DNA;
+                break;
+            }
+        
+        copyCString(aa_model_names_additional, sizeof(aa_model_names_additional)/sizeof(char*), model_list, true);
+        for (i = 0; i < model_list.size(); i++)
+            if (model_str == model_list[i]) {
+                seq_type = SEQ_PROTEIN;
+                break;
+            }
+        
+    }
 
     return (empirical_model) ? 2 : 1;
 }
@@ -701,7 +735,7 @@ string computeFastMLTree(Params &params, Alignment *aln,
 
     string concat_tree;
 
-    IQTree *iqtree = NULL;
+    IQTree *iqtree = nullptr;
 
     StrVector saved_model_names;
 
@@ -1809,9 +1843,9 @@ void mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &gene_sets, S
                 }
 			}
 		}
-		info.cur_ptnlh = NULL;
-		info.nniMoves[0].ptnlh = NULL;
-		info.nniMoves[1].ptnlh = NULL;
+		info.cur_ptnlh = nullptr;
+		info.nniMoves[0].ptnlh = nullptr;
+		info.nniMoves[1].ptnlh = nullptr;
 		part_info.push_back(info);
 		PhyloTree *tree = super_tree->extractSubtree(*it);
         tree->setParams(super_tree->params);
@@ -1865,7 +1899,7 @@ string CandidateModel::evaluate(Params &params,
 {
     //string model_name = name;
     Alignment *in_aln = aln;
-    IQTree *iqtree = NULL;
+    IQTree *iqtree = nullptr;
     if (in_aln->isSuperAlignment()) {
         SuperAlignment *saln = (SuperAlignment*)in_aln;
         if (params.partition_type == BRLEN_OPTIMIZE)
@@ -2109,7 +2143,7 @@ string CandidateModel::evaluateConcatenation(Params &params, SuperAlignment *sup
     computeICScores(ssize);
 
     delete aln;
-    aln = NULL;
+    aln = nullptr;
     return concat_tree;
 }
 
@@ -2885,8 +2919,8 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
 	    in_tree->params = &params;
     
     // for ModelOMatic
-    Alignment *prot_aln = NULL;
-    Alignment *dna_aln = NULL;
+    Alignment *prot_aln = nullptr;
+    Alignment *dna_aln = nullptr;
     bool do_modelomatic = params.modelomatic && in_tree->aln->seq_type == SEQ_CODON;
     if (generate_candidates) {
         if (in_model_name.empty()) {
@@ -3271,9 +3305,9 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
         delete in_tree->aln;
         in_tree->aln = best_aln;
         if (best_aln == prot_aln)
-            prot_aln = NULL;
+            prot_aln = nullptr;
         else
-            dna_aln = NULL;
+            dna_aln = nullptr;
     }
 
     if (dna_aln)
@@ -3328,8 +3362,8 @@ CandidateModel CandidateModelSet::evaluateAll(Params &params, PhyloTree* in_tree
 
     in_tree->params = &params;
     
-    Alignment *prot_aln = NULL;
-    Alignment *dna_aln = NULL;
+    Alignment *prot_aln = nullptr;
+    Alignment *dna_aln = nullptr;
     bool do_modelomatic = params.modelomatic && in_tree->aln->seq_type == SEQ_CODON;
     
     
@@ -3499,9 +3533,9 @@ CandidateModel CandidateModelSet::evaluateAll(Params &params, PhyloTree* in_tree
         delete in_tree->aln;
         in_tree->aln = at(best_model).aln;
         if (in_tree->aln == prot_aln)
-            prot_aln = NULL;
+            prot_aln = nullptr;
         else
-            dna_aln = NULL;
+            dna_aln = nullptr;
     }
     
     if (dna_aln)
@@ -5072,7 +5106,7 @@ void PartitionFinder::test_PartitionModel() {
             string bestModel_key = this_tree->aln->name + CKP_SEP + "best_model_" + criterion_name;
             string bestModel;
             bool check = model_info->getString(bestModel_key, bestModel);
-            ASSSERT(check);
+            ASSERT(check);
             this_tree->aln->model_name = bestModel;
         }
     }
@@ -5101,14 +5135,14 @@ void PartitionFinder::initialMPIShareMemory() {
 #ifdef ONESIDE_COMM
     if (MPIHelper::getInstance().getProcessID()==PROC_MASTER) {
         val_ptr = (int*) malloc(sizeof(int));
-        MPI_Win_create(val_ptr, sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+        MPI_Win_create(val_ptr, sizeof(int), sizeof(int), MPI_INFO_nullptr, MPI_COMM_WORLD, &win);
     } else {
-        val_ptr = NULL;
-        MPI_Win_create(val_ptr, 0, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+        val_ptr = nullptr;
+        MPI_Win_create(val_ptr, 0, sizeof(int), MPI_INFO_nullptr, MPI_COMM_WORLD, &win);
     }
 #else
-    win = NULL;
-    val_ptr = NULL;
+    win = nullptr;
+    val_ptr = nullptr;
 #endif // ONESIDE_COMM
 }
 
@@ -5247,11 +5281,11 @@ int PartitionFinder::mergejobAssignment(vector<pair<int,double> > &job_ids, vect
     int n = num_processes * num_threads;
     int* scounts = new int[num_processes];
     int* displs = new int[num_processes];
-    int* alljoblens = NULL;
+    int* alljoblens = nullptr;
     int* joblens = new int[num_threads];
     int pid;
-    char* sendbuf = NULL;
-    char* recvbuf = NULL;
+    char* sendbuf = nullptr;
+    char* recvbuf = nullptr;
     int recvlen;
     if (MPIHelper::getInstance().isMaster()) {
         // assign one job to every thread
@@ -5317,9 +5351,9 @@ int PartitionFinder::mergejobAssignment(vector<pair<int,double> > &job_ids, vect
     delete[] displs;
     delete[] joblens;
     delete[] recvbuf;
-    if (sendbuf != NULL)
+    if (sendbuf != nullptr)
         delete[] sendbuf;
-    if (alljoblens != NULL)
+    if (alljoblens != nullptr)
         delete[] alljoblens;
     return currJobs.size();
 }
@@ -5982,7 +6016,7 @@ void SyncChkPoint::loadFrIntArr(vector<set<int> >& gene_sets, int* buff, int buf
 
 char* SyncChkPoint::toCharArr(vector<string>& model_names, int& buffsize) {
     string buff_str = "";
-    char* buff = NULL;
+    char* buff = nullptr;
     int i;
     for (i = 0; i < model_names.size(); i++) {
         buff_str.append(model_names[i]);
@@ -5999,7 +6033,7 @@ char* SyncChkPoint::toCharArr(vector<string>& model_names, int& buffsize) {
 
 void SyncChkPoint::loadFrCharArr(vector<string>& model_names, char* buff) {
     model_names.clear();
-    if (buff == NULL)
+    if (buff == nullptr)
         return;
     string buff_str = string(buff);
     int start_pos = 0;
@@ -6018,7 +6052,7 @@ void SyncChkPoint::broadcastVecSetInt(vector<set<int> >& gene_sets) {
     // broadcast vector<set<int> > object to all workers
     set<int>::iterator itr;
     int buffsize;
-    int* buff = NULL;
+    int* buff = nullptr;
 
     // broadcast the buffsize to workers
     if (MPIHelper::getInstance().isMaster())
@@ -6038,13 +6072,13 @@ void SyncChkPoint::broadcastVecSetInt(vector<set<int> >& gene_sets) {
             loadFrIntArr(gene_sets, buff, buffsize);
     }
 
-    if (buff != NULL)
+    if (buff != nullptr)
         delete[] buff;
 }
 
 void SyncChkPoint::broadcastVecStr(vector<string>& model_names) {
     int buffsize;
-    char* buff = NULL;
+    char* buff = nullptr;
 
     // for Master, build the long string
     if (MPIHelper::getInstance().isMaster()) {
@@ -6066,7 +6100,7 @@ void SyncChkPoint::broadcastVecStr(vector<string>& model_names) {
         }
     }
 
-    if (buff != NULL)
+    if (buff != nullptr)
         delete[] buff;
 }
 
@@ -6248,6 +6282,16 @@ void addModel(string model_str, string& new_model_str, string new_subst) {
     }
 }
 
+// initialise model frequency set in MixtureFinder for different sequence types
+char* initFreqSet(SeqType seq_type) {
+    switch (seq_type) {
+        case SEQ_CODON:   return ",F1X4,F3X4";
+        case SEQ_MORPH:   return "FQ";
+        case SEQ_PROTEIN: return ",FO";
+        default:          return "FO";
+    }
+}
+
 /**
  @brief Find the best component of a Q-mixture model while fixing other components
  @note This function is similar to runModelFinder, but it is adapted for optimisation of Q-Mixture model
@@ -6344,9 +6388,9 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
     orig_ratehet_set = params.ratehet_set;
     orig_model_set = params.model_set;
 
-    // params.model_extra_set = NULL;
-    // params.model_subset = NULL;
-    // params.state_freq_set = NULL;
+    // params.model_extra_set = nullptr;
+    // params.model_subset = nullptr;
+    // params.state_freq_set = nullptr;
     generate_candidates = false;
     candidate_models.nest_network = nest_network;
 
@@ -6396,8 +6440,8 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
             }
         }
         skip_all_when_drop = true;
-    } else if (mixture_action == MA_FIND_CLASS) {
-        char init_state_freq_set[] = "FO";
+      } else if (mixture_action == MA_FIND_CLASS) {
+        char* init_state_freq_set = initFreqSet(iqtree.aln->seq_type);
         if (!params.state_freq_set) {
             params.state_freq_set = init_state_freq_set;
         }
@@ -6565,7 +6609,7 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     double LR, df_diff, pvalue;
     string criteria_str;
 
-    char init_state_freq_set[] = "FO";
+    char* init_state_freq_set = initFreqSet(iqtree->aln->seq_type);
     if (!params.state_freq_set) {
         params.state_freq_set = init_state_freq_set;
     }
@@ -6576,15 +6620,26 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
 
     // Step 0: (reorder candidate DNA models when -mset is used) build the nest-relationship network
     map<string, vector<string> > nest_network;
-    if (iqtree->aln->seq_type == SEQ_DNA) {
-        StrVector model_names, freq_names;
-        getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
-                      params.model_set, params.model_subset, model_names);
-        getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
-
-        nest_network = generateNestNetwork(model_names, freq_names);
+    StrVector model_names, freq_names;
+    getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
+                  params.model_set, params.model_subset, model_names);
+    getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
+    
+    auto isOnlyMKAndFQ = [&]() -> bool {
+        bool onlyMK = std::all_of(model_names.begin(), model_names.end(),
+            [](const std::string& s) { return s == "MK"; });
+        bool onlyFQ = std::all_of(freq_names.begin(), freq_names.end(),
+            [](const std::string& s) { return s == "+FQ"; });
+        return onlyMK && onlyFQ;
+    };
+    if (isOnlyMKAndFQ()) {
+        outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless.\nPlease provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
     }
 
+    if (iqtree->aln->seq_type == SEQ_DNA) {
+        nest_network = generateNestNetwork(model_names, freq_names);
+    }
+    
     // Step 1: run ModelFinder
     params.model_name = "";
     bool under_mix_finder = true;
@@ -6611,10 +6666,10 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
 
     cout << endl << "Model: " << best_subst_name << best_rate_name << "; df: " << curr_df << "; loglike: " << curr_loglike << "; " << criteria_str << " score: " << curr_score << endl;
 
-    model_info.getString("best_model_AIC", best_model_pre_AIC);
-    model_info.getString("best_model_AICc", best_model_pre_AICc);
-    model_info.getString("best_model_BIC", best_model_pre_BIC);
-    model_info.getString("best_model_list_" + criteria_str, best_model_pre_list);
+    ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
+    ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
+    ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
+    ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
 
     // Step 3: keep adding a new class until no further improvement
     if (params.opt_qmix_criteria == 1) {
@@ -6646,10 +6701,10 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
             curr_score = best_model.getScore();
             model_str = best_subst_name;
 
-            model_info.getString("best_model_AIC", best_model_pre_AIC);
-            model_info.getString("best_model_AICc", best_model_pre_AICc);
-            model_info.getString("best_model_BIC", best_model_pre_BIC);
-            model_info.getString("best_model_list_" + criteria_str, best_model_pre_list);
+            ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
+            ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
+            ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
+            ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
 
         }
     } while (better_model && getClassNum(best_subst_name)+1 <= params.max_mix_cats);
@@ -6731,8 +6786,15 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
         aln = iqtree->aln;
     }
     
-    if (aln->seq_type != SEQ_DNA)
-        outError("Error! The option -m '" + params.model_name + "' can only work on DNA data set");
+    if (iqtree->aln->seq_type != SEQ_DNA)
+        outWarning("MixtureFinder has not been tested for non-DNA data types. Be cautious about interpreting the results");
+    
+    if (iqtree->aln->getMaxNumStates() > 6)
+        outWarning("Running MixtureFinder for the given data type can take much time. Please consider restricting the set of the models to test as much as possible");
+    
+    if (iqtree->aln->seq_type == SEQ_PROTEIN && !params.force_aa_mix_finder)
+        outError("Error! We already have the mixture frequency vectors C10–C60 which are effective for modeling amino acid data.\nPlease make sure running MixtureFinder for your amino acid data makes sense.\nIf you are determined to do that, please add an option --force-aa-mix-finder to the command line.");
+    
 
     // create a new IQTree object for this mixture model
     // allocate heterotachy tree if neccessary

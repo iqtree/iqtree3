@@ -43,13 +43,13 @@ bool compareSplit(Split* sp1, Split* sp2) {
 SplitGraph::SplitGraph()
         : vector<Split*>()
 {
-    pda = NULL;
-    taxa = NULL;
-    splits = NULL;
-    sets = NULL;
-    trees = NULL;
-    mtrees = NULL;
-    areas_boundary = NULL;
+    pda = nullptr;
+    taxa = nullptr;
+    splits = nullptr;
+    sets = nullptr;
+    trees = nullptr;
+    mtrees = nullptr;
+    areas_boundary = nullptr;
 }
 
 SplitGraph::SplitGraph(Params &params) : vector<Split*>() {
@@ -62,13 +62,13 @@ void SplitGraph::createBlocks() {
     pda = new MPdaBlock(this);
     sets = new MSetsBlock();
     trees = new TreesBlock(taxa);
-    //mtrees = NULL;
+    //mtrees = nullptr;
 }
 
 
 void SplitGraph::init(Params &params)
 {
-    mtrees = NULL;
+    mtrees = nullptr;
     if (params.intype == IN_NEWICK) {
         // read the input file, can contain more than 1 tree
         mtrees = new MTreeSet(params.user_file, params.is_rooted, params.tree_burnin, params.tree_max_count);
@@ -78,7 +78,7 @@ void SplitGraph::init(Params &params)
             params.sub_size++;
             params.min_size++;
         }
-        if (mtrees->isRooted() && params.root != NULL)
+        if (mtrees->isRooted() && params.root != nullptr)
             outError(ERR_CONFLICT_ROOT);
         //SplitIntMap hash_ss;
         mtrees->convertSplits(*this, params.split_threshold, params.split_weight_summary, params.split_weight_threshold);
@@ -115,7 +115,7 @@ void SplitGraph::init(Params &params)
         taxa->Report(cout);
     //splits->Report(cout);
     //reportConflict(cout);
-    if (params.pdtaxa_file != NULL) {
+    if (params.pdtaxa_file != nullptr) {
         if (sets->getNSets() > 0)
             outError("Taxa sets were already specified in the input file");
         cout << "Reading taxa sets in file " << params.pdtaxa_file << "..." << endl;
@@ -133,7 +133,7 @@ void SplitGraph::init(Params &params)
             outError("No taxa sets found");
     }
 
-    areas_boundary = NULL;
+    areas_boundary = nullptr;
     if (params.areas_boundary_file) {
         if (sets->getNSets() == 0) outError("No taxon sets defined yet");
         areas_boundary = new double [sets->getNSets() * sets->getNSets()];

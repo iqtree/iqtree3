@@ -18,7 +18,7 @@
 #include "utils/checkpoint.h"
 #include "phylo-yaml/statespace.h"
 
-using namespace std;
+// using namespace std;
 
 const char OPEN_BRACKET = '{';
 const char CLOSE_BRACKET = '}';
@@ -152,7 +152,7 @@ public:
 	 * @param cat mixture class ID
 	 * @return corresponding mixture model component
 	 */
-    virtual ModelSubst* getMixtureClass(int cat) { return NULL; }
+    virtual ModelSubst* getMixtureClass(int cat) { return nullptr; }
 
 	/**
 	 * @param cat mixture class ID
@@ -361,11 +361,11 @@ public:
     virtual void report(ostream &out) {}
 
 	virtual double *getEigenvalues() const {
-		return NULL;
+		return nullptr;
 	}
 
 	virtual double *getEigenvectors() const {
-		return NULL;
+		return nullptr;
 	}
 
 	virtual double *getInverseEigenvectors() const {
@@ -394,6 +394,15 @@ public:
     * get the underlying mutation model, used with PoMo model
     */
     virtual ModelSubst *getMutationModel() { return this; }
+
+    /**
+     * Print the model information in a format that can be accepted by MrBayes, using lset and prset.<br>
+     * By default, it simply prints a warning to the log and to the stream, stating that this model is not supported by MrBayes.
+     * @param out the ofstream to print the result to
+     * @param partition the partition to apply lset and prset to
+     * @param charset the current partition's charset.
+     */
+    virtual void printMrBayesModelText(ofstream& out, string partition, string charset);
 
 	/*****************************************************
 		Checkpointing facility

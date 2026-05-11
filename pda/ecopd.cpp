@@ -300,7 +300,7 @@ void ECOpd::readDAG(istream &in) {
  * Filling out taxaDAG vector: node corresponds to taxa, neighbors to preys, length (node-neighbor) to weight
  * ---------------------------------------------------------------------------------------------------------*/
  	vector<int> vec2;//the value of vec[j] is the height of the species in the DAG
-	taxaDAG.resize(nvar,NULL);
+	taxaDAG.resize(nvar,nullptr);
 	for(j=0;j<nvar;j++){
 		taxaDAG[j] = newNode(j,j);
 		//cout<<"taxonDAG[j="<<j+1<<"]->id="<<taxaDAG[j]->id<<endl;

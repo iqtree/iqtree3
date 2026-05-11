@@ -22,7 +22,7 @@ ModelSubst::ModelSubst(int nstates) : Optimization(), CheckpointFactory()
 		state_freq[i] = 1.0 / num_states;
 	freq_type = FREQ_EQUAL;
     fixed_parameters = false;
-//    linked_model = NULL;
+//    linked_model = nullptr;
 }
 
 void ModelSubst::startCheckpoint() {
@@ -210,6 +210,14 @@ void ModelSubst::computeTipLikelihood(PML::StateType state, double *state_lk) {
 
 double *ModelSubst::newTransMatrix() {
 	return new double[num_states * num_states];
+}
+
+void ModelSubst::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    out << "using MrBayes model GTR+G+I]" << endl;
+    out << "  [Model not supported by MrBayes, defaulting to GTR+G+I (DNA)]" << endl;
+    outWarning("MrBayes output is not supported by model " + name + ", defaulting to GTR+G+I (DNA)!");
+
+    out << "  lset applyto=(" << partition << ") nucmodel=4by4 nst=" << 6 << " rates=" << "invgamma" << ";" << endl;
 }
 
 ModelSubst::~ModelSubst()

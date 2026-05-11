@@ -41,7 +41,7 @@ RateKategory::RateKategory(int ncat, PhyloTree *tree)
 RateKategory::~RateKategory()
 {
 	delete [] rates;
-	rates = NULL;
+	rates = nullptr;
 }
 
 double RateKategory::targetFunk(double x[])
@@ -125,7 +125,7 @@ int RateKategory::computePatternRates(DoubleVector& pattern_rates, IntVector& pa
 //	int npattern = phylo_tree->aln->getNPattern();
 //	double *ptn_rates = new double[npattern];
 //	phylo_tree->computeLikelihoodBranchNaive((PhyloNeighbor*)phylo_tree->root->neighbors[0],
-//		(PhyloNode*)phylo_tree->root, NULL, ptn_rates);
+//		(PhyloNode*)phylo_tree->root, nullptr, ptn_rates);
 //
 //	pattern_rates.clear();
 //	pattern_rates.insert(pattern_rates.begin(), ptn_rates, ptn_rates + npattern);

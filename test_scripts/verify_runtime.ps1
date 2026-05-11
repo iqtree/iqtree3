@@ -1,63 +1,83 @@
-param(
-    [int]   $ExpectedColumn = 8,                                # 1-based index of the threshold column
-    [string]$input_file     = "test_scripts/test_data/expected_runtimes.tsv"
+# Compare IQ-TREE 3 runtime against IQ-TREE 2 baseline + threshold.
+# When IQ-TREE 2 baseline is 0 (unsupported command), falls back to the
+# pre-defined expected value from expected_runtime.tsv if a platform column is given.
+#
+# Args: $IQTree2Log    = IQ-TREE 2 log file
+#       $IQTree3Log    = IQ-TREE 3 log file
+#       $FallbackColumn = platform column name in expected_runtime.tsv for fallback (optional)
+param (
+    [string] $IQTree2Log     = "time_log_iqtree2.tsv",
+    [string] $IQTree3Log     = "time_log_iqtree3.tsv",
+    [string] $FallbackColumn = ""
 )
 
-$fail_count = 0
-$line_num = 0
+$WD = "test_scripts/test_data"
+$thresholdFile = Join-Path $WD "expected_runtime.tsv"
 
-Get-Content $input_file | ForEach-Object {
-    $line = $_.Trim()
-    $line_num++
+# Read thresholds (command + diff-threshold only)
+$thresholdLines = Get-Content $thresholdFile | Select-Object -Skip 1
+$thresholds = foreach ($line in $thresholdLines) {
+    $parts = $line -split "`t"
+    [PSCustomObject]@{ Command = $parts[0]; Threshold = [double]$parts[1] }
+}
 
-    if ($line_num -eq 1 -or $line -eq "") {
-        return  # skip header or empty line
-    }
-
-    $columns = $line -split "`t"
-    if ($columns.Count -lt 4) {
-        Write-Host "Skipping malformed line: $line"
-        return
-    }
-
-    $iqtree_file = Join-Path "test_scripts/test_data" $columns[0]
-    $field_name = $columns[1]
-    $expected_value = [double]$columns[$ExpectedColumn]
-    $threshold = [double]$columns[2]
-
-    if (-not (Test-Path $iqtree_file)) {
-        Write-Host "File not found: ${iqtree_file}"
-        return
-    }
-
-    $actual_line = Select-String -Path $iqtree_file -Pattern ([regex]::Escape($field_name))
-    if (-not $actual_line) {
-        Write-Host "Field not found in ${iqtree_file}: ${field_name}"
-        return
-    }
-
-    $match = [regex]::Match($actual_line.Line, '[-+]?\d+(\.\d+)?([eE][-+]?\d+)?')
-
-    if (-not $match.Success) {
-        Write-Host "No numeric value found in line: $($actual_line.Line)"
-        return
-    }
-
-    $actual_value = [double]$match.Value
-    $highest_value = $expected_value + $threshold
-
-    if ($actual_value -le $highest_value) {
-        Write-Host "PASS: ${iqtree_file} -- Expected: ${expected_value}, Reported: ${actual_value}, Threshold: ${threshold}"
+# Resolve fallback column index
+$fallbackValues = @()
+if ($FallbackColumn -ne "") {
+    $header = (Get-Content $thresholdFile -TotalCount 1) -split "`t"
+    $colIdx = $header.IndexOf($FallbackColumn)
+    if ($colIdx -lt 0) {
+        Write-Host "WARNING: fallback column '$FallbackColumn' not found in $thresholdFile; skipping fallback"
+        $FallbackColumn = ""
     } else {
-        Write-Host "FAIL: ${iqtree_file} -- Expected: ${expected_value}, Reported: ${actual_value}, Threshold: ${threshold}"
-        $fail_count++
+        $fallbackValues = foreach ($line in $thresholdLines) { [double]($line -split "`t")[$colIdx] }
+    }
+}
+
+# Read runtimes (column index 1 = RealTime)
+$iqtree2Lines = Get-Content $IQTree2Log | Select-Object -Skip 1
+$iqtree2Times = foreach ($line in $iqtree2Lines) { [double]($line -split "`t")[1] }
+
+$iqtree3Lines = Get-Content $IQTree3Log | Select-Object -Skip 1
+$iqtree3Times = foreach ($line in $iqtree3Lines) { [double]($line -split "`t")[1] }
+
+$failCount = 0
+
+for ($i = 0; $i -lt $thresholds.Count; $i++) {
+    $command   = $thresholds[$i].Command
+    $threshold = $thresholds[$i].Threshold
+    $expected  = $iqtree2Times[$i]
+    $reported  = $iqtree3Times[$i]
+
+    if ($expected -eq 0) {
+        if ($FallbackColumn -ne "" -and $fallbackValues.Count -gt $i) {
+            $expected = $fallbackValues[$i]
+            Write-Host "ℹ️  ${command}: IQ-TREE 2 baseline unavailable, using pre-defined expected value (${expected}s)"
+        } else {
+            Write-Host "⏭ $command skipped (IQ-TREE 2 baseline unavailable, no fallback column provided)"
+            continue
+        }
+    }
+
+    $allowed = $expected + $threshold
+    $diff    = $reported - $expected
+
+    if ($reported -gt $allowed) {
+        Write-Host "❌ $command exceeded the allowed runtime usage."
+        Write-Host "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${reported}s, Diff: ${diff}s"
+        $failCount++
+    } else {
+        Write-Host "✅ $command passed the runtime check."
+        Write-Host "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${reported}s, Diff: ${diff}s"
     }
 }
 
 Write-Host ""
-if ($fail_count -eq 0) {
+
+if ($failCount -eq 0) {
     Write-Host "✅ All runtime checks passed."
+    exit 0
 } else {
-    Write-Host "❌ ${fail_count} checks failed."
+    Write-Host "❌ $failCount checks failed."
     exit 1
 }

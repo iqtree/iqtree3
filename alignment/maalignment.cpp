@@ -41,7 +41,9 @@ void MaAlignment::readLogLL(char *fileName)
 			//reading each line of the file
 			//remove the badbit
 			inFile.exceptions (ios::badbit);
-			if ( !(inFile >> currentString) ) break;
+            if ( !(inFile >> currentString) ) {
+                break;
+            }
 			//set the failbit again
 			inFile.exceptions (ios::failbit | ios::badbit);
 			_logllVec.push_back(convert_double(currentString.c_str()));
@@ -60,20 +62,23 @@ void MaAlignment::readLogLL(char *fileName)
 	} catch (...){
 			outError(ERR_READ_ANY);
 	}
-	if (siteNum != _logllVec.size())
-		outError("Actual number of site's likelihoods is not consistent with the announced number in the first line.");
+    if (siteNum != _logllVec.size()) {
+        outError("Actual number of site's likelihoods is not consistent with the announced number in the first line.");
+    }
 	cout << "Finish reading, now assign the logLL to the pattern:" << endl;
 
 	logLL.resize(getNPattern(),0.0);
 	for (int i = 0; i < siteNum; i++)
 	{
 		int patIndex = getPatternID(i);
-		if ( logLL[patIndex] == 0 )
-			logLL[patIndex] = _logllVec[i];
-		else
-			if ( logLL[patIndex] != _logllVec[i] )
-//				outError("Conflicting between the likelihoods reported for pattern", (*this)[i]);
+        if ( logLL[patIndex] == 0 ) {
+            logLL[patIndex] = _logllVec[i];
+        } else {
+            if ( logLL[patIndex] != _logllVec[i] ) {
+                //				outError("Conflicting between the likelihoods reported for pattern", (*this)[i]);
                 outError("Conflicting between the likelihoods reported for pattern");
+            }
+        }
 	}
 //	int npat = getNPattern();
 //	cout << "Number of patterns: " << npat << endl;
@@ -85,8 +90,9 @@ void MaAlignment::readLogLL(char *fileName)
 IntVector MaAlignment::computeExpectedNorFre()
 {
 	IntVector expectedNorFre;
-	if ( logLL.empty()) 
-		outError("Error: log likelihood of patterns are not given!");
+    if ( logLL.empty()) {
+        outError("Error: log likelihood of patterns are not given!");
+    }
 
 	size_t patNum = getNPattern();
 	size_t alignLen = getNSite();		

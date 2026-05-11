@@ -125,7 +125,7 @@ inline void _my_assert(const char* expression, const char *func, const char* fil
 	#include <set>
 #endif
 
-using namespace std;
+// using namespace std;
 
 
 #if	defined(USE_HASH_MAP) && GCC_VERSION < 40300 && !defined(_MSC_VER) && !defined(__clang__)
@@ -765,6 +765,11 @@ public:
 	 */
 	double initPS;
 
+    /**
+     * a switch to apply bias towards shorter branches during radom perturbation
+     */
+    bool weightedPerturbation;
+    
 	/**
 	 *  logl epsilon for model parameter optimization
 	 */
@@ -999,6 +1004,13 @@ public:
     bool do_au_test;
 
     /**
+     * log-likelihood epsilon for AU test: if |deltaL| between two trees is
+     * smaller than this value, the tree is kept in the confidence set regardless
+     * of the AU p-value (default: 0.0 = disabled)
+     */
+    double au_epsilon;
+
+    /**
             file specifying partition model
      */
     char *partition_file;
@@ -1126,7 +1138,7 @@ public:
 
     /**
             name of the reference sequence where aln_site_list is based on,
-            NULL to take alignment positions.
+            nullptr to take alignment positions.
      */
     char *ref_seq_name;
 
@@ -1889,7 +1901,7 @@ public:
     /** bootstrap specification of the form "l1:b1,l2:b2,...,lk:bk"
         to randomly draw b1 sites from the first l1 sites, etc. Note that l1+l2+...+lk
         must equal m, where m is the alignment length. Otherwise, an error will occur.
-        The default bootstrap_spec == NULL, a standard procedure is applied, i.e., randomly draw m sites.
+        The default bootstrap_spec == nullptr, a standard procedure is applied, i.e., randomly draw m sites.
     */
     char *bootstrap_spec;
 
@@ -2461,6 +2473,9 @@ public:
     /** true if ignoring the "finished" flag in checkpoint file */
     bool force_unfinished;
     
+    /** true if forcing IQ-TREE to run MixtureFinder for amino acid data */
+    bool force_aa_mix_finder;
+    
     /** TRUE to print checkpoints to 1.ckp.gz, 2.ckp.gz,... */
     bool print_all_checkpoints;
 
@@ -2564,6 +2579,11 @@ public:
     *  TRUE to disable copying gaps from input sequences
     */
     bool alisim_no_copy_gaps;
+    
+    /**
+    *  TRUE if users have specified the random seed
+    */
+    bool seed_specified;
     
     /**
     *  original parameters
@@ -2729,6 +2749,11 @@ public:
     double alisim_branch_scale;
     
     /**
+    *  TRUE to skip branch length checking
+    */
+    bool alisim_skip_bl_check;
+    
+    /**
     *  TRUE to output all replicate alignments into a single file
     */
     bool alisim_single_output;
@@ -2850,6 +2875,18 @@ public:
      * TRUE to output the alternative SPRs with their supports in the tree
      */
     bool out_alter_spr;
+    
+    /**
+     * @private
+     * TRUE to use local references in CMAPLE
+     */
+    bool cmaple_use_local_ref;
+    
+    /**
+     * @private
+     * TRUE to output MAT with CMAPLE
+     */
+    bool cmaple_output_MAT;
 
     /**
     *  Mutation file that specifies pre-defined mutations occurs at nodes
@@ -2860,6 +2897,11 @@ public:
     *  site starting index (for predefined mutations in AliSim)
     */
     int site_starting_index;
+
+    /**
+    * Whether to output a MrBayes Block File
+    */
+    bool mr_bayes_output;
     
     /**
      *  input tree string (instead of a file)
@@ -3236,7 +3278,7 @@ void convert_string_vec(const char *str, StrVector &str_vec, char separator = ',
         read distributions from built-in string or user-specified file
  */
 
-void read_distributions(char* filepath = NULL);
+void read_distributions(char* filepath = nullptr);
 
 /**
         randomly select a number from the pool of random numbers of a distribution
@@ -3444,12 +3486,12 @@ extern vector<default_random_engine> generator_vec;
  * @param seed seed for generator
  * @param write_info true to write information, false otherwise (default)
  */
-int init_random(int seed, bool write_info = false, int** rstream = NULL);
+int init_random(int seed, bool write_info = false, int** rstream = nullptr);
 
 /**
  * finalize random number generator (e.g. free memory
  */
-int finish_random(int *rstream = NULL);
+int finish_random(int *rstream = nullptr);
 
 /**
  * initialize multiple random streams
@@ -3466,7 +3508,7 @@ int finish_multi_rstreams();
  * returns a random integer in the range [0; n - 1]
  * @param n upper-bound of random number
  */
-int random_int(int n, int *rstream = NULL);
+int random_int(int n, int *rstream = nullptr);
 
 /**
  *  return a random integer in the range [a,b]
@@ -3477,18 +3519,18 @@ int random_int(int n, int *rstream = NULL);
  * returns a random integer in the range [0; RAND_MAX - 1]
  * = random_int(RAND_MAX)
  */
-//int random_int(int *rstream = NULL);
+//int random_int(int *rstream = nullptr);
 
 /**
  * returns a random floating-point nuber in the range [0; 1)
  */
-double random_double(int *rstream = NULL);
+double random_double(int *rstream = nullptr);
 
 /**
  * returns a random double based on an exponential distribution
  * @param mean the mean of exponential distribution
  */
-double random_double_exponential_distribution(double mean, int *rstream = NULL);
+double random_double_exponential_distribution(double mean, int *rstream = nullptr);
 
 /**
  * geometric random number generation
@@ -3527,7 +3569,7 @@ int random_int_lav(double a, int m);
 IndelDistribution parseIndelDis(string input, string event_name);
 
 template <class T>
-void my_random_shuffle (T first, T last, int *rstream = NULL)
+void my_random_shuffle (T first, T last, int *rstream = nullptr)
 {
 	int n = last - first;
 	for (int i=n-1; i>0; --i) {
@@ -3541,7 +3583,7 @@ void my_random_shuffle (T first, T last, int *rstream = NULL)
  @param[in/out] sample array of size n with frequency of resampling
  @param rstream random number generator stream
 */
-void random_resampling(int n, IntVector &sample, int *rstream = NULL);
+void random_resampling(int n, IntVector &sample, int *rstream = nullptr);
 
 #define RESAMPLE_NAME ((Params::getInstance().jackknife_prop == 0.0) ? "bootstrap" : "jackknife")
 #define RESAMPLE_NAME_I ((Params::getInstance().jackknife_prop == 0.0) ? "Bootstrap" : "Jackknife")
@@ -3628,7 +3670,7 @@ void print_stacktrace(ostream &out, unsigned int max_frames = 63);
     quicksort template
 */
 template<class T1, class T2>
-void quicksort(T1* arr, int left, int right, T2* arr2 = NULL) {
+void quicksort(T1* arr, int left, int right, T2* arr2 = nullptr) {
     if (left > right) return;
     ASSERT(left <= right);
       int i = left, j = right;
@@ -3825,5 +3867,22 @@ double frob_norm (double m[], int n, double scale=1.0);
 */
 string getOutputNameWithExt(const InputType& format, const string& output_filepath);
 
+/**
+ * ensures a number, to be inputted into MrBayes, is larger than the minimum value for MrBayes (0.01)
+ */
+double minValueCheckMrBayes(double orig_value);
+
+
+/**
+ * get a map of iqtree amino acid/protein substitution models to MrBayes amino acid/protein substitution models.<br>
+ * models which are not supported by mrbayes are not included. GTR20 is assumed as default.
+ */
+unordered_map<string, string> getIqTreeToMrBayesAAModels();
+
+/**
+ * get the MrBayes equivalent of a genetic code, given the id of the code. Returns and empty string if that code
+ * is not supported in MrBayes.
+ */
+string getMrBayesGeneticCode(int geneticCodeId);
 
 #endif
