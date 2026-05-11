@@ -2128,6 +2128,7 @@ void parseArg(int argc, char *argv[], Params &params) {
                     params.partition_type = BRLEN_OPTIMIZE;
                 else
                     throw "Use --edge equal|scale|unlink";
+                continue;
             }
             
             if (strcmp(argv[cnt], "-rcluster") == 0 || strcmp(argv[cnt], "--rcluster") == 0) {
@@ -2754,6 +2755,16 @@ void parseArg(int argc, char *argv[], Params &params) {
             if (strcmp(argv[cnt], "--sprta-other-places") == 0 ||
                 strcmp(argv[cnt], "-sprta-other-places") == 0) {
               params.out_alter_spr = true;
+
+              continue;
+            }
+            if (strcmp(argv[cnt], "--disable-local-ref") == 0) {
+                params.cmaple_use_local_ref = false;
+
+              continue;
+            }
+            if (strcmp(argv[cnt], "--estimate-MAT") == 0) {
+                params.cmaple_output_MAT = true;
 
               continue;
             }
@@ -7598,6 +7609,9 @@ void Params::setDefault() {
     SPRTA_zero_branches = false;
     out_alter_spr = false;
     intree_str = "";
+    
+    cmaple_use_local_ref = true;
+    cmaple_output_MAT = false;
 }
 
 int countPhysicalCPUCores() {
