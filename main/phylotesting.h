@@ -868,9 +868,4 @@ bool isRateTypeNested(string rate_type1, string rate_type2);
  */
 map<string, vector<string> > generateNestNetwork(StrVector model_names, StrVector freq_names);
 
-/**
- * generate model set, freq set and rate model by user input model string
- */
-void generateModelLists(string input_model_str, StrVector& model_list, StrVector& freq_list, string& input_rate);
-
 #endif /* PHYLOTESTING_H_ */

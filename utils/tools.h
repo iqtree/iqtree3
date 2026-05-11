@@ -1766,11 +1766,6 @@ public:
     bool check_combin_q_mat;
 
     /**
-            estimate the DNA mixture model initialising from one class (like MixtureFinder way)
-     */
-    bool est_from_one;
-
-    /**
             % of distinct site pattern required in a sample.
             if model_tamer < 100, do ModelTamer subsample-upsampling.
      */

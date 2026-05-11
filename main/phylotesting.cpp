@@ -4577,7 +4577,8 @@ void PartitionFinder::getBestModelforMergesNoMPI(int nthreads, vector<pair<int,d
  * job_type = 2 : for all merges
  */
 void PartitionFinder::getBestModel(int job_type) {
-
+    double cpu_time = getCPUTime();
+    double real_time = getRealTime();
     vector<pair<int,double> > jobIDs;
     vector<int> currPartJobs; // for partition jobs
 #ifdef _IQTREE_MPI
@@ -4764,6 +4765,11 @@ void PartitionFinder::getBestModel(int job_type) {
     }
 #endif
 
+    cpu_time = getCPUTime() - cpu_time;
+    real_time = getRealTime() - real_time;
+    cout << "CPU time for this round of estimation: " << cpu_time << " seconds (" << convert_time(cpu_time) << ")" << endl;
+    cout << "Wall-clock time for this round of estimation: " << real_time << " seconds (" << convert_time(real_time) << ")" << endl;
+    cout << endl;
 }
 
 #ifdef _IQTREE_MPI
@@ -6800,10 +6806,9 @@ CandidateModel findMixtureComponent(Params &params, IQTree &iqtree, ModelCheckpo
  @param[in] iqtree phylogenetic tree
  @param[in,out] model_info (IN/OUT) information for all models considered
  @param[out] model_str name of the best-fit Q mixture model
- @param[in] input_model_str user input model name string
  @return the likelihood from the optimal mixture model
  */
-double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info, string& model_str, string input_model_str) {
+double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &model_info, string& model_str) {
 
     bool do_init_tree;
     string best_subst_name;
@@ -6840,19 +6845,6 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     // Step 0: (reorder candidate DNA models when -mset is used) build the nest-relationship network
     map<string, vector<string> > nest_network;
     StrVector model_names, freq_names;
-
-    StrVector model_list, freq_list; // user-defined DNA Q-mixture estimation
-    string input_rate;
-    if (input_model_str.size()) {
-        generateModelLists(input_model_str, model_list, freq_list, input_rate);
-        params.max_mix_cats = model_list.size();
-
-        params.model_set = model_list[0].c_str();
-        //strncpy(params.state_freq_set, freq_list[0].c_str(), sizeof(params.state_freq_set));
-        //params.state_freq_set[sizeof(params.state_freq_set)-1] = '\0';
-        params.ratehet_set = input_rate.c_str();
-    }
-
     getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
                   params.model_set, params.model_subset, model_names);
     getStateFreqs(iqtree->aln->seq_type, params.state_freq_set, freq_names);
@@ -6919,16 +6911,6 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     do_init_tree = false;
     model_str = best_subst_name;
     do {
-        if (model_list.size() > getClassNum(best_subst_name)) {
-            // user-defined DNA Q-mixture estimation
-            params.model_set = model_list[getClassNum(best_subst_name)].c_str();
-            if (iqtree->aln->seq_type == SEQ_DNA) {
-                getModelSubst(iqtree->aln->seq_type, iqtree->aln->isStandardGeneticCode(), params.model_name,
-                              params.model_set, params.model_subset, model_names);
-                nest_network = generateNestNetwork(model_names, freq_names);
-            }
-        }
-
         if (params.optimize_from_given_params == false)
             best_rate_name = best_orig_rate_name;
         best_model = findMixtureComponent(params, *iqtree, model_info, MA_ADD_CLASS, do_init_tree, model_str, best_subst_name, best_rate_name, nest_network);
@@ -6944,9 +6926,6 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
             better_model = (best_model.getScore() < curr_score);
         }
         cout << endl;
-        if (input_model_str.size()) { // user-defined DNA Q-mixture estimation
-            better_model = true;
-        }
         if (better_model) {
             curr_df = best_model.df;
             curr_loglike = best_model.logl;
@@ -7026,17 +7005,8 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     string model_str;
     Alignment* aln;
     double best_loglike;
-    string input_model_str;
 
     bool mix_finder_mode = (params.model_name == "MIX+MF" || params.model_name == "MIX+MFP" || params.model_name == "MF+MIX" || params.model_name == "MFP+MIX");
-    if (params.est_from_one) {
-        // user-defined DNA Q-mixture estimation
-        input_model_str = params.model_name;
-        cout << "--------------------------------------------------------------------" << endl;
-        cout << "Initialise model " << input_model_str << " estimation by interatively adding mixture components" << endl;
-        cout << "--------------------------------------------------------------------" << endl;
-        mix_finder_mode = true;
-    }
 
     if (!mix_finder_mode)
         return;
@@ -7089,11 +7059,9 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     }
     new_iqtree->setParams(&params);
 
-    if (!input_model_str.size()) {
-        cout << "--------------------------------------------------------------------" << endl;
-        cout << "|                Running MixtureFinder                             |" << endl;
-        cout << "--------------------------------------------------------------------" << endl;
-    }
+    cout << "--------------------------------------------------------------------" << endl;
+    cout << "|                Running MixtureFinder                             |" << endl;
+    cout << "--------------------------------------------------------------------" << endl;
 
     // disable the bootstrapping
     int orig_gbo_replicates = params.gbo_replicates;
@@ -7104,7 +7072,7 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     params.stop_condition = SC_UNSUCCESS_ITERATION;
     params.model_name = "";
 
-    best_loglike = runMixtureFinderMain(params, new_iqtree, model_info, model_str, input_model_str);
+    best_loglike = runMixtureFinderMain(params, new_iqtree, model_info, model_str);
     
     // transfer models parameters
     Checkpoint *iqtree_chkpt = iqtree->getCheckpoint();
@@ -7172,21 +7140,13 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
 /****************************************************/
 
 int findModelIndex(const string& model, const char* model_set[], size_t size) {
-    string base;
-    size_t pos = model.find("+F");
-    if (pos != string::npos) {
-        base = model.substr(0, pos);
-    } else {
-        base = model;
-    }
-
     int i;
     for (i = 0; i < size; i++) {
-        if (strcmp(model_set[i], base.c_str()) == 0) {
+        if (strcmp(model_set[i], model.c_str()) == 0) {
             return i;
         }
     }
-    if (base == "K2P") {
+    if (model == "K2P") {
 
     }
     return -1;
@@ -7300,40 +7260,4 @@ map<string, vector<string> > generateNestNetwork(StrVector model_names, StrVecto
         nest_network_all[model_freq_names[i].model_freq] = nested_models_all;
     }
     return nest_network;
-}
-
-void generateModelLists(string input_model_str, StrVector& model_list, StrVector& freq_list, string& input_rate) {
-    if (input_model_str[3] != OPEN_BRACKET)
-        outError("Mixture model name must start with 'MIX{'");
-    size_t pos_close = input_model_str.find('}', 4);
-    if (pos_close == string::npos)
-        outError("Close bracket not found at ", input_model_str);
-
-    StrVector model_rate_list;
-
-    if (pos_close + 1 < input_model_str.size()) {
-        input_rate = input_model_str.substr(pos_close+1);
-    } else {
-        input_rate = "E";
-    }
-    input_model_str = input_model_str.substr(4, pos_close-4);
-    stringstream ss(input_model_str);
-    string token;
-    while (getline(ss, token, ',')) {
-        model_rate_list.push_back(token);
-    }
-    reorderModelNames(model_rate_list, dna_model_names, sizeof(dna_model_names) / sizeof(dna_model_names[0]));
-    reverse(model_rate_list.begin(),model_rate_list.end());
-
-    for (string m : model_rate_list) {
-        size_t pos = m.find("+");
-
-        if (pos == string::npos) {
-            model_list.push_back(m);
-            freq_list.push_back("FQ");
-        } else {
-            model_list.push_back(m.substr(0, pos));
-            freq_list.push_back(m.substr(pos+1));
-        }
-    }
 }

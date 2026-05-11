@@ -3249,10 +3249,6 @@ void parseArg(int argc, char *argv[], Params &params) {
                 */
                 continue;
             }
-            if (strcmp(argv[cnt], "-est-from-one") == 0 || strcmp(argv[cnt], "--est-from-one") == 0) {
-                params.est_from_one = true;
-                continue;
-            }
             if (strcmp(argv[cnt], "-mt") == 0 || strcmp(argv[cnt], "--modeltamer") == 0) {
                 cnt++;
                 if (cnt >= argc)
@@ -7254,7 +7250,6 @@ void Params::setDefault() {
     opt_qmix_criteria = 2; // 1 : likelihood-ratio test; 2 : information criteria, like AIC, BIC
     opt_qmix_pthres = 0.05;
     check_combin_q_mat = true;
-    est_from_one = false;
     model_tamer = 100;
     model_tamer_only = false;
     model_tamer_sub = 1;
