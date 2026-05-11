@@ -6923,16 +6923,3 @@ Alignment *createSUAlignment(Params &params,Alignment *alignment) {
     }
     cout << endl;
 }
-
-double estimateModelTamerPercent(int num_ptn, bool is_protein) {
-    double g_est;
-    if (is_protein) {
-        g_est = round((4.0 / 20.0) * 4594.2 * pow(num_ptn, -1.043) * 100.0 * 10.0) / 10.0;
-    } else {
-        g_est = round(4594.2 * pow(num_ptn, -1.043) * 100.0 * 10.0) / 10.0;
-    }
-    if (g_est >= 63.0) {
-        return 100.0;
-    }
-    return g_est;
-}

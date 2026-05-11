@@ -50,10 +50,8 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint);
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Alignment *&aln, bool align_is_given = false, ModelCheckpoint *model_info = NULL);
 
 /**
- * Run ModelTamer subsample-upsample analysis.
- * For partitioned data, applies SU to each partition independently via createSUPartitions.
- * For single alignments, creates one SU alignment via createSUAlignment.
- * Supports --modeltamer AUTO to auto-estimate sampling percentage per partition/alignment.
+ * Run ModelTamer analysis with model selection on each SU dataset
+ * Generates subsample-upsample alignments and performs model selection on each
  * @param params program parameters
  * @param checkpoint checkpoint for resuming analysis
  */

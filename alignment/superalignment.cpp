@@ -20,11 +20,6 @@
 
 #include <stdarg.h>
 #include <queue>
-#include <random>
-#include <algorithm>
-#include <numeric>
-#include <iomanip>
-#include <cmath>
 #include "superalignment.h"
 #include "nclextra/msetsblock.h"
 #include "nclextra/myreader.h"
@@ -2089,98 +2084,4 @@ void SuperAlignment::orderPatternByNumChars(int pat_type) {
 //        sum_scores[part] = partitions[part]->pars_lower_bound[0];
     }
     // TODO compute pars_lower_bound (lower bound of pars score for remaining patterns)
-}
-
-void SuperAlignment::createSUPartitions(Params &params) {
-    cout << endl << "Generating ModelTamer subsample-upsampling per partition..." << endl;
-
-    std::mt19937 gen(params.ran_seed);
-    bool is_auto = (params.model_tamer < 0);
-
-    // estimate per-partition percentage for AUTO mode
-    vector<double> part_percent(partitions.size());
-    bool all_full = true;
-    for (size_t p = 0; p < partitions.size(); p++) {
-        if (is_auto) {
-            part_percent[p] = estimateModelTamerPercent(
-                partitions[p]->getNPattern(), partitions[p]->seq_type == SEQ_PROTEIN);
-        } else {
-            part_percent[p] = params.model_tamer;
-        }
-        if (part_percent[p] < 100.0) all_full = false;
-    }
-
-    if (all_full) {
-        cout << "ModelTamer AUTO: all partitions have too few patterns, analyzing full MSA" << endl;
-        return;
-    }
-
-    cout << "Subset\tType\tSeqs\tSites\tPtnOri\tPtnSU\tSU(%)\tName" << endl;
-
-    for (size_t p = 0; p < partitions.size(); p++) {
-        Alignment *part_aln = partitions[p];
-        int n_site = part_aln->getNSite();
-        int n_ptn = part_aln->getNPattern();
-
-        // skip SU for partitions that don't need subsampling
-        if (part_percent[p] >= 100.0) {
-            cout << p + 1 << "\t" << part_aln->sequence_type << "\t" << part_aln->getNSeq()
-                 << "\t" << n_site << "\t" << n_ptn << "\t" << n_ptn
-                 << "\t" << fixed << setprecision(1) << 100.0
-                 << "\t" << part_aln->name << " (skipped)" << endl;
-            continue;
-        }
-
-        double pct = part_percent[p];
-        int n_target_site;
-
-        if (params.model_tamer_method == 0) {
-            // original ModelTamer method: estimate sites needed for target patterns
-            int n_target_ptn = static_cast<int>(ceil(pct * n_ptn / 100.0));
-
-            vector<int> init_sites(n_site);
-            std::iota(init_sites.begin(), init_sites.end(), 0);
-            std::shuffle(init_sites.begin(), init_sites.end(), gen);
-            init_sites.resize(n_target_ptn);
-            Alignment *init_aln = new Alignment();
-            init_aln->extractSites(part_aln, init_sites);
-            int n_init_ptn = init_aln->getNPattern();
-            n_target_site = (n_target_ptn * n_target_ptn + n_init_ptn - 1) / n_init_ptn;
-            delete init_aln;
-        } else {
-            n_target_site = static_cast<int>(ceil(pct * n_site / 100.0));
-        }
-
-        // subsample
-        vector<int> sub_sites(n_site);
-        std::iota(sub_sites.begin(), sub_sites.end(), 0);
-        std::shuffle(sub_sites.begin(), sub_sites.end(), gen);
-        sub_sites.resize(n_target_site);
-
-        // upsample
-        std::uniform_int_distribution<int> dist(0, n_target_site - 1);
-        vector<int> up_sites(n_site);
-        for (int k = 0; k < n_site; k++) {
-            up_sites[k] = sub_sites[dist(gen)];
-        }
-
-        Alignment *su_part = new Alignment();
-        su_part->extractSites(part_aln, up_sites);
-
-        double ptn_percent = 100.0 * su_part->getNPattern() / n_ptn;
-
-        cout << p + 1 << "\t" << part_aln->sequence_type << "\t" << part_aln->getNSeq()
-             << "\t" << n_site << "\t" << n_ptn << "\t" << su_part->getNPattern()
-             << "\t" << fixed << setprecision(1) << ptn_percent
-             << "\t" << part_aln->name << endl;
-
-        // replace partition alignment with SU version
-        delete part_aln;
-        partitions[p] = su_part;
-    }
-
-    cout << endl;
-
-    // rebuild the super alignment structure
-    init();
 }

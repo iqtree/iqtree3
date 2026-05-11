@@ -6289,76 +6289,61 @@ void runRootstrap(Params &params) {
 
 }
 
-/**
- * Run ModelTamer subsample-upsample analysis.
- * For partitioned data, applies SU to each partition independently via createSUPartitions.
- * For single alignments, creates one SU alignment via createSUAlignment.
- * Supports --modeltamer AUTO to auto-estimate sampling percentage per partition/alignment.
- * @param params program parameters
- * @param checkpoint checkpoint for resuming analysis
- */
 void runModelTamerAnalysis(Params &params, Checkpoint *checkpoint) {
+    // Step 1: load the original alignment
+    Alignment *orig_alignment = createAlignment(params.aln_file, params.sequence_type,
+                                                params.intype, params.model_name);
 
-    if (params.partition_file) {
-        // Partitioned data: apply SU to each partition independently
-        SuperAlignment *super_aln = new SuperAlignment(params);
+    cout << "Original alignment: " << orig_alignment->getNSeq() << " sequences, "
+         << orig_alignment->getNSite() << " sites, "
+         << orig_alignment->getNPattern() << " distinct patterns" << endl;
 
-        // apply SU per partition (AUTO estimates percentage per partition)
-        super_aln->createSUPartitions(params);
-
-        // run standard phylo analysis on the SU'd partitioned data
-        IQTree *tree = nullptr;
-        Alignment *alignment = (Alignment *)super_aln;
-        runPhyloAnalysis(params, checkpoint, tree, alignment, true);
-
-        alignment = tree->aln;
-        delete tree;
-        delete alignment;
-
-    } else {
-        // Single alignment
-        Alignment *orig_alignment = createAlignment(params.aln_file, params.sequence_type,
-                                                    params.intype, params.model_name);
-
-        cout << "Original alignment: " << orig_alignment->getNSeq() << " sequences, "
-             << orig_alignment->getNSite() << " sites, "
-             << orig_alignment->getNPattern() << " distinct patterns" << endl;
-
-        // auto-estimate percentage if --modeltamer AUTO
-        if (params.model_tamer < 0) {
-            params.model_tamer = estimateModelTamerPercent(
-                orig_alignment->getNPattern(), orig_alignment->seq_type == SEQ_PROTEIN);
-            if (params.model_tamer >= 100) {
-                cout << "ModelTamer AUTO: too few patterns, suggesting to analyze full MSA" << endl;
-                delete orig_alignment;
-                IQTree *tree = nullptr;
-                Alignment *alignment = nullptr;
-                runPhyloAnalysis(params, checkpoint, tree, alignment);
-                alignment = tree->aln;
-                delete tree;
-                delete alignment;
-                return;
-            }
+    // Step 1.5: auto-estimate sampling percentage if --modeltamer AUTO
+    if (params.model_tamer < 0) {
+        int num_ptn = orig_alignment->getNPattern();
+        double g_est;
+        if (orig_alignment->seq_type == SEQ_PROTEIN) {
+            g_est = round((4.0 / 20.0) * 4594.2 * pow(num_ptn, -1.043) * 100.0 * 10.0) / 10.0;
+        } else {
+            g_est = round(4594.2 * pow(num_ptn, -1.043) * 100.0 * 10.0) / 10.0;
+        }
+        if (g_est >= 63.0) {
+            cout << "ModelTamer AUTO: estimated percentage " << g_est
+                 << "% >= 63%, suggesting to analyze full MSA" << endl;
+            params.model_tamer = 100;
+        } else {
+            params.model_tamer = g_est;
             cout << "ModelTamer AUTO: estimated sampling percentage = "
                  << params.model_tamer << "%" << endl;
         }
-
-        // create SU alignment
-        Alignment *su_alignment = createSUAlignment(params, orig_alignment);
-
-        cout << "SU alignment: " << su_alignment->getNSeq() << " sequences, "
-             << su_alignment->getNSite() << " sites, "
-             << su_alignment->getNPattern() << " distinct patterns" << endl;
-
-        delete orig_alignment;
-
-        // run standard phylo analysis on the SU alignment
-        IQTree *tree = nullptr;
-        Alignment *alignment = su_alignment;
-        runPhyloAnalysis(params, checkpoint, tree, alignment, true);
-
-        alignment = tree->aln;
-        delete tree;
-        delete alignment;
+        if (params.model_tamer >= 100) {
+            // no subsampling needed, run standard analysis
+            delete orig_alignment;
+            IQTree *tree = nullptr;
+            Alignment *alignment = nullptr;
+            runPhyloAnalysis(params, checkpoint, tree, alignment);
+            alignment = tree->aln;
+            delete tree;
+            delete alignment;
+            return;
+        }
     }
+
+    // Step 2: create subsample-upsample alignment
+    Alignment *su_alignment = createSUAlignment(params, orig_alignment);
+
+    cout << "SU alignment: " << su_alignment->getNSeq() << " sequences, "
+         << su_alignment->getNSite() << " sites, "
+         << su_alignment->getNPattern() << " distinct patterns" << endl;
+
+    delete orig_alignment;
+
+    // Step 3: run the standard phylo analysis on the SU alignment
+    IQTree *tree = nullptr;
+    Alignment *alignment = su_alignment;
+    runPhyloAnalysis(params, checkpoint, tree, alignment, true);
+
+    alignment = tree->aln;
+    delete tree;
+    delete alignment;
 }

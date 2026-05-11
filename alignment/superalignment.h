@@ -304,14 +304,6 @@ public:
 	/** maximum number of states across all partitions */
 	int max_num_states;
 
-    /**
-     * Apply ModelTamer subsample-upsample to each partition independently.
-     * Replaces each partition alignment with its SU version and rebuilds
-     * the super alignment structure.
-     * @param params program parameters (model_tamer, model_tamer_method, ran_seed)
-     */
-    void createSUPartitions(Params &params);
-
 	/**
 	 * concatenate subset of alignments
 	 * @param ids IDs of sub-alignments

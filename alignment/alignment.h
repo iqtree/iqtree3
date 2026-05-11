@@ -1127,20 +1127,7 @@ void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt
  */
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name);
 
-/**
- * Create a ModelTamer subsample-upsample alignment for a single (non-partitioned) alignment.
- * @param params program parameters (model_tamer, model_tamer_method, ran_seed, etc.)
- * @param alignment input alignment (if NULL, reads from params.aln_file)
- * @return new SU alignment
- */
+/***/
 Alignment *createSUAlignment(Params &params,Alignment *alignment = NULL);
-
-/**
- * Estimate ModelTamer sampling percentage based on number of patterns.
- * @param num_ptn number of distinct patterns
- * @param is_protein true if protein data (scales formula by 4/20)
- * @return estimated percentage (100.0 means no subsampling needed)
- */
-double estimateModelTamerPercent(int num_ptn, bool is_protein);
 
 #endif
