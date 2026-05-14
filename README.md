@@ -65,8 +65,8 @@ Citations
 ---------
 
 General citation for IQ-TREE 3:
- 
- * T.K.F. Wong, N. Ly-Trong, H. Ren, P. Demotte, H. Banos,
+
+* T.K.F. Wong, N. Ly-Trong, H. Ren, P. Demotte, H. Banos,
   A.J. Roger, E. Susko, C. Bielow, N. De Maio,
   N. Goldman, M.W. Hahn, M. dos Reis, L.S. Vinh, G. Huttley, R. Lanfear, B.Q. Minh (2026)
   IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models.
