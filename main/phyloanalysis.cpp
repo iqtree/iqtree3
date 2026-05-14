@@ -4820,14 +4820,13 @@ void convertAlignment(Params &params, IQTree *iqtree) {
             ((SuperAlignment*)alignment)->printPartitionRaxml(partition_info.c_str());
         }
     } else if (params.gap_masked_aln) {
-        Alignment out_aln;
         Alignment masked_aln(params.gap_masked_aln, params.sequence_type, params.intype, params.model_name);
-        out_aln.createGapMaskedAlignment(&masked_aln, alignment);
-        out_aln.printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
-                exclude_sites, params.ref_seq_name);
-        string str = params.gap_masked_aln;
-        str += ".sitegaps";
-        out_aln.printSiteGaps(str.c_str());
+        Alignment *out_aln = alignment->createGapMaskedAlignment(&masked_aln);
+        out_aln->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
+                                exclude_sites, params.ref_seq_name);
+        string str = (string)params.gap_masked_aln + ".sitegaps";
+        out_aln->printSiteGaps(str.c_str());
+        delete out_aln;
     } else  {
         alignment->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
                 exclude_sites, params.ref_seq_name);
@@ -4879,13 +4878,11 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
     size_t nptn = alignment->getNPattern(), nstates = alignment->num_states;
     double *ptn_state_freq = new double[nptn*nstates];
     tree->computePatternStateFreq(ptn_state_freq);
-    alignment->site_state_freq.resize(nptn);
     for (size_t ptn = 0; ptn < nptn; ptn++) {
         double *f = new double[nstates];
         memcpy(f, ptn_state_freq+ptn*nstates, sizeof(double)*nstates);
-        alignment->site_state_freq[ptn] = f;
+        alignment->ptn_state_freq.push_back(f);
     }
-    alignment->getSitePatternIndex(alignment->site_model);
     printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
     params.print_site_state_freq = WSF_NONE;
     

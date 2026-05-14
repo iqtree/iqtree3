@@ -40,7 +40,7 @@
 #define LM_MAX  10
 #endif
 
-//*** likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS)
+//*** likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS) ***//
 
 // #include <time.h>
 
@@ -666,11 +666,7 @@ void finisheps(FILE *ofp, vector<SeqQuartetInfo> lmap_seq_quartet_info, int leaf
 /*  end of Likelihood mapping routines  */
 /****************************************/
 
-
-/***************************************************************/ 
-
-
-//*** end of likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS)
+//*** end of likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS) ***//
 
 
 void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info, QuartetGroups &LMGroups) {
@@ -895,18 +891,11 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
         // obsolete: sort(lmap_quartet_info[qid].seqID, lmap_quartet_info[qid].seqID+4); // why sort them?!? HAS ;^)
 
         // initialize sub-alignment and sub-tree
-        Alignment *quartet_aln;
-        if (aln->isSuperAlignment()) {
-            quartet_aln = new SuperAlignment;
-        } else {
-            quartet_aln = new Alignment;
-        }
         IntVector seq_id;
         seq_id.insert(seq_id.begin(), lmap_quartet_info[qid].seqID, lmap_quartet_info[qid].seqID+4);
         IntVector kept_partitions;
         // only keep partitions with at least 3 sequences
-        quartet_aln->extractSubAlignment(aln, seq_id, 0, 3, &kept_partitions);
-                
+        Alignment *quartet_aln = aln->extractSubAlignment(seq_id, 0, 3, &kept_partitions);
         if (kept_partitions.size() == 0) {
             // nothing kept
             for (int k = 0; k < 3; k++) {
@@ -1173,9 +1162,6 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
      */
 } // end PhyloTree::computeQuartetLikelihoods
 
-
-//**************************************
-
 /**
     read groups in following format "(A, B, C, D), (E, F), (G, H), (I);"
 **/
@@ -1362,8 +1348,6 @@ void PhyloTree::readLikelihoodMappingGroups(char *filename, QuartetGroups &LMGro
     delete lmclusters;
 
 } // end PhyloTree::readLikelihoodMappingGroups
-
-//**************************************
 
 void PhyloTree::doLikelihoodMapping() {
     // TODO For Heiko: Please add code here

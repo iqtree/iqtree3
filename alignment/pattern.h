@@ -26,39 +26,40 @@ const int PAT_VARIANT     = 8; // variant site pattern
 	Site-patterns in a multiple sequence alignment
 	@author BUI Quang Minh, Steffen Klaere, Arndt von Haeseler <minh.bui@univie.ac.at>
 */
-class Pattern : public vector<StateType>
-{
-public:
-	/** 
-		constructor
-	*/
-    Pattern();
-
+struct Pattern : StateVector {
     /**
-     constructor
+     *  Default constructor
      */
-    Pattern(int nseq, int freq = 1);
-
-    Pattern(const Pattern &pat);
+    Pattern() {
+        frequency = 1;
+        group = -1;
+        flag = 0;
+        const_char = -1;
+        num_chars = 0;
+    }
 
     /**
-		@param num_states number of states of the model
-		@return the number of ambiguous character incl. gaps 
-	*/
-	int computeAmbiguousChar(int num_states);
+     *  @param STATE_UNKNOWN The gap of state of the model
+     *  @return TRUE if the pattern contains only gaps
+     */
+    bool isGapOnly(StateType STATE_UNKNOWN) const;
 
-	/**
-		@param num_states number of states of the model
-		@return the number of gaps 
-	*/
-	int computeGapChar(int num_states, int STATE_UNKNOWN) const;
+    /**
+     *  @param num_states The number of states of the model
+     *  @return The number of ambiguous character including gaps
+     */
+    size_t countAmbiguousChar(int num_states) const;
 
-//    Pattern &operator= (Pattern pat);
+    /**
+     *  @param STATE_UNKNOWN The gap of state of the model
+     *  @return The number of gaps
+     */
+    size_t countGapChar(StateType STATE_UNKNOWN) const;
 
-	/** 
-		destructor
-	*/
-    virtual ~Pattern();
+    inline bool operator==(const Pattern &other) const {
+        return group == other.group &&
+               static_cast<const StateVector &>(*this) == static_cast<const StateVector &>(other);
+    }
 
     inline bool isConst() const {
         return (flag & PAT_CONST) != 0;
@@ -72,32 +73,24 @@ public:
         return (flag & PAT_INFORMATIVE) != 0;
     }
 
-	/**
-		frequency appearance of the pattern
-	*/
-	int frequency;
+    /** number of sites with this pattern, default: 1 */
+    int frequency;
 
-	/**
-		true if this is a constant pattern
-		2015-03-04: is_const will also be true for pattern like "AA-A--AAA"
-	*/
-//	bool is_const;
-    
-    /** true if pattern is informative, false otherwise */
-//    bool is_informative;
+    /** allows differentiating identical patterns, default: -1 */
+    int group;
 
+    /** encodes whether the pattern is const, invar, or inform */
     int flag;
 
-	/** 2015-03-04: if is_const is true, this will store the const character for the pattern */
-	char const_char;
+    /** if the pattern is const, stores its const character, default: -1 */
+    char const_char;
 
     /** number of different character states */
     int num_chars;
 
     // added by TD
-    /** character frequencies */
+    /** character frequencies indexed by StateType */
     vector<size_t> freqs;
-
 };
 
 #endif
