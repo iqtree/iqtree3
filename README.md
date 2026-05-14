@@ -65,10 +65,10 @@ Citations
 ---------
 
 General citation for IQ-TREE 3:
-  
-* Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Piyumal Demotte, Hector Banos,
-  Andrew J. Roger, Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman,
-  Matthew W. Hahn, Mario dos Reis, Le Sy Vinh, Gavin Huttley, Robert Lanfear, Bui Quang Minh (2026)
+ 
+ * T.K.F. Wong, N. Ly-Trong, H. Ren, P. Demotte, H. Banos,
+  A.J. Roger, E. Susko, C. Bielow, N. De Maio,
+  N. Goldman, M.W. Hahn, M. dos Reis, L.S. Vinh, G. Huttley, R. Lanfear, B.Q. Minh (2026)
   IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models.
   _Mol. Biol. Evol._, msag117. <https://doi.org/10.1093/molbev/msag117>
   
