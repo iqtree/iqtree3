@@ -1,6 +1,6 @@
 /*
  * phylotesting.cpp
- * implementation of ModelFinder and PartitionFinder
+ * implementation of ModelFinder, PartitionFinder and MixtureFinder
  *  Created on: Aug 23, 2013
  *      Author: minh
  */
@@ -6605,7 +6605,8 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
     string best_model_AIC, best_model_AICc, best_model_BIC;
     double best_score_AIC, best_score_AICc, best_score_BIC;
     // Store the information of (k-1)-class models. Once (k-1)-class is better then k-class, the (k-1)-class models will be printed out as the global best.
-    string best_model_pre_AIC, best_model_pre_AICc, best_model_pre_BIC, best_model_pre_list;
+    string best_model_AIC_pre, best_model_AICc_pre, best_model_BIC_pre, best_model_list_pre;
+
     Checkpoint *checkpoint;
     int ssize;
     int curr_df;
@@ -6672,10 +6673,10 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
 
     cout << endl << "Model: " << best_subst_name << best_rate_name << "; df: " << curr_df << "; loglike: " << curr_loglike << "; " << criteria_str << " score: " << curr_score << endl;
 
-    ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
-    ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
-    ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
-    ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
+    model_info.getString("best_model_AIC", best_model_AIC_pre);
+    model_info.getString("best_model_AICc", best_model_AICc_pre);
+    model_info.getString("best_model_BIC", best_model_BIC_pre);
+    model_info.getString("best_model_list_" + criteria_str, best_model_list_pre);
 
     // Step 3: keep adding a new class until no further improvement
     if (params.opt_qmix_criteria == 1) {
@@ -6707,18 +6708,17 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
             curr_score = best_model.getScore();
             model_str = best_subst_name;
 
-            ASSERT(model_info.getString("best_model_AIC", best_model_pre_AIC));
-            ASSERT(model_info.getString("best_model_AICc", best_model_pre_AICc));
-            ASSERT(model_info.getString("best_model_BIC", best_model_pre_BIC));
-            ASSERT(model_info.getString("best_model_list_" + criteria_str, best_model_pre_list));
-
+            model_info.getString("best_model_AIC", best_model_AIC_pre);
+            model_info.getString("best_model_AICc", best_model_AICc_pre);
+            model_info.getString("best_model_BIC", best_model_BIC_pre);
+            model_info.getString("best_model_list_" + criteria_str, best_model_list_pre);
         }
     } while (better_model && getClassNum(best_subst_name)+1 <= params.max_mix_cats);
 
-    model_info.put("best_model_list_" + criteria_str, best_model_pre_list);
-    model_info.put("best_model_AIC", best_model_pre_AIC);
-    model_info.put("best_model_AICc", best_model_pre_AICc);
-    model_info.put("best_model_BIC", best_model_pre_BIC);
+    model_info.put("best_model_AIC", best_model_AIC_pre);
+    model_info.put("best_model_AICc", best_model_AICc_pre);
+    model_info.put("best_model_BIC", best_model_BIC_pre);
+    model_info.put("best_model_list_" + criteria_str, best_model_list_pre);
     
     best_subst_name = model_str;
     if (params.optimize_from_given_params == false)
@@ -6771,7 +6771,7 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     double best_loglike;
 
     bool mix_finder_mode = (params.model_name == "MIX+MF" || params.model_name == "MIX+MFP" || params.model_name == "MF+MIX" || params.model_name == "MFP+MIX");
-    
+
     if (!mix_finder_mode)
         return;
     

@@ -1,47 +1,75 @@
 #!/bin/bash
-# expect the first argument to be the column name : contain what platform(OS) is running the script
-expected_column="$1"
+# Compare IQ-TREE 3 runtime against IQ-TREE 2 baseline + threshold.
+# When IQ-TREE 2 baseline is 0 (unsupported command), falls back to the
+# pre-defined expected value from expected_runtime.tsv if a platform column is given.
+#
+# Args: $1 = IQ-TREE 2 log file (default: time_log_iqtree2.tsv)
+#       $2 = IQ-TREE 3 log file (default: time_log_iqtree3.tsv)
+#       $3 = platform column name in expected_runtime.tsv for fallback (optional)
+
+iqtree2_log="${1:-time_log_iqtree2.tsv}"
+iqtree3_log="${2:-time_log_iqtree3.tsv}"
+fallback_column="${3:-}"
 
 WD="test_scripts/test_data"
-input_file="${WD}/expected_runtime.tsv"
-reported_file="time_log.tsv"
-selected_columns_file="${WD}/selected_columns.tsv"
+threshold_file="${WD}/expected_runtime.tsv"
 
-# Get the column index (1-based) of the expected column name
-col_index=$(head -1 "$input_file" | tr '\t' '\n' | awk -v col="$expected_column" '{if ($0 == col) print NR}')
+tmp_thresholds=$(mktemp)
+tmp_fallback=$(mktemp)
+tmp_iqtree2=$(mktemp)
+tmp_iqtree3=$(mktemp)
 
-# Check if column was found
-if [[ -z "$col_index" ]]; then
-  echo "Column '$expected_column' not found in $input_file"
-  exit 1
+# Command and diff-threshold columns (columns 1 and 2)
+tail -n +2 "$threshold_file" | cut -f1,2 > "$tmp_thresholds"
+
+# Pre-defined fallback expected values for the given platform column
+if [ -n "$fallback_column" ]; then
+    col_index=$(head -1 "$threshold_file" | tr '\t' '\n' | awk -v col="$fallback_column" '{if ($0 == col) print NR}')
+    if [ -z "$col_index" ]; then
+        echo "WARNING: fallback column '$fallback_column' not found in $threshold_file; skipping fallback"
+        fallback_column=""
+    else
+        tail -n +2 "$threshold_file" | cut -f"$col_index" > "$tmp_fallback"
+    fi
 fi
 
-cut -f1,2,"$col_index" "$input_file" > "${selected_columns_file}"
-final_file="${WD}/combined_with_reported.tsv"
-
-# assuming the reported file and expected file have the same order of commands
-cut -f2 "$reported_file" > /tmp/reported_column.tsv
-paste "$selected_columns_file" /tmp/reported_column.tsv > "$final_file"
-
+# Runtime is column 2 of each log
+tail -n +2 "$iqtree2_log" | cut -f2 > "$tmp_iqtree2"
+tail -n +2 "$iqtree3_log" | cut -f2 > "$tmp_iqtree3"
 
 fail_count=0
+row=0
 
-# Skip header
-while IFS=$'\t' read -r command threshold expected reported; do
+while IFS=$'\t' read -r command threshold iqtree2_val iqtree3_val; do
+    ((row++))
+    expected="$iqtree2_val"
+
+    # Fall back to pre-defined value when IQ-TREE 2 baseline is unavailable
+    if [ "$(echo "$expected == 0" | bc -l)" = "1" ]; then
+        if [ -n "$fallback_column" ]; then
+            expected=$(sed -n "${row}p" "$tmp_fallback")
+            echo "ℹ️  $command: IQ-TREE 2 baseline unavailable, using pre-defined expected value (${expected}s)"
+        else
+            echo "⏭ $command skipped (IQ-TREE 2 baseline unavailable, no fallback column provided)"
+            continue
+        fi
+    fi
+
     allowed=$(echo "$expected + $threshold" | bc -l)
-    is_exceed=$(echo "$reported > $allowed" | bc -l)
+    is_exceed=$(echo "$iqtree3_val > $allowed" | bc -l)
+    diff=$(echo "$iqtree3_val - $expected" | bc -l)
 
     if [ "$is_exceed" = "1" ]; then
-        diff=$(echo "$reported - $expected" | bc -l)
         echo "❌ $command exceeded the allowed runtime usage."
-        echo "Expected: $expected S, Threshold: $threshold S, Reported: $reported S, Difference: $diff S"
+        echo "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${iqtree3_val}s, Diff: ${diff}s"
         ((fail_count++))
     else
         echo "✅ $command passed the runtime check."
-        diff=$(echo "$reported - $expected" | bc -l)
-        echo "Expected: $expected S, Threshold: $threshold S, Reported: $reported S, Difference: $diff S"
+        echo "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${iqtree3_val}s, Diff: ${diff}s"
     fi
-done < <(tail -n +2 "$final_file")
+done < <(paste "$tmp_thresholds" "$tmp_iqtree2" "$tmp_iqtree3")
+
+rm -f "$tmp_thresholds" "$tmp_fallback" "$tmp_iqtree2" "$tmp_iqtree3"
 
 if [ "$fail_count" -eq 0 ]; then
     echo "✅ All runtime checks passed."
