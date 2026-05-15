@@ -1614,6 +1614,9 @@ public:
     /** contain non-reversible model */
     bool contain_nonrev;
 
+    /** if true, skip the marginal log-likelihood / mAIC computation for partition models */
+    bool skip_marginal_lh;
+
     /** model name to initialize GTR20 or NONREV protein model */
     char* model_name_init;
 
