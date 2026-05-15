@@ -75,7 +75,7 @@ Alignment::Alignment() {
     non_stop_codon = nullptr;
     seq_type = SEQ_UNKNOWN;
     STATE_UNKNOWN = 126;
-    pars_lower_bound = nullptr;
+    // pars_lower_bound = nullptr; // now a local variable in orderPatternByNumChars()
 }
 
 Alignment::~Alignment() {
@@ -83,8 +83,8 @@ Alignment::~Alignment() {
     codon_table = nullptr;
     delete [] non_stop_codon;
     non_stop_codon = nullptr;
-    delete [] pars_lower_bound;
-    pars_lower_bound = nullptr;
+    // delete [] pars_lower_bound; // now a local variable in orderPatternByNumChars()
+    // pars_lower_bound = nullptr;
     for (vector<double *>::reverse_iterator rit = ptn_state_freq.rbegin(); rit != ptn_state_freq.rend(); ++rit) {
         delete [] (*rit);
         (*rit) = nullptr;
@@ -1497,7 +1497,7 @@ void Alignment::orderPatternByNumChars(int pat_type) {
     }
 
     int maxi = (num_parsimony_sites+UINT_BITS-1)/UINT_BITS;
-    pars_lower_bound = new UINT[maxi+1];
+    UINT *pars_lower_bound = new UINT[maxi+1];
     UINT sum = 0;
     memset(pars_lower_bound, 0, (maxi+1)*sizeof(UINT));
     for (ptn = 0; ptn < nptn; ptn++) {
@@ -1557,6 +1557,7 @@ void Alignment::orderPatternByNumChars(int pat_type) {
     }
     delete [] ptn_order;
     delete [] num_chars;
+    delete [] pars_lower_bound;
 //    cout << ordered_pattern.size() << " ordered_pattern" << endl;
 }
 

@@ -327,7 +327,7 @@ public:
     vector<Pattern> ordered_pattern;
     
     /** lower bound of sum parsimony scores for remaining pattern in ordered_pattern */
-    UINT *pars_lower_bound;
+    // UINT *pars_lower_bound; // moved to local variable in orderPatternByNumChars()
 
     /** order pattern by number of character states and return in ptn_order
         @param pat_type either PAT_INFORMATIVE or 0

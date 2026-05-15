@@ -1809,7 +1809,7 @@ void SuperAlignment::orderPatternByNumChars(int pat_type) {
     }
 
     int maxi = (num_parsimony_sites+UINT_BITS-1)/UINT_BITS;
-    pars_lower_bound = new UINT[maxi+1];
+    UINT *pars_lower_bound = new UINT[maxi+1];
     memset(pars_lower_bound, 0, (maxi+1)*sizeof(UINT));
     size_t nseq = getNSeq();
     
@@ -1837,4 +1837,5 @@ void SuperAlignment::orderPatternByNumChars(int pat_type) {
 //        sum_scores[part] = partitions[part]->pars_lower_bound[0];
     }
     // TODO compute pars_lower_bound (lower bound of pars score for remaining patterns)
+    delete [] pars_lower_bound;
 }
