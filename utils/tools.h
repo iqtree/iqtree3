@@ -296,6 +296,15 @@ private:
  */
 typedef vector<double> DoubleVector;
 
+/** Write one row of space-separated weights to an open stream, followed by newline. */
+inline void writeWeightsRow(std::ostream &out, const DoubleVector &wt) {
+    for (size_t i = 0; i < wt.size(); ++i) {
+        if (i > 0) out << ' ';
+        out << wt[i];
+    }
+    out << '\n';
+}
+
 /**
         vector of int
  */

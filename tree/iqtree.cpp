@@ -424,12 +424,7 @@ void IQTree::initSettings(Params &params) {
                 // Write site weights to .bootweights file if -wbsw
                 if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
                     try {
-                        const DoubleVector &wt = boot_aln->boot_site_weights;
-                        for (size_t s = 0; s < wt.size(); s++) {
-                            if (s > 0) wt_out << " ";
-                            wt_out << wt[s];
-                        }
-                        wt_out << "\n";
+                        writeWeightsRow(wt_out, boot_aln->boot_site_weights);
                     } catch (ios::failure) {
                         outError(ERR_WRITE_OUTPUT, string(params.out_prefix) + ".bootweights");
                     }
@@ -451,12 +446,7 @@ void IQTree::initSettings(Params &params) {
                     bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
                 if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
                     try {
-                        const DoubleVector &wt = bootstrap_alignment->boot_site_weights;
-                        for (size_t s = 0; s < wt.size(); s++) {
-                            if (s > 0) wt_out << " ";
-                            wt_out << wt[s];
-                        }
-                        wt_out << "\n";
+                        writeWeightsRow(wt_out, bootstrap_alignment->boot_site_weights);
                     } catch (ios::failure) {
                         outError(ERR_WRITE_OUTPUT, string(params.out_prefix) + ".bootweights");
                     }

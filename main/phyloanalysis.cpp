@@ -4575,26 +4575,30 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
             outError(ERR_WRITE_OUTPUT, bootaln_name);
         }
 
-        // empty the bootweights file
-        if (params.print_boot_site_weights)
-        try {
-            ofstream wt_out;
-            wt_out.exceptions(ios::failbit | ios::badbit);
-            wt_out.open(bootweights_name.c_str());
-            wt_out.close();
-        } catch (ios::failure) {
-            outError(ERR_WRITE_OUTPUT, bootweights_name);
-        }
     }
 
     double start_time = getCPUTime();
     double start_real_time = getRealTime();
 
     startTreeReconstruction(params, tree, *model_info);
-    
+
     // 2018-06-21: bug fix: alignment might be changed by -m ...MERGE
     alignment = tree->aln;
-    
+
+    ofstream wt_out;
+    if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
+        try {
+            wt_out.exceptions(ios::failbit | ios::badbit);
+            // append when resuming from checkpoint so partial results are preserved
+            auto open_mode = (bootSample > 0)
+                ? (ios_base::out | ios_base::app)
+                : ios_base::out;
+            wt_out.open(bootweights_name.c_str(), open_mode);
+        } catch (ios::failure) {
+            outError(ERR_WRITE_OUTPUT, bootweights_name);
+        }
+    }
+
     // do bootstrap analysis
     for (int sample = bootSample; sample < params.num_bootstrap_samples; sample++) {
         cout << endl << "===> START " << RESAMPLE_NAME_UPPER << " REPLICATE NUMBER "
@@ -4658,15 +4662,7 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
 
         if (params.print_boot_site_weights && MPIHelper::getInstance().isMaster()) {
             try {
-                ofstream wt_out;
-                wt_out.exceptions(ios::failbit | ios::badbit);
-                wt_out.open(bootweights_name.c_str(), ios_base::out | ios_base::app);
-                const DoubleVector &wt = bootstrap_alignment->boot_site_weights;
-                for (size_t i = 0; i < wt.size(); ++i) {
-                    if (i > 0) wt_out << " ";
-                    wt_out << wt[i];
-                }
-                wt_out << "\n";
+                writeWeightsRow(wt_out, bootstrap_alignment->boot_site_weights);
             } catch (ios::failure) {
                 outError(ERR_WRITE_OUTPUT, bootweights_name);
             }
@@ -4814,6 +4810,8 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
     }
 #endif
     
+    if (wt_out.is_open()) wt_out.close();
+
     if (MPIHelper::getInstance().isMaster()) {
         cout << "Total CPU time for " << RESAMPLE_NAME << ": " << (getCPUTime() - start_time) << " seconds." << endl;
     cout << "Total wall-clock time for " << RESAMPLE_NAME << ": " << (getRealTime() - start_real_time) << " seconds." << endl << endl;
