@@ -925,7 +925,6 @@ void Alignment::readSiteSpecFloatWeights()
         double weight;
         try
         {
-            size_t pos = 0;
             weight = convert_double(token.c_str());
         }
         catch (...)
