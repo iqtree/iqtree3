@@ -548,9 +548,7 @@ void PhyloTree::computePtnFreq() {
         for (ptn = 0; ptn < nptn; ptn++)
             ptn_freq[ptn] = aln->pattern_weight[ptn];
     } else if (params->site_float_weights_file != "") {
-        // --site-weights-float: read from file on first call, then reuse
-        if (aln->pattern_weight.size() != nptn)
-            aln->readSiteSpecFloatWeights();
+        // --site-float-weights: pre-populated during alignment load
         for (ptn = 0; ptn < nptn; ptn++)
             ptn_freq[ptn] = aln->pattern_weight[ptn];
     } else {

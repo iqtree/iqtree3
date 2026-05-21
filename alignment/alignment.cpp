@@ -852,13 +852,13 @@ Alignment::Alignment(char *filename, char *sequence_type, InputType &intype, str
     {
         outError("Alignment must have at least 3 sequences");
     }
-    
+
     // integrate site-specific weights, if specified
     if (Params::getInstance().site_weights_file != "")
-    {
         integrateSiteSpecWeights();
-    }
-    
+    if (Params::getInstance().site_float_weights_file != "")
+        readSiteSpecFloatWeights();
+
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {
@@ -1093,12 +1093,12 @@ Alignment::Alignment(NxsDataBlock *data_block, char *sequence_type, string model
     
     // integrate site-specific weights, if specified
     if (Params::getInstance().site_weights_file != "")
-    {
         integrateSiteSpecWeights();
-    }
-    
+    if (Params::getInstance().site_float_weights_file != "")
+        readSiteSpecFloatWeights();
+
     countConstSite();
-    
+
     if (Params::getInstance().compute_seq_composition) {
         cout << "Alignment has " << getNSeq() << " sequences with " << getNSite()
         << " columns, " << getNPattern() << " distinct patterns" << endl
@@ -1145,7 +1145,7 @@ Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, str
     double readStart = getRealTime();
 
     readStrVec(names, seqs, sequence_type);
-    
+
     if (verbose_mode >= VB_MED) {
         cout << "Time to read input file was " << (getRealTime() - readStart) << " sec." << endl;
     }
@@ -1153,13 +1153,13 @@ Alignment::Alignment(StrVector& names, StrVector& seqs, char *sequence_type, str
     {
         outError("Alignment must have at least 3 sequences");
     }
-    
+
     // integrate site-specific weights, if specified
     if (Params::getInstance().site_weights_file != "")
-    {
         integrateSiteSpecWeights();
-    }
-    
+    if (Params::getInstance().site_float_weights_file != "")
+        readSiteSpecFloatWeights();
+
     double constCountStart = getRealTime();
     countConstSite();
     if (verbose_mode >= VB_MED) {
@@ -4661,8 +4661,6 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         // Rebuild site_pattern to be consistent with scaled integer frequencies so that:
         // (a) PLL's concatenateAlignments assertion holds for partition models, and
         // (b) parsimony correctly uses Dirichlet-weighted frequencies.
-        // NOTE: do NOT set total_site_float_weight — getNSite() returns it when > 0
-        // and floating-point truncation (e.g. 1997.9999...) would give wrong site count.
         site_pattern.clear();
         for (size_t ptn = 0; ptn < nptn; ++ptn)
             for (int rep = 0; rep < at(ptn).frequency; ++rep)
