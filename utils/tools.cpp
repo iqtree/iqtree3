@@ -3521,8 +3521,11 @@ void parseArg(int argc, char *argv[], Params &params) {
                                      "': scale factor after ':' must be a positive integer (e.g., -bsam BAYES:10)");
                         }
                     }
-                    if (is_valid_bayes)
+                    if (is_valid_bayes) {
                         params.collapse_zero_branch_boot = true;
+                        cout << "NOTE: Bayesian bootstrap (-bsam BAYES) automatically enables "
+                                "--polytomy-boot (near-zero branch collapsing in bootstrap trees)" << endl;
+                    }
                 }
 				continue;
 			}
@@ -5829,6 +5832,8 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --quiet              Quiet mode, suppress printing to screen (stdout)" << endl
     << "  -fconst f1,...,fN    Add constant patterns into alignment (N=no. states)" << endl
     << "  --epsilon NUM        Likelihood epsilon for parameter estimate (default 0.01)" << endl
+    << "  --site-weights FILE  Site-specific integer weights (expands alignment for parsimony)" << endl
+    << "  --site-float-weights FILE  Site-specific floating-point weights for likelihood calculations" << endl
 #ifdef _OPENMP
     << "  -T NUM|AUTO          No. cores/threads or AUTO-detect (default: 1)" << endl
     << "  --threads-max NUM    Max number of threads for -T AUTO (default: all cores)" << endl
@@ -5891,6 +5896,10 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --jack-prop NUM      Subsampling proportion for jackknife (default: 0.5)" << endl
     << "  --bcon NUM           Replicates for bootstrap + consensus tree" << endl
     << "  --bonly NUM          Replicates for bootstrap only" << endl
+    << "  -bsam BAYES[:<K>]    Bayesian bootstrap (Dirichlet site weights; K=parsimony scale, default 10)" << endl
+    << "                       Automatically enables --polytomy-boot" << endl
+    << "  --polytomy-boot      Collapse near-zero branches in bootstrap trees only" << endl
+    << "  -wbsw                Write per-replicate site weights to .bootweights file" << endl
 #ifdef USE_BOOSTER
     << "  --tbe                Transfer bootstrap expectation" << endl
 #endif
