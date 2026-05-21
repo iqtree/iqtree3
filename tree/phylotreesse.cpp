@@ -558,13 +558,6 @@ void PhyloTree::computePtnFreq() {
     }
     for (ptn = nptn; ptn < maxptn; ptn++)
         ptn_freq[ptn] = 0.0;
-    
-    // debug
-    /* cout << "Original vs revised pattern freqs" << std::endl;
-    for (ptn = 0; ptn < nptn; ptn++)
-    {
-        std::cout << (*aln)[ptn].frequency << " vs " << ptn_freq[ptn] << std::endl;
-    }*/
 }
 
 void PhyloTree::computePtnInvar() {

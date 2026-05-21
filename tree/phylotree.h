@@ -2511,6 +2511,7 @@ protected:
     virtual void saveCurrentTree(double logl) {
     } // save current tree
 
+
     /**
      * Current score of the tree;
      */
