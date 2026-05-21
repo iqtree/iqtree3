@@ -22,7 +22,7 @@ ConstraintTree::~ConstraintTree() {
     clear();
 }
 
-void ConstraintTree::readConstraint(const char *constraint_file, StrVector &fulltaxname) {
+void ConstraintTree::readConstraint(const char *constraint_file, const StrVector &fulltaxname) {
     bool is_rooted = false;
     freeNode();
     MTree::init(constraint_file, is_rooted);
@@ -31,17 +31,15 @@ void ConstraintTree::readConstraint(const char *constraint_file, StrVector &full
     // check that constraint tree has a subset of taxa
 
     StrVector taxname;
-    StrVector::iterator it;
     getTaxaName(taxname);
 
     StringIntMap fulltax_index;
-    for (it = fulltaxname.begin(); it != fulltaxname.end(); it++) {
+    for (StrVector::const_iterator it = fulltaxname.begin(); it != fulltaxname.end(); it++) {
         fulltax_index[(*it)] = it - fulltaxname.begin();
     }
 
     bool err = false;
-        
-    for(it = taxname.begin(); it != taxname.end(); it++) {
+    for(StrVector::const_iterator it = taxname.begin(); it != taxname.end(); it++) {
         if (fulltax_index.find(*it) == fulltax_index.end()) {
             cerr << "ERROR: Taxon " << (*it) << " in constraint tree does not appear in full tree" << endl;
             err = true;

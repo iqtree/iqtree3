@@ -30,7 +30,6 @@ cmake-build-debug/
 example/
 sprng/
 terraphast/
-test_scripts/
 vectorclass/
 zlib-1.2.7/
 /.direnv/

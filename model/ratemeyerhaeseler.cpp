@@ -196,8 +196,7 @@ void RateMeyerHaeseler::initializeRates() {
 }
 
 void RateMeyerHaeseler::prepareRateML(IntVector &ptn_id) {
-	Alignment *aln = new Alignment();
-	aln->extractPatterns(phylo_tree->aln, ptn_id);
+	Alignment *aln = phylo_tree->aln->extractPatterns(ptn_id);
 	ptn_tree = new PhyloTree(aln);
 	stringstream ss;
 	phylo_tree->printTree(ss);
@@ -331,7 +330,7 @@ void RateMeyerHaeseler::optimizeRates() {
 	int nstates = phylo_tree->aln->num_states;
 	for (i = 0; i < size(); i++) {
         int freq = phylo_tree->aln->at(i).frequency;
-		if (phylo_tree->aln->at(i).computeAmbiguousChar(nstates) <= nseq-2) {
+		if (phylo_tree->aln->at(i).countAmbiguousChar(nstates) <= nseq-2) {
 			optimizeRate(i);
 			if (at(i) == MIN_SITE_RATE) invar_sites += freq;
 			if (at(i) == MAX_SITE_RATE) {

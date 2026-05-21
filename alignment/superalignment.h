@@ -60,24 +60,24 @@ public:
      initialize seq_names, taxon_index, buildPattern
      */
     virtual void init(StrVector *sequence_names = nullptr);
-    
+
     /** return that this is a super-alignment structure */
-	virtual bool isSuperAlignment() { return true; }
+    virtual bool isSuperAlignment() const { return true; }
 
     /** read partition model file */
-    void readPartition(Params &params);
-    
-    /** read RAxML-style partition file */
-    void readPartitionRaxml(Params &params);
-    
-    /** read partition model file in NEXUS format into variable info */
-    void readPartitionNexus(Params &params);
+    // OBSOLETE
+    //void readPartition(Params &params);
 
-    /** read partition as files in a directory */
-    void readPartitionDir(string partition_dir, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read RAxML-style partition model file */
+    void readPartitionRaxml(const Params &params);
 
-    /** read partition as a comma-separated list of files */
-    void readPartitionList(string file_list, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read NEXUS-format partition model file */
+    void readPartitionNexus(const Params &params);
+
+    /** read partitions as files in a directory or a comma-separated list */
+    void readPartitionFiles(const string &partition_files,
+                            const char *sequence_type, InputType &intype,
+                            const string &model, bool remove_empty_seq);
 
     void printPartition(const char *filename, const char *aln_file);
     void printPartition(ostream &out, const char *aln_file = nullptr, bool append = false);
@@ -137,21 +137,25 @@ public:
                            vector<SymTestResult> &intsym, int *rstream = nullptr, vector<SymTestStat> *stats = nullptr);
 
     /**
-            extract sub-alignment of a sub-set of sequences
-            @param aln original input alignment
-            @param seq_id ID of sequences to extract from
-            @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
-            @param min_taxa only keep alignment that has >= min_taxa sequences
-            @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+     *  Extract given sequences into a new alignment.
+     *  Metadata are copied.
+     *  Site order is preserved
+     *  @param seq_id ID of sequences to extract
+     *  @param min_true_chars Minimum number of non-gap chars to keep a site
+     *  @param min_taxa Minimum number of sequences to keep a partition
+     *  @param[out] kept_partitions Zero id only if a simple alignment is kept,
+     *                              ids of kept partitions for a superalignment
+     *  @return The new alignment or nullptr if no sequences extracted
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = nullptr);
+    virtual SuperAlignment *extractSubAlignment(const IntVector &seq_id,
+        int min_true_chars, int min_taxa = 0, IntVector *kept_partitions = nullptr) const;
 
     /**
         extract a subset of partitions to form a new SuperAlignment object
         @param part_id vector of partition IDs
         @return new alignment containing only part_id partitions
      */
-    SuperAlignment *extractPartitions(IntVector &part_id);
+    SuperAlignment *extractPartitions(const IntVector &part_id) const;
 
     /**
      remove a subset of partitions
@@ -276,9 +280,9 @@ public:
 	virtual void buildPattern();
 
     /**
-            count the fraction of constant sites in the alignment, update the variable frac_const_sites
+     *  Count constant sites in the alignment, update frac_const_sites
      */
-    virtual void countConstSite();
+    virtual void countConstSites();
 
     /**
      * 	@return number of states, if it is a partition model, return max num_states across all partitions
@@ -304,18 +308,21 @@ public:
 	/** maximum number of states across all partitions */
 	int max_num_states;
 
-	/**
-	 * concatenate subset of alignments
-	 * @param ids IDs of sub-alignments
-	 * @return concatenated alignment
-	 */
-    Alignment *concatenateAlignments(set<int> &ids);
+    /**
+     *  Concatenate given partitions into a new alignment.
+     *  The partitions must have the same seq_type
+     *  @param part_id ID of partitions to concatenate
+     *  @return Concatenated alignment
+     */
+    Alignment *concatenateAlignments(const set<int> &part_id) const;
 
-	/**
-	 * concatenate all alignments
-	 * @return concatenated alignment
-	 */
-    Alignment *concatenateAlignments();
+    /**
+     *  Concatenate all partitions.
+     *  If there are partitions of different seq_type, the ones with
+     *  similar seq_type are concatenated and added to a new superalignment
+     *  @return Concatenated alignment or superalignment
+     */
+    Alignment *concatenateAlignments() const;
 
 
 };

@@ -10,57 +10,30 @@
 //
 //
 #include "pattern.h"
-#include "alignment/alignment.h"
 #include <vectorclass/vectorclass.h>
 
-Pattern::Pattern()
-        : vector<StateType>()
-{
-    frequency = 0;
-//    is_const = false;
-//    is_informative = false;
-    flag = 0;
-    const_char = -1;
-    num_chars = 0;
+bool Pattern::isGapOnly(StateType STATE_UNKNOWN) const {
+    for (StateVector::const_iterator i = begin(); i != end(); ++i) {
+        if (*i != STATE_UNKNOWN) {
+            return false;
+        }
+    }
+    return true;
 }
 
-Pattern::Pattern(int nseq, int freq)
-: vector<StateType>(nseq)
-{
-    frequency = freq;
-    //    is_const = false;
-    //    is_informative = false;
-    flag = 0;
-    const_char = -1;
-    num_chars = 0;
-}
-
-Pattern::Pattern(const Pattern &pat)
-        : vector<StateType>(pat)
-{
-    frequency = pat.frequency;
-//    is_const = pat.is_const;
-//    is_informative = pat.is_informative;
-    flag = pat.flag;
-    const_char = pat.const_char;
-    num_chars = pat.num_chars;
-    freqs = pat.freqs; // added by TD
-}
-
-Pattern::~Pattern()
-{
-}
-
-int Pattern::computeAmbiguousChar(int num_states) {
-    int num = 0;
-    for (iterator i = begin(); i != end(); i++)
-        if (*i >= num_states) num++;
+size_t Pattern::countAmbiguousChar(int num_states) const {
+    size_t num = 0;
+    for (StateVector::const_iterator i = begin(); i != end(); ++i) {
+        if (*i >= num_states) {
+            num++;
+        }
+    }
     return num;
 }
 
 #define VECTORIZE_GAPCHAR_COUNT 1
-int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
-    int num = 0;
+size_t Pattern::countGapChar(StateType STATE_UNKNOWN) const {
+    size_t num = 0;
 #if VECTORIZE_GAPCHAR_COUNT
     //This won't compile unless value_type is based on uint32_t
     //(nor should it! You'd need to use different vector types!)
@@ -81,7 +54,7 @@ int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
         }
     }
 #else
-    for (iterator i = begin(); i != end(); i++) {
+    for (StateVector::const_iterator i = begin(); i != end(); ++i) {
         if (*i == STATE_UNKNOWN) {
             num++;
         }
@@ -89,11 +62,3 @@ int Pattern::computeGapChar(int num_states, int STATE_UNKNOWN) const {
 #endif
     return num;
 }
-
-//Pattern &Pattern::operator= (Pattern pat) {
-//    assign(pat);
-//    frequency = pat.frequency;
-//    is_const = pat.is_const;
-//    const_char = pat.const_char;
-//    return *this;
-//}

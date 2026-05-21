@@ -1626,6 +1626,9 @@ public:
     /** contain non-reversible model */
     bool contain_nonrev;
 
+    /** if true, skip the marginal log-likelihood / mAIC computation for partition models */
+    bool skip_marginal_lh;
+
     /** model name to initialize GTR20 or NONREV protein model */
     char* model_name_init;
 
@@ -2900,6 +2903,18 @@ public:
      * TRUE to output the alternative SPRs with their supports in the tree
      */
     bool out_alter_spr;
+    
+    /**
+     * @private
+     * TRUE to use local references in CMAPLE
+     */
+    bool cmaple_use_local_ref;
+    
+    /**
+     * @private
+     * TRUE to output MAT with CMAPLE
+     */
+    bool cmaple_output_MAT;
 
     /**
     *  Mutation file that specifies pre-defined mutations occurs at nodes

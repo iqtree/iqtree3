@@ -2566,10 +2566,9 @@ void PhyloTree::optimizePatternRates(DoubleVector &pattern_rates) {
     pattern_rates.resize(nptn, 1.0);
 #pragma omp parallel for
     for (size_t ptn = 0; ptn < nptn; ptn++) {
-        Alignment *paln = new Alignment;
         IntVector ptn_id;
         ptn_id.push_back(ptn);
-        paln->extractPatterns(aln, ptn_id);
+        Alignment *paln = aln->extractPatterns(ptn_id);
         PhyloTree *tree = new PhyloTree;
         tree->copyPhyloTree(this, false); //Local alignment, so tree can't "borrow" the summary of this
         tree->setParams(params);
@@ -5614,8 +5613,7 @@ int PhyloTree::collapseStableClade(int min_support, NodeVector &pruned_taxa, Str
         if (linked_taxid[i] < 0)
             stayed_id.push_back(i);
     ASSERT(stayed_id.size() + pruned_taxa.size() == leafNum);
-    Alignment * pruned_aln = new Alignment();
-    pruned_aln->extractSubAlignment(aln, stayed_id, 2); // at least 2 informative characters
+    Alignment *pruned_aln = aln->extractSubAlignment(stayed_id, 2); // at least 2 informative characters
     nodeNum = leafNum = stayed_id.size();
     initializeTree();
     setAlignment(pruned_aln);

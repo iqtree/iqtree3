@@ -615,7 +615,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 
     /******************** initialize model ****************************/
 
-    if (tree->aln->site_state_freq.empty()) {
+    if (!tree->aln->isSSF()) {
         if (model_str.substr(0, 3) == "MIX" || freq_type == FREQ_MIXTURE) {
             string model_list;
             if (model_str.substr(0, 3) == "MIX") {
@@ -644,14 +644,9 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         model = new ModelSet(model_str.c_str(), tree);
         ModelSet *models = (ModelSet*)model; // assign pointer for convenience
         models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
-        models->pattern_model_map.resize(tree->aln->getNPattern(), -1);
-        for (size_t i = 0; i < tree->aln->getNSite(); ++i) {
-            models->pattern_model_map[tree->aln->getPatternID(i)] = tree->aln->site_model[i];
-            //cout << "site " << i << " ptn " << tree->aln->getPatternID(i) << " -> model " << site_model[i] << endl;
-        }
         double *state_freq = new double[model->num_states];
         double *rates = new double[model->getNumRateEntries()];
-        for (size_t i = 0; i < tree->aln->site_state_freq.size(); ++i) {
+        for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
             ModelMarkov *modeli;
             if (i == 0) {
                 modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
@@ -662,8 +657,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
                 modeli->setStateFrequency(state_freq);
                 modeli->setRateMatrix(rates);
             }
-            if (tree->aln->site_state_freq[i])
-                modeli->setStateFrequency (tree->aln->site_state_freq[i]);
+            if (tree->aln->ptn_state_freq[i])
+                modeli->setStateFrequency(tree->aln->ptn_state_freq[i]);
 
             modeli->init(FREQ_USER_DEFINED);
             models->push_back(modeli);
@@ -1104,6 +1099,7 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
     vector<string> nested_models;
     int nmix, i;
     double max_logl, cur_logl;
+    bool found_nested_model = false;
     map<string, vector<string> >::iterator itr;
 
     nmix = model->getNMixtures();
@@ -1128,20 +1124,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
         for (i = 0; i < nested_models.size(); i++) {
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_models[i] + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated (e.g. MF_IGNORED)
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_models[i] + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_models[i];
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");
@@ -1179,20 +1178,23 @@ bool ModelFactory::initFromNestedModel(map<string, vector<string> > nest_network
             nested_mix_model = replaceLastQ(model_name, nested_models[i]);
             string best_model_logl_df;
             bool check = checkpoint->getString(nested_mix_model + rate_name, best_model_logl_df);
-            ASSERT(check);
+            if (!check) continue; // skip nested models that were not evaluated
             stringstream ss(best_model_logl_df);
             ss >> cur_logl;
 
             //cout << " lnL of " << nested_mix_model + rate_name << ": " << cur_logl << endl;
 
-            if (i == 0) {
+            if (!found_nested_model) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
+                found_nested_model = true;
             } else if (cur_logl > max_logl) {
                 max_logl = cur_logl;
                 best_nested_model_name = nested_mix_model;
             }
         }
+        if (!found_nested_model)
+            return false;
         nested_full_name = best_nested_model_name + rate_name;
 
         checkpoint->startStruct("OptModel");

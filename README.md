@@ -66,11 +66,12 @@ Citations
 
 General citation for IQ-TREE 3:
 
-* T.K.F. Wong, N. Ly-Trong, H. Ren, H. Banos,
+* T.K.F. Wong, N. Ly-Trong, H. Ren, P. Demotte, H. Banos,
   A.J. Roger, E. Susko, C. Bielow, N. De Maio,
-  N. Goldman, M.W. Hahn, G. Huttley, R. Lanfear, B.Q. Minh (2025)
+  N. Goldman, M.W. Hahn, M. dos Reis, L.S. Vinh, G. Huttley, R. Lanfear, B.Q. Minh (2026)
   IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models.
-  Submitted, <https://doi.org/10.32942/X2P62N>.
+  _Mol. Biol. Evol._, msag117. <https://doi.org/10.1093/molbev/msag117>
+  
 
 Moreover, there are other papers associated with notable features in IQ-TREE,
 which are normally mentioned in the corresponding documentation. We ask that you also

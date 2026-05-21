@@ -2133,6 +2133,7 @@ void parseArg(int argc, char *argv[], Params &params) {
                     params.partition_type = BRLEN_OPTIMIZE;
                 else
                     throw "Use --edge equal|scale|unlink";
+                continue;
             }
             
             if (strcmp(argv[cnt], "-rcluster") == 0 || strcmp(argv[cnt], "--rcluster") == 0) {
@@ -2762,6 +2763,16 @@ void parseArg(int argc, char *argv[], Params &params) {
 
               continue;
             }
+            if (strcmp(argv[cnt], "--disable-local-ref") == 0) {
+                params.cmaple_use_local_ref = false;
+
+              continue;
+            }
+            if (strcmp(argv[cnt], "--estimate-MAT") == 0) {
+                params.cmaple_output_MAT = true;
+
+              continue;
+            }
             if (strcmp(argv[cnt], "--out-csv") == 0) {
                 params.output_format = FORMAT_CSV;
                 continue;
@@ -2903,6 +2914,10 @@ void parseArg(int argc, char *argv[], Params &params) {
             }
             if (strcmp(argv[cnt], "--nonrev-model") == 0 || strcmp(argv[cnt], "-nonrev-model") == 0) {
                 params.contain_nonrev = true;
+                continue;
+            }
+            if (strcmp(argv[cnt], "--no-mAIC") == 0 || strcmp(argv[cnt], "-no-mAIC") == 0) {
+                params.skip_marginal_lh = true;
                 continue;
             }
 			if (strcmp(argv[cnt], "-mset") == 0 || strcmp(argv[cnt], "--mset") == 0 || strcmp(argv[cnt], "--models") == 0 || strcmp(argv[cnt], "-mexchange") == 0 || strcmp(argv[cnt], "--mexchange") == 0 ) {
@@ -7215,6 +7230,7 @@ void Params::setDefault() {
     num_runs = 1;
     model_name = "";
     contain_nonrev = false;
+    skip_marginal_lh = false;
     model_name_init = nullptr;
     model_opt_steps = 10;
     model_set = "ALL";
@@ -7597,6 +7613,9 @@ void Params::setDefault() {
     SPRTA_zero_branches = false;
     out_alter_spr = false;
     intree_str = "";
+    
+    cmaple_use_local_ref = true;
+    cmaple_output_MAT = false;
 }
 
 int countPhysicalCPUCores() {

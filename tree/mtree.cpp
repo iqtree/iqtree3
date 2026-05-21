@@ -1723,7 +1723,7 @@ void MTree::convertToTree(SplitGraph &sg) {
     
 }
 
-Node *MTree::findNodeName(string &name, Node *node, Node *dad) {
+Node *MTree::findNodeName(const string &name, Node *node, Node *dad) {
     if (!node) node = root;
     if (node->name == name) return node;
     FOR_NEIGHBOR_IT(node, dad, it) {
@@ -1778,7 +1778,7 @@ bool MTree::findNodeNames(unordered_set<string> &taxa_set, pair<Node*,Neighbor*>
 */
 
 // slow version but correct
-bool MTree::findNodeNames(unordered_set<string> &taxa_set, pair<Node*,Neighbor*> &res, Node *node, Node *dad) {
+bool MTree::findNodeNames(const unordered_set<string> &taxa_set, pair<Node*,Neighbor*> &res, Node *node, Node *dad) {
     BranchVector branches;
     SplitGraph sg;
     Split sp(leafNum);
@@ -1808,9 +1808,7 @@ bool MTree::findNodeNames(unordered_set<string> &taxa_set, pair<Node*,Neighbor*>
     return false;
 }
 
-
-
-Node *MTree::findLeafName(string &name, Node *node, Node *dad) {
+Node *MTree::findLeafName(const string &name, Node *node, Node *dad) {
     if (!node) node = root;
     if (node->isLeaf() && node->name == name) return node;
     FOR_NEIGHBOR_IT(node, dad, it) {

@@ -84,11 +84,12 @@ extern "C" {
 void reportReferences(Params &params, ofstream &out) {
 
     out << "To cite IQ-TREE 3 please use:" << endl << endl
-    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Hector Banos, Andrew J. Roger," << endl
-    << "Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman, Matthew W. Hahn," << endl
-    << "Gavin Huttley, Robert Lanfear, Bui Quang Minh (2025)" << endl
+    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Piyumal Demotte, Hector Banos," << endl
+    << "Andrew J. Roger, Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman," << endl
+    << "Matthew W. Hahn, Mario dos Reis, Le Sy Vinh, Gavin Huttley, Robert Lanfear, Bui Quang Minh (2026)" << endl
     << "IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models." << endl
-    << "Submitted." << endl << endl;
+    << "Molecular Biology and Evolution, msag117." << endl
+    << "https://doi.org/10.1093/molbev/msag117" << endl << endl;
 
     if (params.dating_method == "mcmctree") {
         out << "Since you used IQ2MC dating method please also cite: " << endl << endl
@@ -923,7 +924,7 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev) {
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev && !params.skip_marginal_lh) {
         // compute mAIC/mBIC/mAICc if it is a partition model
         int ntrees; //mix_df;
         double mix_lh;
@@ -4862,14 +4863,13 @@ void convertAlignment(Params &params, IQTree *iqtree) {
             ((SuperAlignment*)alignment)->printPartitionRaxml(partition_info.c_str());
         }
     } else if (params.gap_masked_aln) {
-        Alignment out_aln;
         Alignment masked_aln(params.gap_masked_aln, params.sequence_type, params.intype, params.model_name);
-        out_aln.createGapMaskedAlignment(&masked_aln, alignment);
-        out_aln.printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
-                exclude_sites, params.ref_seq_name);
-        string str = params.gap_masked_aln;
-        str += ".sitegaps";
-        out_aln.printSiteGaps(str.c_str());
+        Alignment *out_aln = alignment->createGapMaskedAlignment(&masked_aln);
+        out_aln->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
+                                exclude_sites, params.ref_seq_name);
+        string str = (string)params.gap_masked_aln + ".sitegaps";
+        out_aln->printSiteGaps(str.c_str());
+        delete out_aln;
     } else  {
         alignment->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
                 exclude_sites, params.ref_seq_name);
@@ -4921,13 +4921,11 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
     size_t nptn = alignment->getNPattern(), nstates = alignment->num_states;
     double *ptn_state_freq = new double[nptn*nstates];
     tree->computePatternStateFreq(ptn_state_freq);
-    alignment->site_state_freq.resize(nptn);
     for (size_t ptn = 0; ptn < nptn; ptn++) {
         double *f = new double[nstates];
         memcpy(f, ptn_state_freq+ptn*nstates, sizeof(double)*nstates);
-        alignment->site_state_freq[ptn] = f;
+        alignment->ptn_state_freq.push_back(f);
     }
-    alignment->getSitePatternIndex(alignment->site_model);
     printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
     params.print_site_state_freq = WSF_NONE;
     
@@ -5560,25 +5558,25 @@ bool runCMaple(Params &params)
                 sub_model = cmaple::ModelBase::DEFAULT;
             }
             cmaple::Model model(sub_model, aln.getSeqType());
+            
+            // transfer CMAPLE params
+            std::unique_ptr<cmaple::Params> cmaple_params =
+            cmaple::ParamsBuilder()
+            .withComputeSPRTA(params.compute_SPRTA)
+            .withComputeSPRTAZeroBranches(params.SPRTA_zero_branches)
+            .withOutAlterSPR(params.out_alter_spr)
+            .withLocalRef(params.cmaple_use_local_ref)
+            .build();
 
             // Initialize a Tree
             const std::string input_treefile(params.user_file ? params.user_file : "");
-            cmaple::Tree tree(&aln, &model, input_treefile, (params.fixed_branch_length == BRLEN_FIX), cmaple::ParamsBuilder().build());
-            
-            // transfer SPRTA options if any
-            if (params.compute_SPRTA)
-            {
-                tree.params->compute_SPRTA = params.compute_SPRTA;
-                tree.params->compute_SPRTA_zero_length_branches = params.SPRTA_zero_branches;
-                tree.params->print_SPRTA_less_info_seqs = params.SPRTA_zero_branches;
-                tree.params->output_alternative_spr = params.out_alter_spr;
-            }
+            cmaple::Tree tree(&aln, &model, input_treefile, (params.fixed_branch_length == BRLEN_FIX), std::move(cmaple_params));
 
             // Infer a phylogenetic tree
             const cmaple::Tree::TreeSearchType tree_search_type = cmaple::Tree::parseTreeSearchType(params.tree_search_type_str);
             std::ostream null_stream(0);
             std::ostream& out_stream = cmaple::verbose_mode >= cmaple::VB_MED ? std::cout : null_stream;
-            tree.infer(params.num_threads, tree_search_type, params.shallow_tree_search, out_stream);
+            tree.infer(params.num_threads, tree_search_type, params.shallow_tree_search, params.compute_SPRTA, out_stream);
 
             // Compute branch supports (if users want to do so)
             if (params.aLRT_replicates)
@@ -5629,6 +5627,16 @@ bool runCMaple(Params &params)
                 out << tree.exportTSV();
                 out.close();
             }
+            
+            // export MAT if selected
+            if(params.cmaple_output_MAT)
+            {
+                std::string filename = output_treefile + ".mat.nex";
+                std::cout << "Writing MAT to file " << filename << std::endl;
+                ofstream out = ofstream(filename);
+                out << tree.exportNexus(tree_format, false, true);
+                out.close();
+            }
 
             // Show model parameters
             if (cmaple::verbose_mode > cmaple::VB_QUIET)
@@ -5644,10 +5652,12 @@ bool runCMaple(Params &params)
             // Show information about output files
             std::cout << "Analysis results written to:" << std::endl;
             std::cout << "Maximum-likelihood tree:       " << output_treefile << std::endl;
+            if (params.cmaple_output_MAT)
+                std::cout << "Estimated MAT:                 " << output_treefile + ".mat.nex" << std::endl;
             if (params.compute_SPRTA)
-                std::cout << "Tree in NEXUS format:      " << output_treefile + ".nex" << std::endl;
+                std::cout << "Tree in NEXUS format:          " << output_treefile + ".nex" << std::endl;
             if (params.compute_SPRTA && params.out_alter_spr)
-                std::cout << "Meta data in TSV format:   " << output_treefile + ".tsv" << std::endl;
+                std::cout << "Meta data in TSV format:       " << output_treefile + ".tsv" << std::endl;
             std::cout << "Screen log file:               " << prefix + ".log" << std::endl << std::endl;
 
             // show runtime

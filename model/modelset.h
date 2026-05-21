@@ -148,9 +148,6 @@ public:
     	return mem;
     }
 
-	/** map from pattern ID to model ID */
-	IntVector pattern_model_map;
-
     /**
         join memory for eigen into one chunk
     */

@@ -421,9 +421,29 @@ void PhyloTree::computeSubtreeAncestralState(PhyloNeighbor *dad_branch, PhyloNod
                 state_best = i;
             }
         }
-        if (params->ancestral_site_concordance == 2 && sum > 1.0) {
-            // UPDATE for sCLF: ignoring sites where one subtree shows just gap/ambiguity
-            state_best = aln->STATE_UNKNOWN;
+        // For sCFL: detect all-gap/ambiguity subtrees and mark them STATE_UNKNOWN.
+        // Leaf nodes: sum = 1.0 (known) or nstates (gap); no category summation.
+        // Internal nodes: sum ~ ncat_mix (real data) or nstates*ncat_mix (gap).
+        // Scaled internal nodes (scale_num > 0) always have real data — gaps never
+        // trigger scaling because their partial_lh stays at 1.0.
+        if (params->ancestral_site_concordance == 2) {
+            bool is_gap;
+            if (dad_branch->node->isLeaf()) {
+                is_gap = sum > 1.0;
+            } else {
+                // Check if ANY category has been scaled (=> real data, not gap)
+                bool any_scaled = false;
+                if (safe_numeric) {
+                    for (size_t c = 0; c < ncat_mix && !any_scaled; c++)
+                        any_scaled = dad_branch->scale_num[ptn * ncat_mix + c] != 0;
+                } else {
+                    any_scaled = dad_branch->scale_num[ptn] != 0;
+                }
+                is_gap = !any_scaled && sum > (double)ncat_mix;
+            }
+            if (is_gap) {
+                state_best = aln->STATE_UNKNOWN;
+            }
         }
         sum = 1.0/sum;
         for (size_t i = 0; i < nstates; i++) {

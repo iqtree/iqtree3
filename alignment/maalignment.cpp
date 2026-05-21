@@ -174,13 +174,10 @@ void MaAlignment::generateExpectedAlignment(MaAlignment *aln, double &prob)
 	int nsite = aln->getNSite();
 	seq_names.insert(seq_names.begin(), aln->seq_names.begin(), aln->seq_names.end());
 	num_states = aln->num_states;
-	site_pattern.resize(nsite, -1);
-	clear();
+	site_pattern.clear();
 	pattern_index.clear();
-	VerboseMode save_mode = verbose_mode; 
-	verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
+	clear();
 
-	int site = 0;
 	int npat = aln->getNPattern();
 
 	double sumFac = 0;
@@ -192,12 +189,9 @@ void MaAlignment::generateExpectedAlignment(MaAlignment *aln, double &prob)
 
 	for (int patID = 0; patID < npat; ++patID) {
 		int patFre = expectedNorFre[patID];
-		for ( int patSite = 0; patSite < patFre; patSite++)
-		{			
-			Pattern pat = aln->at(patID);
-			addPattern(pat,site);
-			site++;	
-		}
+		Pattern pat = aln->at(patID);
+		pat.frequency = patFre;
+		addPattern(pat);
 
 		//to compute the probability of the new alignment given the multinomial distribution
 		sumFac += logFac(patFre);
@@ -211,8 +205,7 @@ void MaAlignment::generateExpectedAlignment(MaAlignment *aln, double &prob)
 
 	double probMax = fac - sumFacMax + sumProbMax;
 //	cout << "total number of sites: " << site << endl;
-	verbose_mode = save_mode;
-	countConstSite();
+	countConstSites();
 	//cout << "Finish generating expected alignment!" << endl;
 	cout << "Logarithm of the probability of the new alignment given the multinomial distribution of the input alignment is: " << prob << endl;
 	cout << "Maximum unconstraint (log) likelihood of the input alignment: " << probMax << endl;
