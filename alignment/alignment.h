@@ -438,12 +438,7 @@ public:
             site_pattern.resize(expected_num_sites);
         }
         
-        // if site-specific floating weight are specified
-        // return the total weights
-        // otherwise, return the normal number of sites
-        return (total_site_float_weight > 0
-                ? total_site_float_weight
-                : site_pattern.size());
+        return site_pattern.size();
     }
 
     /**
