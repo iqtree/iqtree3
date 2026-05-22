@@ -934,11 +934,6 @@ public:
      */
     int ori_num_sites = -1;
     
-    /**
-     * the total site-specific floating weights (if specified)
-     */
-    double total_site_float_weight = -1;
-
   // TODO DS: Maybe change default to SAMPLING_WEIGHTED_HYPER.
   /// The sampling method (defaults to SAMPLING_WEIGHTED_BINOM).
   SamplingType pomo_sampling_method;

@@ -913,7 +913,7 @@ void Alignment::readSiteSpecFloatWeights()
     pattern_weight.resize(getNPattern(), 0.0);
     
     // integrate the site-specific floating weights into the pattern frequencies
-    total_site_float_weight = 0.0;
+    double total_site_float_weight = 0.0;
     for (size_t i = 0; i < site_float_weights.size(); ++i)
     {
         pattern_weight[site_pattern[i]] += site_float_weights[i];
