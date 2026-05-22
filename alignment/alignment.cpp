@@ -1005,9 +1005,8 @@ void Alignment::integrateSiteSpecWeights()
     }
 }
 
-void Alignment::createBayesBootWeights(DoubleVector &site_weights, int *rstream)
+void Alignment::createBayesBootWeights(DoubleVector &site_weights, size_t nsite, int *rstream)
 {
-    size_t nsite = getNSite();
     site_weights.resize(nsite);
     double sum = 0.0;
     // Draw n independent Exponential(1) samples — this gives a
@@ -4254,14 +4253,6 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     
     site_pattern.clear();
     pattern_index.clear();
-    
-    // For Bayesian bootstrap we keep the original site→pattern mapping unchanged;
-    // all other modes start with site_pattern filled with -1 (unassigned).
-    if (spec && strncasecmp(spec, "BAYES", 5) == 0)
-        site_pattern = aln->site_pattern;
-    else
-        site_pattern.resize(aln->getNSite(), -1);
-    
     clear();
 
     // 2016-07-05: copy variables for PoMo
@@ -4316,28 +4307,21 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         int pars_scale = (spec[5] == ':') ? max(1, convert_int(spec + 6)) : 10;
         const size_t nptn = aln->getNPattern();
         DoubleVector site_weights;
-        createBayesBootWeights(site_weights);
+        createBayesBootWeights(site_weights, nsite);
         boot_site_weights = site_weights;
         // Accumulate per-pattern float weights
         vector<double> ptn_float_weight(nptn, 0.0);
         for (size_t i = 0; i < nsite; ++i)
             ptn_float_weight[aln->getPatternID(i)] += site_weights[i];
-        // Per-pattern integer frequencies for parsimony (min 1 so no site is silenced)
+        // Per-pattern integer frequencies for parsimony (min 1 so no site is silenced).
+        // addPattern() fills site_pattern with pat.frequency copies of the pattern index.
         for (size_t ptn = 0; ptn < nptn; ++ptn) {
             Pattern pat = aln->at(ptn);
             pat.frequency = max(1, (int)round(ptn_float_weight[ptn] * pars_scale));
-            push_back(pat);
-            pattern_index[pat] = ptn;
+            addPattern(pat);
         }
         // Float weights for ML (picked up by PhyloTree::computePtnFreq)
         pattern_weight.assign(ptn_float_weight.begin(), ptn_float_weight.end());
-        // Rebuild site_pattern to be consistent with scaled integer frequencies so that:
-        // (a) PLL's concatenateAlignments assertion holds for partition models, and
-        // (b) parsimony correctly uses Dirichlet-weighted frequencies.
-        site_pattern.clear();
-        for (size_t ptn = 0; ptn < nptn; ++ptn)
-            for (int rep = 0; rep < at(ptn).frequency; ++rep)
-                site_pattern.push_back(ptn);
     } else if (strncmp(spec, "GENESITE,", 9) == 0) {
 		// resampling genes, then resampling sites within resampled genes
 		convert_int_vec(spec+9, site_vec);

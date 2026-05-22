@@ -1398,8 +1398,9 @@ void SuperAlignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern
                 boot_aln->boot_site_weights.begin(), boot_aln->boot_site_weights.end());
             partitions.push_back(boot_aln);
         }
+        seq_names = super_aln->seq_names;
         taxa_index = super_aln->taxa_index;
-        countConstSites();
+        buildPattern();
     } else if (strncasecmp(spec, "BAYES", 5) == 0) {
         // Bayesian bootstrap: draw Dirichlet(1,...,1) weights independently per partition.
         // ML uses pattern_weight[] (Dirichlet floats). For PLL compatibility, frequencies

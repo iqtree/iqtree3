@@ -1104,7 +1104,7 @@ public:
      * @param site_weights [OUT] per-site weights, length = getNSite()
      * @param rstream      optional random stream (NULL = global randstream)
      */
-    void createBayesBootWeights(DoubleVector &site_weights, int *rstream = NULL);
+    void createBayesBootWeights(DoubleVector &site_weights, size_t nsite, int *rstream = NULL);
 
 protected:
     /**
