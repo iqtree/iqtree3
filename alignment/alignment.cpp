@@ -4408,12 +4408,21 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     // NHANLT: this line is removed by StefanFlauberg
     // verbose_mode = save_mode;
     countConstSites();
-    // countConstSite() sums scaled frequencies, making frac_const/invariant_sites
-    // proportional to pars_scale rather than to the true site count.  Restore the
-    // original fractions from the source alignment so downstream code stays correct.
-    if (spec && strncasecmp(spec, "BAYES", 5) == 0) {
-        frac_const_sites     = aln->frac_const_sites;
-        frac_invariant_sites = aln->frac_invariant_sites;
+    // For Bayesian bootstrap, countConstSites() divides by getNSite() which equals the
+    // sum of pars_scale-scaled integer frequencies (floored to 1), not the original site
+    // count. Recompute the fraction fields from pattern_weight[] (true Dirichlet floats
+    // that sum to nsite) so downstream rate optimisation (e.g. pinvar) stays correct.
+    // num_informative_sites / num_variant_sites from countConstSites() are kept as-is
+    // because parsimony uses the integer frequencies.
+    if (spec && strncasecmp(spec, "BAYES", 5) == 0 && !pattern_weight.empty()) {
+        double const_weight = 0.0, invariant_weight = 0.0;
+        const double total_weight = aln->getNSite(); // pattern_weight sums to nsite
+        for (size_t ptn = 0; ptn < pattern_weight.size(); ++ptn) {
+            if (at(ptn).isConst())     const_weight     += pattern_weight[ptn];
+            if (at(ptn).isInvariant()) invariant_weight += pattern_weight[ptn];
+        }
+        frac_const_sites     = const_weight     / total_weight;
+        frac_invariant_sites = invariant_weight / total_weight;
     }
 //    buildSeqStates();
 }
