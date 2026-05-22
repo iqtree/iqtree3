@@ -5913,7 +5913,6 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --bonly NUM          Replicates for bootstrap only" << endl
     << "  -bsam BAYES[:<K>]    Bayesian bootstrap (Dirichlet site weights; K=parsimony scale, default 10)" << endl
     << "                       Automatically enables --polytomy-boot" << endl
-    << "  --polytomy-boot      Collapse near-zero branches in bootstrap trees only" << endl
     << "  -wbsw                Write per-replicate site weights to .bootweights file" << endl
 #ifdef USE_BOOSTER
     << "  --tbe                Transfer bootstrap expectation" << endl
