@@ -4304,7 +4304,8 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         size_t nsite = aln->getNSite();
         // Bayesian bootstrap (Rubin 1981): Dirichlet(1,...,1) site weights.
         // Float weights → ML via pattern_weight[]; scaled integer frequencies → parsimony.
-        int pars_scale = (spec[5] == ':') ? max(1, convert_int(spec + 6)) : 10;
+        int pars_scale = (spec[5] == ':' && isdigit((unsigned char)spec[6]))
+                       ? max(1, convert_int(spec + 6)) : 10;
         const size_t nptn = aln->getNPattern();
         DoubleVector site_weights;
         createBayesBootWeights(site_weights, nsite);
