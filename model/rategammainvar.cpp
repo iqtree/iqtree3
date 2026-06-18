@@ -226,7 +226,6 @@ double RateGammaInvar::optimizeWithEM(double gradient_epsilon) {
 
     size_t ncat = getNRate();
     size_t nptn = phylo_tree->aln->getNPattern();
-    size_t nSites = phylo_tree->aln->getNSite();
 
     // Compute the pattern likelihood for each category (invariable and variable category)
     phylo_tree->computePatternLhCat(WSL_RATECAT);
@@ -243,6 +242,14 @@ double RateGammaInvar::optimizeWithEM(double gradient_epsilon) {
         ppInvar += (phylo_tree->ptn_invar[ptn]) * phylo_tree->ptn_freq[ptn] / lk_ptn;
     }
 
+    size_t nSites = phylo_tree->aln->getNSite();
+    // When float site weights are active, ptn_freq[] carries non-integer weights so
+    // the effective site count must be derived from ptn_freq, not getNSite().
+    if (!phylo_tree->aln->pattern_weight.empty()) {
+        double s = 0;
+        for (size_t p = 0; p < nptn; p++) s += phylo_tree->ptn_freq[p];
+        nSites = (size_t)round(s);
+    }
     double newPInvar = ppInvar / nSites;
     ASSERT(newPInvar < 1.0);
     //double curPInv = getPInvar();

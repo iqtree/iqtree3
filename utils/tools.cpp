@@ -1925,6 +1925,11 @@ void parseArg(int argc, char *argv[], Params &params) {
                 continue;
             }
 
+            if (strcmp(argv[cnt], "-czbb") == 0 || strcmp(argv[cnt], "--polytomy-boot") == 0) {
+                params.collapse_zero_branch_boot = true;
+                continue;
+            }
+
 			if (strcmp(argv[cnt], "-swc") == 0) {
 				params.split_weight_summary = SW_COUNT;
 				continue;
@@ -3149,6 +3154,22 @@ void parseArg(int argc, char *argv[], Params &params) {
                 params.keep_zero_freq = false;
                 continue;
             }
+            
+            if (strcmp(argv[cnt], "--site-weights") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --site-weights <site_weight_file>";
+                params.site_weights_file = argv[cnt];
+                continue;
+            }
+            
+            if (strcmp(argv[cnt], "--site-float-weights") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --site-float-weights <site_float_weight_file>";
+                params.site_float_weights_file = argv[cnt];
+                continue;
+            }
 
 			if (strcmp(argv[cnt], "-fs") == 0 || strcmp(argv[cnt], "--site-freq") == 0) {
                 if (params.tree_freq_file)
@@ -3494,6 +3515,33 @@ void parseArg(int argc, char *argv[], Params &params) {
 					throw "Use -bsam <bootstrap_specification>";
 				params.bootstrap_spec = argv[cnt];
                 params.remove_empty_seq = false;
+                // Validate BAYES spec early: catch "BAY", "BAYESS", "BAYES:", etc.
+                {
+                    const char *s = params.bootstrap_spec;
+                    size_t slen = strlen(s);
+                    bool is_valid_bayes = strncasecmp(s, "BAYES", 5) == 0 &&
+                                         (s[5] == '\0' || s[5] == ':');
+                    bool looks_like_bayes = !is_valid_bayes &&
+                        ((slen > 0 && slen < 5 && strncasecmp(s, "BAYES", slen) == 0) ||
+                          strncasecmp(s, "BAYES", 5) == 0);
+                    if (looks_like_bayes)
+                        outError("Invalid -bsam spec '", string(s) +
+                                 "'. For Bayesian bootstrap use: -bsam BAYES or -bsam BAYES:<scale>");
+                    if (is_valid_bayes && s[5] == ':')
+                    {
+                        // validate the scaling factor
+                        if (!isdigit((unsigned char)s[6]) || convert_int(s + 6) <= 0)
+                        {
+                            outError("Invalid -bsam spec '", string(s) +
+                                     "': scale factor after ':' must be a positive integer (e.g., -bsam BAYES:10)");
+                        }
+                    }
+                    if (is_valid_bayes) {
+                        params.collapse_zero_branch_boot = true;
+                        cout << "NOTE: Bayesian bootstrap (-bsam BAYES) automatically enables "
+                                "--polytomy-boot (near-zero branch collapsing in bootstrap trees)" << endl;
+                    }
+                }
 				continue;
 			}
             
@@ -3772,6 +3820,10 @@ void parseArg(int argc, char *argv[], Params &params) {
 			}
 			if (strcmp(argv[cnt], "-wbsf") == 0) {
 				params.print_boot_site_freq = true;
+				continue;
+			}
+			if (strcmp(argv[cnt], "-wbsw") == 0) {
+				params.print_boot_site_weights = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-wsa") == 0) {
@@ -5523,6 +5575,9 @@ void parseArg(int argc, char *argv[], Params &params) {
     if (params.lh_mem_save == LM_MEM_SAVE && params.partition_file)
         outError("-mem option does not work with partition models yet");
     
+    if ((params.site_weights_file != "" || params.site_float_weights_file != "") && params.partition_file)
+        outError("Site-specific weights do not work with partition models yet");
+    
     if (params.gbo_replicates && params.num_bootstrap_samples)
         outError("UFBoot (-bb) and standard bootstrap (-b) must not be specified together");
     
@@ -5800,6 +5855,8 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --quiet              Quiet mode, suppress printing to screen (stdout)" << endl
     << "  -fconst f1,...,fN    Add constant patterns into alignment (N=no. states)" << endl
     << "  --epsilon NUM        Likelihood epsilon for parameter estimate (default 0.01)" << endl
+    << "  --site-weights FILE  Site-specific integer weights (expands alignment for parsimony)" << endl
+    << "  --site-float-weights FILE  Site-specific floating-point weights for likelihood calculations" << endl
 #ifdef _OPENMP
     << "  -T NUM|AUTO          No. cores/threads or AUTO-detect (default: 1)" << endl
     << "  --threads-max NUM    Max number of threads for -T AUTO (default: all cores)" << endl
@@ -5834,6 +5891,7 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  -g FILE              (Multifurcating) topological constraint tree file" << endl
     << "  --fast               Fast search to resemble FastTree" << endl
     << "  --polytomy           Collapse near-zero branches into polytomy" << endl
+    << "  --polytomy-boot      Collapse near-zero branches into polytomy in bootstrap trees only" << endl
     << "  --tree-fix           Fix -t tree (no tree search performed)" << endl
     << "  --treels             Write locally optimal trees into .treels file" << endl
     << "  --show-lh            Compute tree likelihood without optimisation" << endl
@@ -5861,6 +5919,9 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --jack-prop NUM      Subsampling proportion for jackknife (default: 0.5)" << endl
     << "  --bcon NUM           Replicates for bootstrap + consensus tree" << endl
     << "  --bonly NUM          Replicates for bootstrap only" << endl
+    << "  -bsam BAYES[:<K>]    Bayesian bootstrap (Dirichlet site weights; K=parsimony scale, default 10)" << endl
+    << "                       Automatically enables --polytomy-boot" << endl
+    << "  -wbsw                Write per-replicate site weights to .bootweights file" << endl
 #ifdef USE_BOOSTER
     << "  --tbe                Transfer bootstrap expectation" << endl
 #endif
@@ -7104,6 +7165,7 @@ void Params::setDefault() {
     split_threshold_str = nullptr;
     split_weight_threshold = -1000;
     collapse_zero_branch = false;
+    collapse_zero_branch_boot = false;
     split_weight_summary = SW_SUM;
     gurobi_format = true;
     gurobi_threads = 1;
@@ -7384,6 +7446,7 @@ void Params::setDefault() {
     root_state = nullptr;
     print_bootaln = false;
     print_boot_site_freq = false;
+    print_boot_site_weights = false;
     print_subaln = false;
     print_partition_info = false;
     print_conaln = false;
@@ -7489,6 +7552,9 @@ void Params::setDefault() {
     suppress_list_of_sequences = false;
     suppress_zero_distance_warnings = false;
     suppress_duplicate_sequence_warnings = false;
+    
+    site_weights_file = "";
+    site_float_weights_file = "";
     
     original_params = "";
     alisim_active = false;

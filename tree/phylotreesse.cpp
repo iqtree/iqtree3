@@ -542,10 +542,24 @@ void PhyloTree::computePtnFreq() {
 	size_t nptn = aln->getNPattern();
 	size_t maxptn = get_safe_upper_limit(nptn)+get_safe_upper_limit(model_factory->unobserved_ptns.size());
 	int ptn;
-	for (ptn = 0; ptn < nptn; ptn++)
-		ptn_freq[ptn] = (*aln)[ptn].frequency;
-	for (ptn = nptn; ptn < maxptn; ptn++)
-		ptn_freq[ptn] = 0.0;
+    const bool bayes_boot = (params->num_bootstrap_samples > 0 && 
+                             params->bootstrap_spec &&
+                             strncasecmp(params->bootstrap_spec, "BAYES", 5) == 0);
+    if (bayes_boot && aln->pattern_weight.size() == nptn) {
+        // Bayesian bootstrap: use pre-populated Dirichlet float weights
+        for (ptn = 0; ptn < nptn; ptn++)
+            ptn_freq[ptn] = aln->pattern_weight[ptn];
+    } else if (params->site_float_weights_file != "") {
+        // --site-float-weights: pre-populated during alignment load
+        for (ptn = 0; ptn < nptn; ptn++)
+            ptn_freq[ptn] = aln->pattern_weight[ptn];
+    } else {
+        // Standard: use integer pattern frequencies from the alignment
+        for (ptn = 0; ptn < nptn; ptn++)
+            ptn_freq[ptn] = (*aln)[ptn].frequency;
+    }
+    for (ptn = nptn; ptn < maxptn; ptn++)
+        ptn_freq[ptn] = 0.0;
 }
 
 void PhyloTree::computePtnInvar() {
