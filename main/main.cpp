@@ -1847,6 +1847,7 @@ outstreambuf _out_buf;
 errstreambuf _err_buf;
 muststreambuf _must_buf;
 ostream cmust(&_must_buf);
+ostream cscreen(nullptr);  // screen-only output
 
 string _log_file;
 int _exit_wait_optn = FALSE;
@@ -1858,6 +1859,7 @@ extern "C" void startLogFile(bool append_log) {
         _out_buf.open(_log_file.c_str());
     _err_buf.init(_out_buf.get_fout_buf());
     _must_buf.init(_out_buf.get_cout_buf(), _out_buf.get_fout_buf());
+    cscreen.rdbuf(_out_buf.get_cout_buf());
 }
 
 extern "C" void endLogFile() {

@@ -5,16 +5,11 @@
  *  Created on: Sept 23, 2016
  *      Author: minh
  */
-
-
 #if !defined(PHYLOKERNELNEW_H_) || !defined(PHYLOKERNELNEW_STATE_H_)
-
-#define JAMES_VERSION 1
-
 #ifdef KERNEL_FIX_STATES
-#   define PHYLOKERNELNEW_STATE_H_
+#define PHYLOKERNELNEW_STATE_H_
 #else
-#   define PHYLOKERNELNEW_H_
+#define PHYLOKERNELNEW_H_
 #endif
 
 #include "phylotree.h"
@@ -27,9 +22,11 @@
 
 /*******************************************************
  *
- * Helper function for vectors and matrix multiplication
+ * Helper functions for vector and matrix multiplication
  *
  ******************************************************/
+
+#define JAMES_VERSION 1
 
 /**
     sum of elments of a vector:
@@ -883,14 +880,14 @@ inline void scaleLikelihood(VectorClass &lh_max, double *invar, double *dad_part
     }
 }*/
 
+#undef JAMES_VERSION
 
 /*******************************************************
  *
- * Helper function to pre-compute traversal information
+ * Helper functions to pre-compute traversal information
  * and buffer to transition matrix
  *
  ******************************************************/
-
 
 #ifdef KERNEL_FIX_STATES
 template<class VectorClass, const int nstates>
@@ -943,7 +940,7 @@ void PhyloTree::computePartialInfo(TraversalInfo &info, VectorClass* buffer, dou
                 // transpose probability matrix
                 double mat[nstatesqr];
                 for (c = 0; c < ncat_mix; c++) {
-                    double len_child = site_rate->getRate(c%ncat) * child->length;
+                    double len_child = site_rate->getRate(cat_id[c]) * child->getLength(cat_id[c]);
                     model_factory->computeTransMatrix(len_child, mat, c/denom);
                     double *echild_ptr = &echild[c*nstatesqr];
                     for (i = 0; i < nstates; i++) {
@@ -954,7 +951,7 @@ void PhyloTree::computePartialInfo(TraversalInfo &info, VectorClass* buffer, dou
                 }
             } else {
                 for (c = 0; c < ncat_mix; c++) {
-                    double len_child = site_rate->getRate(c%ncat) * child->length;
+                    double len_child = site_rate->getRate(cat_id[c]) * child->getLength(cat_id[c]);
                     model_factory->computeTransMatrix(len_child, &echild[c*nstatesqr], c/denom);
                 }
             }
@@ -1367,7 +1364,7 @@ void PhyloTree::computePartialLikelihoodGenericSIMD(TraversalInfo &info
         double *len_children_ptr = len_children;
         FOR_NEIGHBOR_IT(node, dad, it3) {
             for (size_t c = 0; c < ncat; c++) {
-                len_children_ptr[c] = site_rate->getRate(c) * (*it3)->length;
+                len_children_ptr[c] = site_rate->getRate(c) * (*it3)->getLength(c);
             }
             if (!len_left) {
                 len_left = len_children_ptr;
@@ -2051,14 +2048,16 @@ void PhyloTree::computePartialLikelihoodGenericSIMD(TraversalInfo &info
 
 #ifdef KERNEL_FIX_STATES
 template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA, const bool SITE_MODEL>
-void PhyloTree::computeLikelihoodBufferSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad
-                                            , size_t ptn_lower, size_t ptn_upper, int packet_id)
+void PhyloTree::computeLikelihoodBufferSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad,
+                                            size_t ptn_lower, size_t ptn_upper, int packet_id)
 #else
 template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool SITE_MODEL>
-void PhyloTree::computeLikelihoodBufferGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad
-                                                   , size_t ptn_lower, size_t ptn_upper, int packet_id)
+void PhyloTree::computeLikelihoodBufferGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad,
+                                                   size_t ptn_lower, size_t ptn_upper, int packet_id)
 #endif
 {
+    ASSERT(theta_all);
+
     PhyloNode *node = (PhyloNode*) dad_branch->node;
     PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
 
@@ -2242,6 +2241,8 @@ template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool
 void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf)
 #endif
 {
+    ASSERT(theta_all);
+
     PhyloNode *node = (PhyloNode*) dad_branch->node;
     PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
     if (!central_partial_lh)
@@ -2267,34 +2268,33 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
 #endif
     size_t ncat = site_rate->getNRate();
     size_t ncat_mix = (model_factory->fused_mix_rate) ? ncat : ncat*model->getNMixtures();
-
     size_t block = ncat_mix * nstates;
-//    size_t tip_block = nstates * model->getNMixtures();
+
     size_t orig_nptn = aln->size();
     size_t max_orig_nptn = roundUpToMultiple(orig_nptn, VectorClass::size());
     size_t nptn = max_orig_nptn + model_factory->unobserved_ptns.size();
-
+    // to access g-matrix elements to store derivatives
     size_t g_matrix_nptn = max_orig_nptn + max(get_safe_upper_limit(model->num_states),
-                                                                          get_safe_upper_limit(
-                                                                                  model_factory->unobserved_ptns.size()));
+                                               get_safe_upper_limit(model_factory->unobserved_ptns.size()));
+    size_t g_index = branch_id * g_matrix_nptn;
+
     ASCType ASC_type = model_factory->getASC();
     bool ASC_Holder = (ASC_type == ASC_VARIANT_MISSING || ASC_type == ASC_INFORMATIVE_MISSING);
     bool ASC_Lewis = (ASC_type == ASC_VARIANT || ASC_type == ASC_INFORMATIVE);
-
     double *const_df = nullptr, *const_ddf = nullptr;
-
     if (ASC_Holder) {
         const_df = aligned_alloc<double>(get_safe_upper_limit(nptn) - max_orig_nptn);
         const_ddf = aligned_alloc<double>(get_safe_upper_limit(nptn) - max_orig_nptn);
     }
-    
+
     size_t mix_addr_nstates_malign[ncat_mix], mix_addr_malign[ncat_mix], cat_id[ncat_mix];
     size_t denom = (model_factory->fused_mix_rate) ? 1 : ncat;
-    for (size_t c = 0; c < ncat_mix; c++) {
-        size_t m = c/denom;
-        cat_id[c] = c%ncat;
-        mix_addr_nstates_malign[c] = m * get_safe_upper_limit(nstates);
-        mix_addr_malign[c] = mix_addr_nstates_malign[c]*nstates;
+    for (size_t cm = 0; cm < ncat_mix; cm++) {
+        size_t m = cm/denom;
+        size_t c = cm%ncat;
+        cat_id[cm] = c;
+        mix_addr_nstates_malign[cm] = m * get_safe_upper_limit(nstates);
+        mix_addr_malign[cm] = mix_addr_nstates_malign[cm]*nstates;
     }
 
     double *eval = model->getEigenvalues();
@@ -2304,14 +2304,11 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
     vector<size_t> limits;
     computeBounds<VectorClass>(num_threads, num_packets, nptn, limits);
 
-	ASSERT(theta_all);
-
     double *val0 = nullptr;
     double *val1 = nullptr;
     double *val2 = nullptr;
     double cat_rate[ncat];
     double cat_prop[ncat];
-
     if (SITE_MODEL) {
         for (size_t c = 0; c < ncat; c++) {
             cat_rate[c] = site_rate->getRate(c);
@@ -2326,51 +2323,50 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
             VectorClass *vc_val0 = (VectorClass*)val0;
             VectorClass *vc_val1 = (VectorClass*)val1;
             VectorClass *vc_val2 = (VectorClass*)val2;
-
             size_t loop_size = nstates/VectorClass::size();
-            for (size_t c = 0; c < ncat_mix; c++) {
-                size_t m = c/denom;
-                size_t mycat = c%ncat;
-                double len = dad_branch->getLength(mycat);
-                const VectorClass *eval_ptr = (VectorClass*)(eval + mix_addr_nstates_malign[c]);
-                double prop = site_rate->getProp(mycat) * model->getMixtureWeight(m);
-                double myrate = site_rate->getRate(mycat);
-                for (size_t i = 0; i < loop_size; i++) {
-                    VectorClass cof = eval_ptr[i] * myrate;
-                    VectorClass val = exp(cof*len) * prop;
-                    VectorClass val1_ = cof*val;
-                    vc_val0[i] = val;
-                    vc_val1[i] = val1_;
-                    vc_val2[i] = cof*val1_;
+            for (size_t cm = 0; cm < ncat_mix; cm++) {
+                size_t m = cm/denom;
+                size_t c = cm%ncat;
+                double len = dad_branch->getLength(c);
+                double rate = site_rate->getRate(c);
+                double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
+                const VectorClass *eval_ptr = (VectorClass*)(eval + mix_addr_nstates_malign[cm]);
+                for (size_t x = 0; x < loop_size; x++) {
+                    VectorClass cof = eval_ptr[x] * rate;
+                    VectorClass lhval = exp(cof*len) * prop;
+                    VectorClass dfval = cof*lhval;
+                    vc_val0[x] = lhval;
+                    vc_val1[x] = dfval;
+                    vc_val2[x] = cof*dfval;
                 }
                 vc_val0 += loop_size;
                 vc_val1 += loop_size;
                 vc_val2 += loop_size;
             }
         } else {
-            for (size_t c = 0; c < ncat_mix; c++) {
-                size_t m = c/denom;
-                const double *eval_ptr = eval + mix_addr_nstates_malign[c];
-                size_t mycat = c%ncat;
-                double prop = site_rate->getProp(mycat) * model->getMixtureWeight(m);
-                size_t addr = c*nstates;
-                double len = dad_branch->getLength(mycat);
-                for (size_t i = 0; i < nstates; i++) {
-                    double cof = eval_ptr[i]*site_rate->getRate(mycat);
-                    double val = exp(cof*len) * prop;
-                    double val1_ = cof*val;
-                    val0[addr+i] = val;
-                    val1[addr+i] = val1_;
-                    val2[addr+i] = cof*val1_;
+            size_t addr = 0;
+            for (size_t cm = 0; cm < ncat_mix; cm++) {
+                size_t m = cm/denom;
+                size_t c = cm%ncat;
+                double len = dad_branch->getLength(c);
+                double rate = site_rate->getRate(c);
+                double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
+                const double *eval_ptr = eval + mix_addr_nstates_malign[cm];
+                for (size_t x = 0; x < nstates; x++) {
+                    double cof = eval_ptr[x] * rate;
+                    double lhval = exp(cof*len) * prop;
+                    double dfval = cof*lhval;
+                    val0[addr+x] = lhval;
+                    val1[addr+x] = dfval;
+                    val2[addr+x] = cof*dfval;
                 }
+                addr += nstates;
             }
         }
     }
 
-    double dad_length = dad_branch->length;
     VectorClass *all_dfvec = nullptr;
     VectorClass *all_ddfvec = nullptr;
-
     size_t nmixlen = getMixlen(), nmixlen2 = nmixlen*nmixlen;
     if (isMixlen()) {
         ASSERT(nmixlen == ncat);
@@ -2380,22 +2376,22 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
         for (size_t i = 0; i < nmixlen; i++) all_dfvec[i] = 0.0;
         for (size_t i = 0; i < nmixlen2; i++) all_ddfvec[i] = 0.0;
     }
-    
+
     double all_lh(0.0), all_df(0.0), all_ddf(0.0), all_prob_const(0.0), all_df_const(0.0), all_ddf_const(0.0);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic,1) num_threads(num_threads) reduction(+:all_lh,all_df,all_ddf,all_prob_const,all_df_const,all_ddf_const)
 #endif
     for (int packet_id = 0; packet_id < num_packets; packet_id++) {
-        VectorClass my_df(0.0), my_ddf(0.0), vc_prob_const(0.0), vc_df_const(0.0), vc_ddf_const(0.0);
         size_t ptn_lower = limits[packet_id];
         size_t ptn_upper = limits[packet_id+1];
 
-        if (!theta_computed)
-        #ifdef KERNEL_FIX_STATES
+        if (!theta_computed) {
+#ifdef KERNEL_FIX_STATES
             computeLikelihoodBufferSIMD<VectorClass, SAFE_NUMERIC, nstates, FMA, SITE_MODEL>(dad_branch, dad, ptn_lower, ptn_upper, packet_id);
-        #else
+#else
             computeLikelihoodBufferGenericSIMD<VectorClass, SAFE_NUMERIC, FMA, SITE_MODEL>(dad_branch, dad, ptn_lower, ptn_upper, packet_id);
-        #endif
+#endif
+        }
 
         if (isMixlen()) {
             // mixed branch length model
@@ -2410,47 +2406,67 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
             for (size_t i = 0; i < nmixlen2; i++) my_ddf[i] = 0.0;
 
             for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=VectorClass::size()) {
+                lh_ptn = 0.0;
                 for (size_t i = 0; i < nmixlen; i++) {
                     df_ptn[i] = ddf_ptn[i] = 0.0;
                 }
-                lh_ptn = 0.0;
                 VectorClass *theta = (VectorClass*)(theta_all + (ptn*block));
-                double *val0_ptr = val0;
-                double *val1_ptr = val1;
-                double *val2_ptr = val2;
-                for (size_t c = 0; c < ncat_mix; c++) {
-                    size_t i = cat_id[c];
-                #ifdef KERNEL_FIX_STATES
-                    dotProductTriple<VectorClass, double, nstates, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn[i], ddf_ptn[i], nstates);
-                #else
-                    dotProductTriple<VectorClass, double, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn[i], ddf_ptn[i],nstates, nstates);
-                #endif
-                    val0_ptr += nstates;
-                    val1_ptr += nstates;
-                    val2_ptr += nstates;
-                    theta += nstates;
+                if (SITE_MODEL) {
+                    const VectorClass* eval_ptr = (VectorClass*) &eval[ptn*nstates];
+                    for (size_t i = 0; i < nmixlen; i++) {
+                        double len = dad_branch->getLength(i);
+                        VectorClass lh_cat(0.0), df_cat(0.0), ddf_cat(0.0);
+                        for (size_t x = 0; x < nstates; x++) {
+                            VectorClass cof = eval_ptr[x] * cat_rate[i];
+                            VectorClass lh = exp(cof*len)*theta[x];
+                            VectorClass df = cof*lh;
+                            lh_cat += lh;
+                            df_cat += df;
+                            ddf_cat = mul_add(cof, df, ddf_cat);
+                        }
+                        lh_ptn = mul_add(cat_prop[i], lh_cat, lh_ptn);
+                        df_ptn[i] = mul_add(cat_prop[i], df_cat, df_ptn[i]);
+                        ddf_ptn[i] = mul_add(cat_prop[i], ddf_cat, ddf_ptn[i]);
+                        theta += nstates;
+                    }
+                } else {
+                    double *val0_ptr = val0;
+                    double *val1_ptr = val1;
+                    double *val2_ptr = val2;
+                    for (size_t cm = 0; cm < ncat_mix; cm++) {
+                        size_t i = cat_id[cm];
+#ifdef KERNEL_FIX_STATES
+                        dotProductTriple<VectorClass, double, nstates, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn[i], ddf_ptn[i], nstates);
+#else
+                        dotProductTriple<VectorClass, double, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn[i], ddf_ptn[i], nstates, nstates);
+#endif
+                        val0_ptr += nstates;
+                        val1_ptr += nstates;
+                        val2_ptr += nstates;
+                        theta += nstates;
+                    }
                 }
                 lh_ptn = abs(lh_ptn) + VectorClass().load_a(&ptn_invar[ptn]);
                 if (ptn < orig_nptn) {
                     VectorClass freq;
                     freq.load_a(&ptn_freq[ptn]);
                     VectorClass inv_lh_ptn = 1.0 / lh_ptn;
-
                     // compute gradient (my_df)
                     for (size_t i = 0; i < nmixlen; i++) {
                         df_ptn[i] *= inv_lh_ptn;
-                        ddf_ptn[i] *= inv_lh_ptn;
                         my_df[i] = mul_add(df_ptn[i], freq, my_df[i]);
                     }
-                    // now compute hessian matrix my_ddf
+                    // compute hessian matrix (my_ddf)
                     for (size_t i = 0; i < nmixlen; i++) {
-                        my_ddf[i*nmixlen+i] += nmul_add(df_ptn[i],df_ptn[i], ddf_ptn[i]) * freq;
-                        for (size_t c = 0; c < nmixlen; c++) {
-                            if (c!=i) {
-                                my_ddf[i*nmixlen+c] -= df_ptn[i]*df_ptn[c]*freq;
+                        ddf_ptn[i] *= inv_lh_ptn;
+                        my_ddf[i*nmixlen+i] += nmul_add(df_ptn[i], df_ptn[i], ddf_ptn[i]) * freq;
+                        for (size_t j = 0; j < nmixlen; j++) {
+                            if (j != i) {
+                                my_ddf[i*nmixlen+j] -= df_ptn[i]*df_ptn[j]*freq;
                             }
                         }
                     }
+                    // compute log-likelihood (my_lh)
                     lh_ptn = log(lh_ptn) + VectorClass().load_a(&buffer_scale_all[ptn]);
                     my_lh = mul_add(lh_ptn, freq, my_lh);
                 } else {
@@ -2458,9 +2474,9 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
                 }
             } // FOR ptn
             all_lh += horizontal_add(my_lh); //handled by reduction clause
-        #ifdef _OPENMP
-        #pragma omp critical
-        #endif
+#ifdef _OPENMP
+#pragma omp critical
+#endif
             {
                 for (size_t i = 0; i < nmixlen; i++)
                     all_dfvec[i] += my_df[i];
@@ -2468,26 +2484,26 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
                     all_ddfvec[i] += my_ddf[i];
             }
         } else {
-            // to access g-matrix elements to store derivatives
-            size_t g_index = branch_id * g_matrix_nptn;
             // normal joint branch length model
+            VectorClass my_df(0.0), my_ddf(0.0), vc_prob_const(0.0), vc_df_const(0.0), vc_ddf_const(0.0);
+
+            VectorClass lh_ptn, df_ptn, ddf_ptn;
+
             for (size_t ptn = ptn_lower; ptn < ptn_upper; ptn+=VectorClass::size()) {
-                VectorClass lh_ptn;
-                //lh_ptn.load_a(&ptn_invar[ptn]);
+                lh_ptn = df_ptn = ddf_ptn = 0.0;
                 VectorClass *theta = (VectorClass*)(theta_all + (ptn*block));
-                VectorClass df_ptn, ddf_ptn;
                 if (SITE_MODEL) {
                     const VectorClass* eval_ptr = (VectorClass*) &eval[ptn*nstates];
-                    lh_ptn = 0.0; df_ptn = 0.0; ddf_ptn = 0.0;
                     for (size_t c = 0; c < ncat; c++) {
+                        double len = dad_branch->length;
                         VectorClass lh_cat(0.0), df_cat(0.0), ddf_cat(0.0);
-                        for (size_t i = 0; i < nstates; i++) {
-                            VectorClass cof = eval_ptr[i] * cat_rate[c];
-                            VectorClass val = exp(cof*dad_length)*theta[i];
-                            VectorClass val1 = cof*val;
-                            lh_cat += val;
-                            df_cat += val1;
-                            ddf_cat = mul_add(cof, val1, ddf_cat);
+                        for (size_t x = 0; x < nstates; x++) {
+                            VectorClass cof = eval_ptr[x] * cat_rate[c];
+                            VectorClass lh = exp(cof*len)*theta[x];
+                            VectorClass df = cof*lh;
+                            lh_cat += lh;
+                            df_cat += df;
+                            ddf_cat = mul_add(cof, df, ddf_cat);
                         }
                         lh_ptn = mul_add(cat_prop[c], lh_cat, lh_ptn);
                         df_ptn = mul_add(cat_prop[c], df_cat, df_ptn);
@@ -2495,28 +2511,25 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
                         theta += nstates;
                     }
                 } else {
-            #ifdef KERNEL_FIX_STATES
+#ifdef KERNEL_FIX_STATES
                     dotProductTriple<VectorClass, double, nstates, FMA, false>(val0, val1, val2, theta, lh_ptn, df_ptn, ddf_ptn, block);
-            #else
+#else
                     dotProductTriple<VectorClass, double, FMA, false>(val0, val1, val2, theta, lh_ptn, df_ptn, ddf_ptn, block, nstates);
-            #endif
+#endif
                 }
                 lh_ptn = abs(lh_ptn) + VectorClass().load_a(&ptn_invar[ptn]);
-
                 if (ptn < orig_nptn) {
-                    lh_ptn = 1.0 / lh_ptn;
-                    VectorClass df_frac = df_ptn * lh_ptn;
-                    VectorClass ddf_frac = ddf_ptn * lh_ptn;
                     VectorClass freq;
                     freq.load_a(&ptn_freq[ptn]);
-                    VectorClass tmp1 = df_frac * freq;
-                    VectorClass tmp2 = ddf_frac * freq;
-                    my_df += tmp1;
-                    my_ddf += nmul_add(tmp1, df_frac, tmp2);
-//                    hessian_ddf = nmul_add(df_frac, df_frac, ddf_frac);
-                    //todo: need to do further optimization with store_a in vector class
-                    df_frac.store_a(&G_matrix[g_index + ptn]);
-
+                    VectorClass inv_lh_ptn = 1.0 / lh_ptn;
+                    // compute first derivative (my_df)
+                    df_ptn *= inv_lh_ptn;
+                    my_df = mul_add(df_ptn, freq, my_df);
+                    // compute second derivative (my_ddf)
+                    ddf_ptn *= inv_lh_ptn;
+                    my_ddf += nmul_add(df_ptn, df_ptn, ddf_ptn) * freq;
+                    // TODO: need to do further optimization with store_a in vector class
+                    df_ptn.store_a(&G_matrix[g_index + ptn]);
                 } else {
                     // ascertainment bias correction
                     if (ptn+VectorClass::size() > nptn) {
@@ -2530,12 +2543,13 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
                         double *lh_ptn_dbl = (double*)&lh_ptn;
                         double *df_ptn_dbl = (double*)&df_ptn;
                         double *ddf_ptn_dbl = (double*)&ddf_ptn;
-                        for (size_t i = 0; i < VectorClass::size(); i++)
-                            if (buffer_scale_all[ptn+i] != 0.0) {
-                                lh_ptn_dbl[i] *= SCALING_THRESHOLD;
-                                df_ptn_dbl[i] *= SCALING_THRESHOLD;
-                                ddf_ptn_dbl[i] *= SCALING_THRESHOLD;
+                        for (size_t v = 0; v < VectorClass::size(); v++) {
+                            if (buffer_scale_all[ptn+v] != 0.0) {
+                                lh_ptn_dbl[v] *= SCALING_THRESHOLD;
+                                df_ptn_dbl[v] *= SCALING_THRESHOLD;
+                                ddf_ptn_dbl[v] *= SCALING_THRESHOLD;
                             }
+                        }
                     }
                     if (ASC_Holder) {
                         lh_ptn.store_a(&_pattern_lh[ptn]);
@@ -2583,7 +2597,6 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
         df[nmixlen] = all_lh;
         return;
     }
-
     // normal joint branch length model
     *df  = all_df;
     *ddf = all_ddf;
@@ -2618,7 +2631,6 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
             const_ddf[ptn] = 0.0;
         }
         VectorClass sum_df = 0.0, sum_ddf = 0.0;
-        
         for (size_t ptn = 0; ptn < orig_nptn; ptn+=VectorClass::size()) {
             VectorClass prob_const, df_const, ddf_const;
             prob_const.load_a(&const_lh[ptn]);
@@ -2724,7 +2736,7 @@ double PhyloTree::computeLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, 
     double cat_prop[ncat];
     if (SITE_MODEL) {
         for (size_t c = 0; c < ncat; c++) {
-            cat_length[c] = site_rate->getRate(c) * dad_branch->length;
+            cat_length[c] = site_rate->getRate(c) * dad_branch->getLength(c);
             cat_prop[c] = site_rate->getProp(c);
         }
     } else {
@@ -3289,7 +3301,7 @@ template <class VectorClass, const bool FMA, const bool SITE_MODEL>
 double PhyloTree::computeLikelihoodFromBufferGenericSIMD()
 #endif
 {
-	ASSERT(theta_all && theta_computed);
+    ASSERT(theta_all && theta_computed);
 
 #ifndef KERNEL_FIX_STATES
     size_t nstates = aln->num_states;
@@ -3322,7 +3334,7 @@ double PhyloTree::computeLikelihoodFromBufferGenericSIMD()
 
     if (SITE_MODEL) {
         for (size_t c = 0; c < ncat; ++c) {
-            cat_length[c] = site_rate->getRate(c) * current_it->length;
+            cat_length[c] = site_rate->getRate(c) * current_it->getLength(c);
             cat_prop[c] = site_rate->getProp(c);
         }
     } else {
@@ -3503,6 +3515,8 @@ template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool
 void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, double &df, double &ddf)
 #endif
 {
+    ASSERT(theta_all);
+
     PhyloNode *node = (PhyloNode*) dad_branch->node;
     PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
     if (!central_partial_lh) {
@@ -3535,6 +3549,7 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
     bool ASC_Holder      = (ASC_type == ASC_VARIANT_MISSING || ASC_type == ASC_INFORMATIVE_MISSING);
     bool ASC_Lewis       = (ASC_type == ASC_VARIANT || ASC_type == ASC_INFORMATIVE);
     ASSERT(!ASC_Holder && "Holder's ascertainment bias correction not supported for this mixlen model");
+    ASSERT(!SITE_MODEL && "Site-specific model not supported for this mixlen model");
 
 //    size_t mix_addr_nstates[ncat_mix], mix_addr[ncat_mix], cat_id[ncat_mix];
 //    size_t denom = (model_factory->fused_mix_rate) ? 1 : ncat;
@@ -3552,45 +3567,44 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
     vector<size_t> limits;
     computeBounds<VectorClass>(num_threads, num_packets, nptn, limits);
 
-	ASSERT(theta_all);
-
     double *val0 = nullptr;
     double *val1 = nullptr;
     double *val2 = nullptr;
-    double cat_rate[ncat];
-    double cat_prop[ncat];
+//    double cat_rate[ncat];
+//    double cat_prop[ncat];
 
     int cur_mixlen = getCurMixture();
+    ASSERT(cur_mixlen >= 0);
 
     if (SITE_MODEL) {
-        for (size_t c = 0; c < ncat; c++) {
-            cat_rate[c] = site_rate->getRate(c);
-            cat_prop[c] = site_rate->getProp(c);
-        }
+//        for (size_t c = 0; c < ncat; c++) {
+//            cat_rate[c] = site_rate->getRate(c);
+//            cat_prop[c] = site_rate->getProp(c);
+//        }
     } else {
         val0 = buffer_partial_lh_ptr;
         val1 = val0 + get_safe_upper_limit(block);
         val2 = val1 + get_safe_upper_limit(block);
         buffer_partial_lh_ptr += 3*get_safe_upper_limit(block);
+        size_t addr = 0;
         double len = dad_branch->getLength(cur_mixlen);
-        for (size_t c = 0; c < nmix; c++) {
-            size_t cur_mix = (model_factory->fused_mix_rate) ? cur_mixlen : c;
-            const double *eval_ptr = eval+cur_mix*nstates;
-            double prop = model->getMixtureWeight(cur_mix);
-            size_t addr = c*nstates;
-            for (size_t i = 0; i < nstates; i++) {
-                double cof = eval_ptr[i];
-                double val = exp(cof*len) * prop;
-                double val1_ = cof*val;
-                val0[addr+i] = val;
-                val1[addr+i] = val1_;
-                val2[addr+i] = cof*val1_;
+        for (size_t m = 0; m < nmix; m++) {
+            size_t cur_m = (model_factory->fused_mix_rate) ? cur_mixlen : m;
+            double prop = model->getMixtureWeight(cur_m); // 1.0 for fused mixture
+            const double *eval_ptr = eval + cur_m*nstates;
+            for (size_t x = 0; x < nstates; x++) {
+                double cof = eval_ptr[x]; // rate == 1.0 for mixlen model
+                double lhval = exp(cof*len) * prop;
+                double dfval = cof*lhval;
+                val0[addr+x] = lhval;
+                val1[addr+x] = dfval;
+                val2[addr+x] = cof*dfval;
             }
+            addr += nstates;
         }
     }
 
     double all_df(0.0), all_ddf(0.0), all_prob_const(0.0), all_df_const(0.0), all_ddf_const(0.0);
-
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic,1) num_threads(num_threads) reduction(+:all_df,all_ddf,all_prob_const,all_df_const,all_ddf_const)
 #endif
@@ -3599,12 +3613,13 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
         size_t ptn_lower = limits[packet_id];
         size_t ptn_upper = limits[packet_id+1];
 
-        if (!theta_computed)
-        #ifdef KERNEL_FIX_STATES
+        if (!theta_computed) {
+#ifdef KERNEL_FIX_STATES
             computeLikelihoodBufferSIMD<VectorClass, SAFE_NUMERIC, nstates, FMA, SITE_MODEL>(dad_branch, dad, ptn_lower, ptn_upper, packet_id);
-        #else
+#else
             computeLikelihoodBufferGenericSIMD<VectorClass, SAFE_NUMERIC, FMA, SITE_MODEL>(dad_branch, dad, ptn_lower, ptn_upper, packet_id);
-        #endif
+#endif
+        }
 
         // mixed branch length model
         VectorClass lh_ptn;
@@ -3616,12 +3631,12 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
             double *val0_ptr = val0;
             double *val1_ptr = val1;
             double *val2_ptr = val2;
-            for (size_t c = 0; c < nmix; c++) {
-            #ifdef KERNEL_FIX_STATES
+            for (size_t m = 0; m < nmix; m++) {
+#ifdef KERNEL_FIX_STATES
                 dotProductTriple<VectorClass, double, nstates, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn, ddf_ptn, nstates);
-            #else
-                dotProductTriple<VectorClass, double, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn, ddf_ptn,nstates, nstates);
-            #endif
+#else
+                dotProductTriple<VectorClass, double, FMA, true>(val0_ptr, val1_ptr, val2_ptr, theta, lh_ptn, df_ptn, ddf_ptn, nstates, nstates);
+#endif
                 val0_ptr += nstates;
                 val1_ptr += nstates;
                 val2_ptr += nstates;
@@ -3632,12 +3647,12 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
                 VectorClass freq;
                 freq.load_a(&ptn_freq[ptn]);
                 VectorClass inv_lh_ptn = 1.0 / lh_ptn;
-
-                // compute gradient (my_df)
-                df_ptn  *= inv_lh_ptn;
+                // compute first derivative (my_df)
+                df_ptn *= inv_lh_ptn;
+                my_df = mul_add(df_ptn, freq, my_df);
+                // compute second derivative (my_ddf)
                 ddf_ptn *= inv_lh_ptn;
-                my_df    = mul_add(df_ptn, freq, my_df);
-                my_ddf  += nmul_add(df_ptn, df_ptn, ddf_ptn) * freq;
+                my_ddf += nmul_add(df_ptn, df_ptn, ddf_ptn) * freq;
             } else {
                 vc_prob_const += lh_ptn;
                 vc_df_const   += df_ptn;
@@ -3663,11 +3678,10 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
 
     df  = all_df;
     ddf = all_ddf;
-
     if (!SAFE_NUMERIC && !std::isfinite(df)) {
         outError("Numerical underflow (lh-derivative-mixlen). Run again with the safe likelihood kernel via `-safe` option");
     }
-	if (ASC_Lewis) {
+    if (ASC_Lewis) {
         all_prob_const = 1.0/(1.0 - all_prob_const);
         // ascertainment bias correction
         all_df_const  *= all_prob_const;
@@ -3681,8 +3695,5 @@ void PhyloTree::computeLikelihoodDervMixlenGenericSIMD(PhyloNeighbor *dad_branch
         df = ddf = 0.0;
     }
 }
-
-
-
 
 #endif //PHYLOKERNELNEW_H_

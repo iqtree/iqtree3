@@ -71,12 +71,16 @@ SuperAlignment::SuperAlignment(Params &params) : SuperAlignment()
             cout << "Info: multi-threading strategy over alignment sites";
         } else {
             cout << "Info: multi-threading strategy over partitions";
-            if (params.num_threads > partitions.size()) {
-                params.num_threads = partitions.size();
-                cout << " and number of threads is changed to " << params.num_threads << endl << endl;
-                cout << "Note: For long partitions, you can use --parallel-over-sites option to force" << endl;
-                cout << "      multi-threading strategy over alignment sites and utilise all the threads." << endl;
-                cout << "      However, parallelisation over sites will have adverse effect on short partitions.";
+            int total_cap = 0;
+            for (auto part : partitions) {
+                total_cap += max(1, (int)(part->getNPattern() * part->num_states / params.mf_thread_factor));
+            }
+            if (params.num_threads > total_cap) {
+                if (params.num_threads_orig == 0)
+                    params.num_threads_orig = params.num_threads;
+                params.num_threads = total_cap;
+                omp_set_num_threads(params.num_threads);
+                cout << " and number of threads is changed to " << params.num_threads;
             }
         }
         cout << endl;

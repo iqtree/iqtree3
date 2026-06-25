@@ -349,7 +349,23 @@ jobs:
 
       - name: Install LLVM v14
         shell: cmd
-        run: choco install llvm --version=14.0.6 --allow-downgrade
+        run: |
+          setlocal EnableDelayedExpansion
+          set RETRIES=3
+          set WAIT_SECONDS=20
+          for /L %%i in (1,1,%RETRIES%) do (
+            echo Attempt %%i/%RETRIES%: installing LLVM 14.0.6 via Chocolatey
+            choco install llvm --version=14.0.6 --allow-downgrade
+            if !ERRORLEVEL! EQU 0 goto :success
+            if %%i LSS %RETRIES% (
+              echo Install failed. Waiting %WAIT_SECONDS%s before retry...
+              timeout /t %WAIT_SECONDS% /nobreak >nul
+            )
+          )
+          echo LLVM installation failed after %RETRIES% attempts.
+          exit /b 1
+          :success
+          echo LLVM installed successfully.
 
       - name: Download and Extract Boost 1.84.0
         shell: pwsh

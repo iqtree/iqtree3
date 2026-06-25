@@ -38,9 +38,6 @@
 #include "phylonodemixlen.h"
 #include "phylotreemixlen.h"
 
-
-const int LH_MIN_CONST = 1;
-
 //const static int BINARY_SCALE = floor(log2(1/SCALING_THRESHOLD));
 //const static double LOG_BINARY_SCALE = -(log(2) * BINARY_SCALE);
 
@@ -903,7 +900,6 @@ size_t PhyloTree::getBufferPartialLhSize() {
 }
 
 void PhyloTree::initializeAllPartialLh() {
-    int index, indexlh;
     int numStates = model->num_states;
     // Minh's question: why getAlnNSite() but not getAlnNPattern() ?
     //size_t mem_size = ((getAlnNSite() % 2) == 0) ? getAlnNSite() : (getAlnNSite() + 1);
@@ -946,17 +942,19 @@ void PhyloTree::initializeAllPartialLh() {
         ptn_freq_pars = aligned_alloc<UINT>(mem_size);
     if (!ptn_invar)
         ptn_invar = aligned_alloc<double>(mem_size);
+    if (max_lh_slots == 0) {
+        getMemoryRequired();
+    }
+    int index, indexlh;
     initializeAllPartialLh(index, indexlh);
-    if (params->lh_mem_save == LM_MEM_SAVE)
+    if (params->lh_mem_save == LM_MEM_SAVE) {
         mem_slots.init(this, max_lh_slots);
-        
+    }
     ASSERT(index == (nodeNum - 1) * 2);
     if (params->lh_mem_save == LM_PER_NODE) {
-        ASSERT(indexlh == nodeNum-leafNum);
+        ASSERT(indexlh == nodeNum - leafNum);
     }
-
     clearAllPartialLH();
-
 }
 
 void PhyloTree::deleteAllPartialLh() {
@@ -988,67 +986,78 @@ void PhyloTree::deleteAllPartialLh() {
 
     clearAllPartialLH();
 }
- 
+
 uint64_t PhyloTree::getMemoryRequired(size_t ncategory, bool full_mem) {
-    // +num_states for ascertainment bias correction
-    int64_t nptn = get_safe_upper_limit(aln->getNPattern()) + get_safe_upper_limit(aln->num_states);
-    if (model_factory)
-        nptn = get_safe_upper_limit(aln->getNPattern()) + max(get_safe_upper_limit(aln->num_states), get_safe_upper_limit(model_factory->unobserved_ptns.size()));
-    int64_t scale_block_size = nptn;
-    if (site_rate)
-        scale_block_size *= site_rate->getNRate();
-    else
-        scale_block_size *= ncategory;
-    if (model && !model_factory->fused_mix_rate)
-        scale_block_size *= model->getNMixtures();
-
-    int64_t block_size = scale_block_size * aln->num_states;
-
-    int64_t mem_size;
-    // memory to tip_partial_lh
-    if (model)
-        mem_size = aln->num_states * (aln->STATE_UNKNOWN+1) * model->getNMixtures() * sizeof(double);
-    else
-        mem_size = aln->num_states * (aln->STATE_UNKNOWN+1) * sizeof(double);
-
+    ASSERT(aln);
+    // site_rate and model may not be set yet, so compute sizes manually
+    size_t unobserved_nptn = (model_factory) ? model_factory->unobserved_ptns.size() : 0;
+    size_t nptn = get_safe_upper_limit(getAlnNPattern()) + max(get_safe_upper_limit(aln->num_states),
+                                                               get_safe_upper_limit(unobserved_nptn));
+    size_t ncat = (site_rate) ? site_rate->getNRate() : ncategory;
+    size_t nmix = (model && !model_factory->fused_mix_rate) ? model->getNMixtures() : 1;
+    size_t scale_block_size = nptn * ncat * nmix;
+    size_t lh_block_size = scale_block_size * aln->num_states;
+    // use int64_t in the following because user-provided memory can make some variables negative
+    int64_t lh_scale_bytes = (lh_block_size * sizeof(double)) + (scale_block_size * sizeof(UBYTE));
+    int64_t IT_NUM = 2; // extra memory slots for nni_partial_lh
+    int64_t mem_size = 0;
+    // memory for tip_partial_lh
+    size_t tip_partial_lh_size = get_safe_upper_limit(aln->num_states * (aln->STATE_UNKNOWN + 1) * nmix);
+    if (model && model->isSiteSpecificModel()) {
+        tip_partial_lh_size = get_safe_upper_limit(getAlnNPattern()) * aln->num_states * leafNum;
+    }
+    mem_size += tip_partial_lh_size * sizeof(double);
     // memory for UFBoot
-    if (params->gbo_replicates)
-        mem_size += params->gbo_replicates*nptn*sizeof(BootValType);
-
+    if (params->gbo_replicates) {
+#ifdef BOOT_VAL_FLOAT
+        mem_size += params->gbo_replicates * get_safe_upper_limit_float(getAlnNPattern()) * sizeof(BootValType);
+#else
+        mem_size += params->gbo_replicates * get_safe_upper_limit(getAlnNPattern()) * sizeof(BootValType);
+#endif
+    }
     // memory for model
-    if (model)
+    if (model) {
         mem_size += model->getMemoryRequired();
-
-    int64_t lh_scale_size = (block_size * sizeof(double)) + (scale_block_size * sizeof(UBYTE));
-
-    max_lh_slots = leafNum-2;
-
+    }
+    // set max_lh_slots
+    // LM_PER_NODE mode:
+    // use the number slots equal to the number of inner nodes
+    max_lh_slots = leafNum - 2;
+    bool mem_increased = false;
     if (!full_mem && params->lh_mem_save == LM_MEM_SAVE) {
-        int64_t min_lh_slots = log2(leafNum)+LH_MIN_CONST;
+        // LM_MEM_SAVE mode:
+        // use the number of slots required for the worst topology (balanced),
+        // log2(leafNum)+1 is enough, but can exceed the number of inner nodes
+        // for small trees
+        int64_t min_lh_slots = min(static_cast<int64_t>(log2(leafNum) + 1.0), max_lh_slots);
         if (params->max_mem_size == 0.0) {
+            // just use min_lh_slots
             max_lh_slots = min_lh_slots;
-        } else if (params->max_mem_size <= 1) {
-            max_lh_slots = floor(params->max_mem_size*(leafNum-2));
+        } else if (params->max_mem_size <= 1.0) {
+            // use the user-provided proportion of max_lh_slots
+            max_lh_slots = static_cast<int64_t>(params->max_mem_size * double(max_lh_slots));
         } else {
-            int64_t rest_mem = params->max_mem_size - mem_size;
-            
-            // include 2 blocks for nni_partial_lh
-            max_lh_slots = rest_mem / lh_scale_size - 2;
-
-            // RAM over requirement, reset to LM_PER_NODE
-            if (max_lh_slots > leafNum-2)
-                max_lh_slots = leafNum-2;
+            // use the user-provided memory size if not exceeding max_lh_slots
+            int64_t rest_mem = static_cast<int64_t>(params->max_mem_size - double(mem_size));
+            int64_t user_lh_slots = rest_mem / lh_scale_bytes - IT_NUM;
+            if (user_lh_slots < max_lh_slots) {
+                max_lh_slots = user_lh_slots;
+            }
         }
+        // fall back to min_lh_slots if not enough memory provided
         if (max_lh_slots < min_lh_slots) {
-            cout << "WARNING: Too low -mem, automatically increased to " << (mem_size + (min_lh_slots+2)*lh_scale_size)/1048576.0 << " MB" << endl;
+            mem_increased = true;
             max_lh_slots = min_lh_slots;
         }
     }
-
-
-    // also count MEM for nni_partial_lh
-    mem_size += (max_lh_slots+2) * lh_scale_size;
-    return mem_size;
+    // memory for inner_partial_lh and nni_partial_lh
+    mem_size += (max_lh_slots + IT_NUM) * lh_scale_bytes;
+    // print a warning if -mem is increased and return mem_size
+    if (mem_increased) {
+        cout << "WARNING: Too low -mem, automatically increased to "
+             << double(mem_size) / 1048576.0 << " MB" << endl;
+    }
+    return static_cast<uint64_t>(mem_size);
 }
 
 uint64_t PhyloTree::getMemoryRequiredThreaded(size_t ncategory, bool full_mem) {
@@ -1104,9 +1113,6 @@ void PhyloTree::initializeAllPartialLh(int &index, int &indexlh, PhyloNode *node
             uint64_t tip_partial_lh_size = get_safe_upper_limit(aln->num_states * (aln->STATE_UNKNOWN+1) * model->getNMixtures());
             if (model->isSiteSpecificModel())
                 tip_partial_lh_size = get_safe_upper_limit(aln->size()) * model->num_states * leafNum;
-
-            if (max_lh_slots == 0)
-                getMemoryRequired();
 
             uint64_t mem_size = ((uint64_t)max_lh_slots * block_size) + 4 + tip_partial_lh_size;
 

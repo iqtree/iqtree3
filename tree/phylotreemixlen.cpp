@@ -423,10 +423,10 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
         }
 
     } else {
-
-        if (!model_factory->fused_mix_rate && getModel()->isMixture())
-            outError("Please use option -optlen BFGS to disable EM algorithm");
-        
+        if (getModel()->isSiteSpecificModel() || (getModel()->isMixture() && !model_factory->fused_mix_rate)) {
+            outError("Site-specific and non-fused mixture models cannot use EM algorithm for heterotachous branch length optimization. ",
+                     "Please apply the -optlen BFGS option to use BFGS algorithm instead");
+        }
         // EM algorithm
         size_t nptn = aln->getNPattern();
         size_t nmix = site_rate->getNRate();
@@ -733,162 +733,13 @@ void PhyloTreeMixlen::clear_relative_treelen() {
 
 // defining log-likelihood derivative function for EM algorithm
 void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
-
-    if (cur_mixture < 0)
+    if (initializing_mixlen) {
         return PhyloTree::computeFuncDerv(value, df, ddf);
-
+    }
+    ASSERT(cur_mixture >= 0);
     current_it->setLength(cur_mixture, value);
     current_it_back->setLength(cur_mixture, value);
-
     (this->*computeLikelihoodDervMixlenPointer)(current_it, (PhyloNode*) current_it_back->node, df, ddf);
-
-	df = -df;
-    ddf = -ddf;
-    return;
-
-
-    PhyloNeighbor* dad_branch = current_it;
-    PhyloNode *dad = (PhyloNode*) current_it_back->node;
-
-    PhyloNode *node = (PhyloNode*) dad_branch->node;
-    PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
-    if (!central_partial_lh)
-        initializeAllPartialLh();
-    if (node->isLeaf()) {
-    	PhyloNode *tmp_node = dad;
-    	dad = node;
-    	node = tmp_node;
-    	PhyloNeighbor *tmp_nei = dad_branch;
-    	dad_branch = node_branch;
-    	node_branch = tmp_nei;
-    }
-    
-    ASSERT((dad_branch->partial_lh_computed & 1) || node->isLeaf());
-    ASSERT((node_branch->partial_lh_computed & 1) || dad->isLeaf());
-
-    size_t nstates = aln->num_states;
-    size_t ncat = site_rate->getNRate();
-    size_t nmixture = model->getNMixtures();
-
-    size_t block = ncat * nstates * nmixture;
-    size_t statemix = nstates * nmixture;
-    size_t statecat = nstates * ncat;
-    size_t orig_nptn = aln->size();
-    size_t nptn = aln->size()+model_factory->unobserved_ptns.size();
-    size_t maxptn = get_safe_upper_limit(nptn);
-    double *eval = model->getEigenvalues();
-    ASSERT(eval);
-
-	ASSERT(theta_all);
-	if (!theta_computed) {
-		// precompute theta for fast branch length optimization
-
-	    if (dad->isLeaf()) {
-	    	// special treatment for TIP-INTERNAL NODE case
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-            for (size_t ptn = 0; ptn < nptn; ptn++) {
-                const double *partial_lh_dad = dad_branch->partial_lh + (ptn*block);
-                double *theta = theta_all + (ptn*block);
-                
-                // TODO: check with vectorclass!
-                const double *lh_tip = tip_partial_lh +
-                ((int)((ptn < orig_nptn) ? (aln->at(ptn))[dad->id] :  model_factory->unobserved_ptns[ptn-orig_nptn][dad->id]))*statemix;
-                for (size_t m = 0; m < nmixture; m++) {
-                    for (size_t i = 0; i < statecat; i++) {
-                        theta[(m*statecat)+i] = lh_tip[(m*nstates) + (i%nstates)] * partial_lh_dad[(m*statecat)+i];
-                    }
-                }
-            }
-			// ascertainment bias correction
-	    } else {
-	    	// both dad and node are internal nodes
-		    const double *partial_lh_node = node_branch->partial_lh;
-		    const double *partial_lh_dad = dad_branch->partial_lh;
-
-            size_t all_entries = nptn*block;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-            for (size_t i = 0; i < all_entries; i++) {
-                theta_all[i] = partial_lh_node[i] * partial_lh_dad[i];
-            }
-        }
-        if (nptn < maxptn) {
-            // copy dummy values
-            for (size_t ptn = nptn; ptn < maxptn; ptn++)
-                memcpy(&theta_all[ptn*block], &theta_all[(ptn-1)*block], block*sizeof(double));
-        }
-        theta_computed = true;
-    }
-
-    double *val0 = new double[statecat];
-    double *val1 = new double[statecat];
-    double *val2 = new double[statecat];
-    for (size_t c = 0; c < ncat; c++) {
-        double prop = site_rate->getProp(c);
-        for (size_t i = 0; i < nstates; i++) {
-            double cof = eval[cur_mixture*nstates+i]*site_rate->getRate(c);
-            // length for heterotachy model
-            double val = exp(cof*dad_branch->getLength(cur_mixture)) * prop * model->getMixtureWeight(cur_mixture);
-            double val1_ = cof*val;
-            val0[((c)*nstates)+i] = val;
-            val1[((c)*nstates)+i] = val1_;
-            val2[((c)*nstates)+i] = cof*val1_;
-        }
-    }
-
-    double my_df = 0.0, my_ddf = 0.0, prob_const = 0.0, df_const = 0.0, ddf_const = 0.0;
-
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+:my_df,my_ddf,prob_const,df_const,ddf_const)
-#endif
-    for (size_t ptn = 0; ptn < nptn; ptn++) {
-        double lh_ptn = ptn_invar[ptn], df_ptn = 0.0, ddf_ptn = 0.0;
-        const double *theta = theta_all + (ptn*block) + (cur_mixture*statecat);
-        for (size_t i = 0; i < statecat; i++) {
-            lh_ptn += val0[i] * theta[i];
-            df_ptn += val1[i] * theta[i];
-            ddf_ptn += val2[i] * theta[i];
-        }
-        lh_ptn = fabs(lh_ptn);
-        if (ptn < orig_nptn) {
-            double df_frac = df_ptn / lh_ptn;
-            double ddf_frac = ddf_ptn / lh_ptn;
-            double freq = ptn_freq[ptn];
-            double tmp1 = df_frac * freq;
-            double tmp2 = ddf_frac * freq;
-            my_df += tmp1;
-            my_ddf += tmp2 - tmp1 * df_frac;
-        } else {
-            // ascertainment bias correction
-            prob_const += lh_ptn;
-            df_const += df_ptn;
-            ddf_const += ddf_ptn;
-        }
-    }
-    df = my_df;
-    ddf = my_ddf;
-    if (std::isnan(df) || std::isinf(df)) {
-        df = 0.0;
-        ddf = 0.0;
-    }
-    if (orig_nptn < nptn) {
-        // ascertainment bias correction
-        prob_const = 1.0 - prob_const;
-        double df_frac = df_const / prob_const;
-        double ddf_frac = ddf_const / prob_const;
-        size_t nsites = aln->getNSite();
-        df += nsites * df_frac;
-        ddf += nsites *(ddf_frac + df_frac*df_frac);
-    }
-
-    delete [] val2;
-    delete [] val1;
-    delete [] val0;
-
     df = -df;
     ddf = -ddf;
 }
-

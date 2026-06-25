@@ -1666,6 +1666,15 @@ public:
     /** force to parallelisation over sites */
     bool parallel_over_sites;
 
+    /** each partition gets min(nthreads, size_cap) threads (default strategy) */
+    bool parallel_per_partition;
+
+    /** distribute surplus threads round-robin across partitions */
+    bool parallel_round_robin;
+
+    /** denominator in maxThreadsForAlignment: max(1, nptn*nstate/j). Default 4000. */
+    int mf_thread_factor;
+
     /** force to parall over partition and order by threads(fill the scheduling by threads) **/
     bool order_by_threads;
 
@@ -2366,9 +2375,12 @@ public:
 
     /** number of threads for OpenMP version     */
     int num_threads;
-    
+
     /** maximum number of threads, default: #CPU scores  */
     int num_threads_max;
+
+    /** user-requested -nt before any sum(cap) reduction; 0 = not saved */
+    int num_threads_orig;
     
     /** true to parallel ModelFinder by models instead of sites */
     bool openmp_by_model;
