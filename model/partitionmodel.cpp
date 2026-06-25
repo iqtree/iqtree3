@@ -457,7 +457,7 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 string inter_seqs_set (tree2_ntaxa, 0);
 
                 sub_tree2 = new PhyloTree();
-                if (tree2_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree2_seqs.size() < ntaxa)) {
+                //if (tree2_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree2_seqs.size() < ntaxa)) {
                     if (remove_empty_seq) {
                         for (int l = 0; l < tree2_seqs.size(); l++) {
                             if (inter_seqs.find(tree2_seqs[l]) != inter_seqs.end()) {
@@ -476,9 +476,9 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                     if (!tree2->getModel()->isReversible()) {
                         sub_tree2->nodeNum = 2 * sub_tree2->leafNum -2;
                     }
-                } else {
-                    sub_tree2->copyTree(tree2);
-                }
+               // } else {
+                //    sub_tree2->copyTree(tree2);
+                //}
 
                 if ((inter_seqs_id.size() == 2 && tree2->getModel()->isReversible()) ||
                     (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible())) {
