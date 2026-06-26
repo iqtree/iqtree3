@@ -4441,7 +4441,11 @@ double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVe
     }
     lh_marginal = maic_tree->getModelFactory()->computeMarginalLh(params->remove_empty_seq);
     score_maic = computeInformationScore(lh_marginal, df, ssize, MTC_AIC);
+
+    // when applying mergePartition(), the newly generated aln must be freed.
+    Alignment *maic_aln = merge ? maic_tree->aln : nullptr;
     delete maic_tree;
+    delete maic_aln;
 
     return score_maic;
 }
