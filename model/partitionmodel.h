@@ -144,6 +144,13 @@ public:
      */
     double computeMarginalLhForPartitions(vector<int> &part_indices, bool remove_empty_seq);
 
+    // mAIC merge-phase cache (all set by PartitionFinder; nullptr = caching off, original path).
+    // maic_cache : per-(data block, class block) site-lh columns, keyed "data\x01class".
+    // maic_blocks: only columns whose both blocks are in here (current-scheme blocks) are cached;
+    //              candidate merged blocks aren't, so their columns are computed but not stored.
+    map<string, vector<double> > *maic_cache = nullptr;
+    set<string> *maic_blocks = nullptr;
+
     /**
      rescale the state frequencies
      @param sum_one TRUE to make frequencies sum to 1, FALSE to make last entry equal to 1

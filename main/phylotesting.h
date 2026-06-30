@@ -485,6 +485,10 @@ private:
     double inf_score_maic;
     ModelPairSet sorted_pairs;
     SuperAlignment *cur_super_aln;
+
+    // marginal site-lh column cache, reused across merging
+    map<string, vector<double> > maic_subcol_cache;
+    set<string> maic_current_blocks; // names of the current scheme's blocks (the only cacheable ones)
     //vector<set<int> > cur_gene_sets;
 
     // retreive the answers from checkpoint
@@ -499,7 +503,13 @@ private:
      * merge : whether merge partitions with input gene sets
      * @return : mAIC score
      */
-    double getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge);
+    double getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge, bool warmup_cache = false);
+
+    /**
+     * evict from the cross-round mAIC column cache every entry whose data- or class-block
+     * overlaps the just-merged partition set (their blocks no longer recur)
+     */
+    void evictMergedFromCache(set<int> &merged_set);
 
     /**
      * get compatible partition pairs that improve mAIC

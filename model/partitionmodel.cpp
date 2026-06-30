@@ -402,10 +402,33 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
         // get the site-log-likelihood the the partition under each tree and the corresponding model
         double *lh_array = new double [nparts*tree1_nsite];
 
+        // mAIC cache pre-pass (serial): fill cache hits, mark the rest to compute. A column is
+        // cacheable only if both its blocks are current-scheme blocks (maic_blocks); candidate
+        // merged blocks are computed but never stored.
+        string data_name = tree->at(part_indices[j])->aln->name;
+        vector<char> need_compute(nparts, 1);
+        vector<char> cacheable(nparts, 0);
+        if (maic_cache) {
+            bool data_ok = !maic_blocks || maic_blocks->count(data_name);
+            for (int k = 0; k < nparts; k++) {
+                if (!data_ok) break;
+                const string &class_name = tree->at(part_indices[k])->aln->name;
+                if (maic_blocks && !maic_blocks->count(class_name))
+                    continue; // candidate (merged) block: compute but never cache
+                cacheable[k] = 1;
+                auto it = maic_cache->find(data_name + '\x01' + class_name);
+                if (it != maic_cache->end()) {
+                    std::copy(it->second.begin(), it->second.end(), lh_array + (size_t)tree1_nsite*k);
+                    need_compute[k] = 0;
+                }
+            }
+        }
+
 #ifdef _OPENMP
 #pragma omp parallel for if(tree->num_threads > 1)
 #endif
         for (int k = 0; k < nparts ; k++) {
+            if (!need_compute[k]) continue; // mAIC cache hit: column already filled above
             PhyloTree *tree2 = tree->at(part_indices[k]);
 
             // get the intersection of tree1_aln and tree2.
@@ -617,6 +640,16 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 }
             }
             delete[] state_freq;
+        }
+
+        // mAIC cache store (serial): keep only freshly-computed cacheable columns
+        if (maic_cache) {
+            for (int k = 0; k < nparts; k++) {
+                if (need_compute[k] && cacheable[k]) {
+                    (*maic_cache)[data_name + '\x01' + tree->at(part_indices[k])->aln->name]
+                        .assign(lh_array + (size_t)tree1_nsite*k, lh_array + (size_t)tree1_nsite*(k+1));
+                }
+            }
         }
 
         // compute partition log-likelihood from sites

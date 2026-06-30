@@ -4408,7 +4408,7 @@ void PartitionFinder::getBestModelforMergesMPI(int nthreads, vector<MergeJob* >&
 
 #endif // _IQTREE_MPI
 
-double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge) {
+double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge, bool warmup_cache) {
     PhyloSuperTree *maic_tree;
     double score_maic;
     if (merge) {
@@ -4439,6 +4439,15 @@ double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVe
         maic_tree->at(j)->getModelFactory()->restoreCheckpoint();
         model_info->endStruct();
     }
+    // share the per-column cache with the marginal-LH computation (merge-round candidates only)
+    // cache for merged-scheme evaluations (merge==true) and for the one-off initial full-scheme
+    // call (warmup_cache==true: it computes exactly the original-partition columns round 1 reuses).
+    // The final full-scheme call (merge==false, warmup_cache==false) runs the original uncached path.
+    if (merge || warmup_cache) {
+        PartitionModel *pm = (PartitionModel*) maic_tree->getModelFactory();
+        pm->maic_cache = &maic_subcol_cache;
+        pm->maic_blocks = &maic_current_blocks;
+    }
     lh_marginal = maic_tree->getModelFactory()->computeMarginalLh(params->remove_empty_seq);
     score_maic = computeInformationScore(lh_marginal, df, ssize, MTC_AIC);
 
@@ -4450,11 +4459,48 @@ double PartitionFinder::getmAICforMergeScheme(vector<set<int> > gene_sets, StrVe
     return score_maic;
 }
 
+// Drop every cached column whose data- or class-block overlaps the just-merged partition set,
+// except columns of the newly merged block itself.
+void PartitionFinder::evictMergedFromCache(set<int> &merged_set) {
+    if (maic_subcol_cache.empty())
+        return;
+    set<string> merged_names;                       // names of the absorbed original partitions
+    for (int idx : merged_set)
+        merged_names.insert(in_tree->at(idx)->aln->name);
+    string merged_block = getSubsetName(in_tree, merged_set); // name of the new merged block
+
+    auto blockDead = [&](const string &name, size_t begin, size_t end) -> bool {
+        if (name.compare(begin, end - begin, merged_block) == 0)
+            return false;                           // the new merged block itself: keep
+        size_t p = begin;
+        while (p < end) {
+            size_t plus = name.find('+', p);
+            if (plus == string::npos || plus > end) plus = end;
+            if (merged_names.count(name.substr(p, plus - p)))
+                return true;                        // shares an absorbed partition: dead
+            p = plus + 1;
+        }
+        return false;
+    };
+
+    for (auto it = maic_subcol_cache.begin(); it != maic_subcol_cache.end(); ) {
+        const string &key = it->first;              // "<data>\x01<class>"
+        size_t sep = key.find('\x01');
+        bool dead = blockDead(key, 0, sep) || blockDead(key, sep + 1, key.size());
+        if (dead) it = maic_subcol_cache.erase(it);
+        else ++it;
+    }
+}
 
 ModelPairSet PartitionFinder::getBetterPairsmAIC() {
     cout << "Compute mAIC score of partition models..." << endl;
     double cpu_time = getCPUTime();
     double real_time = getRealTime();
+
+    // reload this round's cacheable blocks from gene_sets.
+    maic_current_blocks.clear();
+    for (auto &gs : gene_sets)
+        maic_current_blocks.insert(getSubsetName(in_tree, gs));
 
     double cur_score_maic = 0;
     double greedy_lh_marginal;
@@ -4505,6 +4551,12 @@ ModelPairSet PartitionFinder::getBetterPairsmAIC() {
                 part_ids.insert(it->second.merged_set.begin(), it->second.merged_set.end());
                 cur_better_pairs.insertPair(it_bu->second);
 
+                // update the cacheable-block set
+                maic_current_blocks.erase(getSubsetName(in_tree, better_gene_sets[cur_pair.part1]));
+                maic_current_blocks.erase(getSubsetName(in_tree, better_gene_sets[cur_pair.part2]));
+                evictMergedFromCache(cur_pair.merged_set);
+                maic_current_blocks.insert(getSubsetName(in_tree, cur_pair.merged_set));
+
                 inf_score_maic = cur_score_maic;
                 better_df = cur_df;
                 better_gene_sets = cur_gene_sets;
@@ -4544,6 +4596,11 @@ ModelPairSet PartitionFinder::getBetterPairsmAIC() {
         int cur_df = dfsum - dfvec[it->second.part1] - dfvec[it->second.part2] + it->second.df;
         cout << "Merging " << it->second.set_name << " with mAIC score: " << greedy_score_maic
              << " (Marginal LnL: " << greedy_lh_marginal << "  df: " << cur_df << ")" << endl;
+        // greedy commits exactly this one pair (in test_PartitionModel); evict the columns of
+        // the two absorbed blocks here, symmetric with the cluster path above. The newly merged
+        // block becomes cacheable next round via the round-start reload of maic_current_blocks.
+        ModelPair best_pair = it->second;
+        evictMergedFromCache(best_pair.merged_set);
     }
     cout << cur_better_pairs.size() << " compatible better partition pairs found based on mAIC" << endl;
     /*if (cur_better_pairs.size() == 0 && better_pairs.size() == 0) {
@@ -5326,6 +5383,11 @@ void PartitionFinder::test_PartitionModel() {
 
     if (params->partition_merge != MERGE_NONE) {
         // show the parameters for partition finder
+        if (params->marginal_lh_aic) {
+            size_t mem_cache = (in_tree->size() + 1) * ssize * sizeof(double);
+            cout << "NOTE: mAIC marginal likelihood cache during merging requires up to "
+                 << (mem_cache / 1048576) << " MB RAM (" << (mem_cache / 1073741824) << " GB)!" << endl;
+        }
         cout << endl;
         cout << "PartitionFinder's parameters:" << endl;
         cout << part_algo << endl;
@@ -5383,7 +5445,14 @@ void PartitionFinder::test_PartitionModel() {
 
     if (params->marginal_lh_aic) {
         //double score_bic = computeInformationScore(lhsum, dfsum, ssize, MTC_BIC);
-        inf_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, false);
+        // warm up the cache: this full-scheme call computes exactly the original-partition
+        // columns that the first merge round will reuse. The current blocks here are the
+        // original partitions (gene_sets is not populated yet at this point), so register their
+        // names as cacheable and let the call populate the cache (warmup_cache = true).
+        maic_current_blocks.clear();
+        for (int p = 0; p < in_tree->size(); p++)
+            maic_current_blocks.insert(in_tree->at(p)->aln->name);
+        inf_score_maic = getmAICforMergeScheme(gene_sets, model_names, dfsum, false, true);
         cout << "Full partition model mAIC score: " << inf_score_maic << " (Marginal LnL: " << lh_marginal << "  df:" << dfsum <<  ")" << endl;
     }
 
@@ -5626,6 +5695,11 @@ void PartitionFinder::test_PartitionModel() {
         }
         if (verbose_mode >= VB_MED) cout << "Agglomerative model selection: " << final_model_tree << endl;
     }
+
+    // merging finished, free the mAIC cache (and the cacheable-block set, so the final
+    // full-scheme call below runs uncached)
+    maic_subcol_cache.clear();
+    maic_current_blocks.clear();
 
 #ifdef _IQTREE_MPI
     if (num_processes > 1) {
