@@ -5384,7 +5384,11 @@ void PartitionFinder::test_PartitionModel() {
     if (params->partition_merge != MERGE_NONE) {
         // show the parameters for partition finder
         if (params->marginal_lh_aic) {
-            size_t mem_cache = (in_tree->size() + 1) * ssize * sizeof(double);
+            // cache columns are per-pattern; peak ~ (#blocks + 1) * (total #patterns) doubles
+            size_t total_nptn = 0;
+            for (int p = 0; p < in_tree->size(); p++)
+                total_nptn += in_tree->at(p)->aln->getNPattern();
+            size_t mem_cache = (in_tree->size() + 1) * total_nptn * sizeof(double);
             cout << "NOTE: mAIC marginal likelihood cache during merging requires up to "
                  << (mem_cache / 1048576) << " MB RAM (" << (mem_cache / 1073741824) << " GB)!" << endl;
         }

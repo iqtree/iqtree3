@@ -397,10 +397,19 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
     for (int j = 0; j < nparts; j++) {
         Alignment *tree1_aln = tree->at(part_indices[j])->aln;
         int tree1_nsite = tree1_aln->getNSite();
+        int tree1_nptn  = tree1_aln->getNPattern();
         StrVector tree1_seqs = t_seqs_vec_array[j];
 
-        // get the site-log-likelihood the the partition under each tree and the corresponding model
-        double *lh_array = new double [nparts*tree1_nsite];
+        // the marginal site-lh depends only on the site's pattern.
+        // ptn_rep_site[p] is a representative site of pattern p, used to look up the sub-alignment's pattern.
+        IntVector ptn_rep_site(tree1_nptn, -1);
+        for (int l = 0; l < tree1_nsite; l++) {
+            int pid = tree1_aln->getPatternID(l);
+            if (ptn_rep_site[pid] < 0) ptn_rep_site[pid] = l;
+        }
+
+        // per-pattern log-likelihood of partition j under each tree and its model
+        double *lh_array = new double [nparts*tree1_nptn];
 
         // mAIC cache pre-pass (serial): fill cache hits, mark the rest to compute. A column is
         // cacheable only if both its blocks are current-scheme blocks (maic_blocks); candidate
@@ -418,7 +427,7 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 cacheable[k] = 1;
                 auto it = maic_cache->find(data_name + '\x01' + class_name);
                 if (it != maic_cache->end()) {
-                    std::copy(it->second.begin(), it->second.end(), lh_array + (size_t)tree1_nsite*k);
+                    std::copy(it->second.begin(), it->second.end(), lh_array + (size_t)tree1_nptn*k);
                     need_compute[k] = 0;
                 }
             }
@@ -554,10 +563,10 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 //compute site log-likelihood
                 if (tree1_seqs.size() != inter_seqs.size()) {
                     //for sequences only appears in tree1, calculate the state frequencies based on the model in tree2
-                    for (int l = 0; l < tree1_nsite; l++) {
-                        int ptn_id = sub_tree1_aln->getPatternID(l);
+                    for (int l = 0; l < tree1_nptn; l++) {
+                        int ptn_id = sub_tree1_aln->getPatternID(ptn_rep_site[l]);
                         double site_lh = ptn_lh_array[ptn_id];
-                        Pattern p = tree1_aln->at(tree1_aln->getPatternID(l));
+                        Pattern p = tree1_aln->at(l);
 
                         for (int missing_id: missing_seqs_id) {
                             int char_id = p[missing_id];
@@ -585,12 +594,12 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                                 }
                             }
                         }
-                        lh_array[tree1_nsite * k + l] = site_lh;
+                        lh_array[tree1_nptn * k + l] = site_lh;
                     }
                 } else {
-                    for (int l = 0; l < tree1_nsite; l++) {
-                        int ptn_id = sub_tree1_aln->getPatternID(l);
-                        lh_array[tree1_nsite * k + l] = ptn_lh_array[ptn_id];
+                    for (int l = 0; l < tree1_nptn; l++) {
+                        int ptn_id = sub_tree1_aln->getPatternID(ptn_rep_site[l]);
+                        lh_array[tree1_nptn * k + l] = ptn_lh_array[ptn_id];
                     }
                 }
 
@@ -605,9 +614,9 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
             } else {
                 // case when the intersection of taxon sets is 0 or 1 (reversible model)
                 // all taxa use state frequencies only
-                for (int l = 0; l < tree1_nsite; l++) {
+                for (int l = 0; l < tree1_nptn; l++) {
                     double site_lh = 0.0;
-                    Pattern p = tree1_aln->at(tree1_aln->getPatternID(l));
+                    Pattern p = tree1_aln->at(l);
 
                     for (string seq_name : tree1_seqs) {
                         int missing_id = tree1_aln->getSeqID(seq_name);
@@ -636,7 +645,7 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                             }
                         }
                     }
-                    lh_array[tree1_nsite * k + l] = site_lh;
+                    lh_array[tree1_nptn * k + l] = site_lh;
                 }
             }
             delete[] state_freq;
@@ -647,18 +656,19 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
             for (int k = 0; k < nparts; k++) {
                 if (need_compute[k] && cacheable[k]) {
                     (*maic_cache)[data_name + '\x01' + tree->at(part_indices[k])->aln->name]
-                        .assign(lh_array + (size_t)tree1_nsite*k, lh_array + (size_t)tree1_nsite*(k+1));
+                        .assign(lh_array + (size_t)tree1_nptn*k, lh_array + (size_t)tree1_nptn*(k+1));
                 }
             }
         }
 
-        // compute partition log-likelihood from sites
+        // compute partition log-likelihood from patterns (each weighted by its site frequency)
         double mix_lh_partition = 0.0;
-        for (int l = 0; l < tree1_nsite; l++) {
+        for (int l = 0; l < tree1_nptn; l++) {
             double weighted_lh, max_lh, mix_lh_site;
+            int ptn_freq = tree1_aln->at(l).frequency;
 
             for (int k = 0; k < nparts; k++) {
-                weighted_lh = log_weight_array[k]+lh_array[tree1_nsite*k+l];
+                weighted_lh = log_weight_array[k]+lh_array[tree1_nptn*k+l];
                 if (k == 0) {
                     max_lh = weighted_lh;
                 } else if (weighted_lh > max_lh) {
@@ -668,10 +678,10 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
 
             double mix_lh_site_original = 0.0;
             for (int k = 0; k < nparts; k++) {
-                mix_lh_site_original += exp(log_weight_array[k]+lh_array[tree1_nsite*k+l]-max_lh);
+                mix_lh_site_original += exp(log_weight_array[k]+lh_array[tree1_nptn*k+l]-max_lh);
             }
             mix_lh_site = max_lh + log(mix_lh_site_original);
-            mix_lh_partition += mix_lh_site;
+            mix_lh_partition += mix_lh_site * ptn_freq;
         }
         mix_lh += mix_lh_partition;
 
