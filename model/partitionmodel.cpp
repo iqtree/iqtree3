@@ -486,13 +486,18 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
 
             if (inter_seqs_id.size() > 1 ||
                 (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible())) {
-                // subset tree1_aln
-                Alignment *sub_tree1_aln = nullptr;
-                if (tree1_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree1_seqs.size() < ntaxa)) {
-                    sub_tree1_aln = tree1_aln->extractSubAlignment(inter_seqs_id, 0, 0, nullptr, false);
-                } else {
-                    sub_tree1_aln = tree1_aln;
-                }
+                // the gappy-taxon branch below mutates sub_tree1_aln in place, so we must NOT
+                // alias tree1_aln when it runs (that would corrupt the shared partition alignment).
+                bool gappy_case = (inter_seqs_id.size() == 2 && tree2->getModel()->isReversible()) ||
+                                  (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible());
+                bool own_sub1_aln = tree1_seqs.size() != inter_seqs.size()
+                                    || (!remove_empty_seq && tree1_seqs.size() < ntaxa)
+                                    || gappy_case;
+
+                // subset tree1_aln (own a private copy unless it is exactly tree1_aln and untouched)
+                Alignment *sub_tree1_aln = own_sub1_aln
+                    ? tree1_aln->extractSubAlignment(inter_seqs_id, 0, 0, nullptr, false)
+                    : tree1_aln;
 
                 // subset tree2
                 PhyloTree *sub_tree2 = nullptr;
@@ -528,8 +533,7 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 //    sub_tree2->copyTree(tree2);
                 //}
 
-                if ((inter_seqs_id.size() == 2 && tree2->getModel()->isReversible()) ||
-                    (inter_seqs_id.size() == 1 && !tree2->getModel()->isReversible())) {
+                if (gappy_case) {
                     // too few taxa for likelihood kernel; add a gappy taxon with all-unknown states
                     string gappy_seq = "gappy_seq";
                     sub_tree1_aln->addSeqName(gappy_seq);
@@ -620,7 +624,7 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 }
 
                 //release memory
-                if (tree1_seqs.size() != inter_seqs.size() || (!remove_empty_seq && tree1_seqs.size() < ntaxa)) {
+                if (own_sub1_aln) {
                     delete sub_tree1_aln;
                 }
                 sub_tree2->setModelFactory(nullptr);
