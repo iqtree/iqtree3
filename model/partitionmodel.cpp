@@ -384,39 +384,45 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
     } else {
         tree->getTaxaName(taxa_names);
         for (int j = 0; j < nparts; j++) {
-            Alignment *part_aln = NULL;
-            part_aln = tree->at(part_indices[j])->aln->removeGappySeq(false);
+            Alignment *orig_aln = tree->at(part_indices[j])->aln;
+            Alignment *part_aln = orig_aln->removeGappySeq(false);
             t_seqs_vec_array[j] = part_aln->getSeqNames();
             t_seqs_set_array[j].insert(t_seqs_vec_array[j].begin(), t_seqs_vec_array[j].end());
+            // removeGappySeq returns a NEW alignment only when it drops gap-only seqs
+            // (otherwise it returns the original); free it just in that case to avoid a leak
+            if (part_aln != orig_aln)
+                delete part_aln;
         }
     }
 
     // compute the mixture-based log-likelihood
     double mix_lh = 0.0;
 
+    // collect the (j,k) columns still to compute into one flat list
+    vector<int> nptn_arr(nparts);
+    vector<IntVector> ptn_rep_arr(nparts);
+    vector<double*> lh_arrays(nparts, nullptr);
+    vector<vector<char> > col_cacheable(nparts);
+    vector<pair<int,int> > todo;                 // (j,k) columns to compute
     for (int j = 0; j < nparts; j++) {
         Alignment *tree1_aln = tree->at(part_indices[j])->aln;
         int tree1_nsite = tree1_aln->getNSite();
         int tree1_nptn  = tree1_aln->getNPattern();
-        StrVector tree1_seqs = t_seqs_vec_array[j];
+        nptn_arr[j] = tree1_nptn;
 
-        // the marginal site-lh depends only on the site's pattern.
-        // ptn_rep_site[p] is a representative site of pattern p, used to look up the sub-alignment's pattern.
-        IntVector ptn_rep_site(tree1_nptn, -1);
+        // representative site per pattern (marginal lh depends only on the pattern)
+        ptn_rep_arr[j].assign(tree1_nptn, -1);
         for (int l = 0; l < tree1_nsite; l++) {
             int pid = tree1_aln->getPatternID(l);
-            if (ptn_rep_site[pid] < 0) ptn_rep_site[pid] = l;
+            if (ptn_rep_arr[j][pid] < 0) ptn_rep_arr[j][pid] = l;
         }
 
-        // per-pattern log-likelihood of partition j under each tree and its model
-        double *lh_array = new double [nparts*tree1_nptn];
+        lh_arrays[j] = new double[(size_t)nparts * tree1_nptn];
+        col_cacheable[j].assign(nparts, 0);
 
-        // mAIC cache pre-pass (serial): fill cache hits, mark the rest to compute. A column is
-        // cacheable only if both its blocks are current-scheme blocks (maic_blocks); candidate
-        // merged blocks are computed but never stored.
-        string data_name = tree->at(part_indices[j])->aln->name;
+        // cache pre-pass: fill hits, mark the rest to compute (cacheable = both blocks current)
+        string data_name = tree1_aln->name;
         vector<char> need_compute(nparts, 1);
-        vector<char> cacheable(nparts, 0);
         if (maic_cache) {
             bool data_ok = !maic_blocks || maic_blocks->count(data_name);
             for (int k = 0; k < nparts; k++) {
@@ -424,20 +430,30 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
                 const string &class_name = tree->at(part_indices[k])->aln->name;
                 if (maic_blocks && !maic_blocks->count(class_name))
                     continue; // candidate (merged) block: compute but never cache
-                cacheable[k] = 1;
+                col_cacheable[j][k] = 1;
                 auto it = maic_cache->find(data_name + '\x01' + class_name);
                 if (it != maic_cache->end()) {
-                    std::copy(it->second.begin(), it->second.end(), lh_array + (size_t)tree1_nptn*k);
+                    std::copy(it->second.begin(), it->second.end(), lh_arrays[j] + (size_t)tree1_nptn*k);
                     need_compute[k] = 0;
                 }
             }
         }
+        for (int k = 0; k < nparts; k++)
+            if (need_compute[k]) todo.push_back(make_pair(j, k));
+    }
 
+    // compute all pending (j,k) columns in ONE parallel loop.
 #ifdef _OPENMP
-#pragma omp parallel for if(tree->num_threads > 1)
+#pragma omp parallel for schedule(dynamic) if(tree->num_threads > 1)
 #endif
-        for (int k = 0; k < nparts ; k++) {
-            if (!need_compute[k]) continue; // mAIC cache hit: column already filled above
+        for (int t = 0; t < (int)todo.size(); t++) {
+            int j = todo[t].first;
+            int k = todo[t].second;
+            Alignment *tree1_aln = tree->at(part_indices[j])->aln;
+            int tree1_nptn = nptn_arr[j];
+            IntVector &ptn_rep_site = ptn_rep_arr[j];
+            StrVector &tree1_seqs = t_seqs_vec_array[j];
+            double *lh_array = lh_arrays[j];
             PhyloTree *tree2 = tree->at(part_indices[k]);
 
             // get the intersection of tree1_aln and tree2.
@@ -651,41 +667,39 @@ double PartitionModel::computeMarginalLhForPartitions(vector<int> &part_indices,
             delete[] state_freq;
         }
 
-        // mAIC cache store (serial): keep only freshly-computed cacheable columns
-        if (maic_cache) {
-            for (int k = 0; k < nparts; k++) {
-                if (need_compute[k] && cacheable[k]) {
-                    (*maic_cache)[data_name + '\x01' + tree->at(part_indices[k])->aln->name]
-                        .assign(lh_array + (size_t)tree1_nptn*k, lh_array + (size_t)tree1_nptn*(k+1));
-                }
+    // store freshly-computed cacheable columns
+    if (maic_cache) {
+        for (int t = 0; t < (int)todo.size(); t++) {
+            int j = todo[t].first, k = todo[t].second;
+            if (col_cacheable[j][k]) {
+                (*maic_cache)[tree->at(part_indices[j])->aln->name + '\x01' + tree->at(part_indices[k])->aln->name]
+                    .assign(lh_arrays[j] + (size_t)nptn_arr[j]*k, lh_arrays[j] + (size_t)nptn_arr[j]*(k+1));
             }
         }
+    }
 
-        // compute partition log-likelihood from patterns (each weighted by its site frequency)
+    // compute marginal likelihood over classes, per pattern, weighted by pattern frequency
+    for (int j = 0; j < nparts; j++) {
+        Alignment *tree1_aln = tree->at(part_indices[j])->aln;
+        int tree1_nptn = nptn_arr[j];
+        double *lh_array = lh_arrays[j];
         double mix_lh_partition = 0.0;
         for (int l = 0; l < tree1_nptn; l++) {
             double weighted_lh, max_lh, mix_lh_site;
             int ptn_freq = tree1_aln->at(l).frequency;
-
             for (int k = 0; k < nparts; k++) {
                 weighted_lh = log_weight_array[k]+lh_array[tree1_nptn*k+l];
-                if (k == 0) {
-                    max_lh = weighted_lh;
-                } else if (weighted_lh > max_lh) {
-                    max_lh = weighted_lh;
-                }
+                if (k == 0) max_lh = weighted_lh;
+                else if (weighted_lh > max_lh) max_lh = weighted_lh;
             }
-
             double mix_lh_site_original = 0.0;
-            for (int k = 0; k < nparts; k++) {
+            for (int k = 0; k < nparts; k++)
                 mix_lh_site_original += exp(log_weight_array[k]+lh_array[tree1_nptn*k+l]-max_lh);
-            }
             mix_lh_site = max_lh + log(mix_lh_site_original);
             mix_lh_partition += mix_lh_site * ptn_freq;
         }
         mix_lh += mix_lh_partition;
-
-        delete[] lh_array; //release array memery
+        delete[] lh_arrays[j];
     }
     return mix_lh;
 }
