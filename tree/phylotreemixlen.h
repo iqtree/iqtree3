@@ -5,39 +5,30 @@
 //  Created by Minh Bui on 24/08/15.
 //
 //
+#ifndef PHYLOTREEMIXLEN_H_
+#define PHYLOTREEMIXLEN_H_
 
-#ifndef __iqtree__phylotreemixlen__
-#define __iqtree__phylotreemixlen__
-
-#include <stdio.h>
-#ifdef USE_CPPOPTLIB
-#include "cppoptlib/meta.h"
-#include "cppoptlib/boundedproblem.h"
-#endif
 #include "iqtree.h"
 
-
-
 /**
-    Phylogenetic tree with mixture of branch lengths
-    Started within joint project with Stephen Crotty
-*/
-#ifdef USE_CPPOPTLIB
-class PhyloTreeMixlen : public IQTree, public cppoptlib::BoundedProblem<double>
-#else
-class PhyloTreeMixlen : public IQTree
-#endif
-{
+ *  Phylogenetic tree with a mixture of branch lengths
+ *  Started within a joint project with Stephen Crotty
+ */
+class PhyloTreeMixlen : public IQTree {
 public:
-
-    /**
-            default constructor
-     */
     PhyloTreeMixlen();
 
-    PhyloTreeMixlen(Alignment *aln, int mixlen);
+    PhyloTreeMixlen(Alignment *aln);
 
-    virtual ~PhyloTreeMixlen() override;
+    virtual bool isMixlen() const override { return !initializing_mixlen; }
+
+    virtual int getMixlen() const override { return (initializing_mixlen) ? 1 : mixlen; }
+
+    virtual int getCurMixture() const override { return cur_mixture; }
+
+    virtual void setCurMixture(int c) override;
+
+    void clearRelativeTreelen() { relative_treelen.clear(); }
 
     /**
         start structure for checkpointing
@@ -78,45 +69,11 @@ public:
     virtual void readTreeString(const string &tree_string) override;
 
     /**
-        @return true if this is a tree with mixture branch lengths, default: false
-    */
-    virtual bool isMixlen() override { return !initializing_mixlen; }
-
-    /**
-        @return number of mixture branch lengths, default: 1
-    */
-    virtual int getMixlen() override {
-        if (initializing_mixlen)
-            return 1;
-        else
-            return mixlen;
-    }
-
-    /**
-        set number of mixture branch lengths
-    */
-    void setMixlen(int mixlen);
-
-    /**
             @param[out] lenvec tree lengths for each class in mixlen model
             @param node the starting node, nullptr to start from the root
             @param dad dad of the node, used to direct the search
      */
     virtual void treeLengths(DoubleVector &lenvec, Node *node = nullptr, Node *dad = nullptr) override;
-
-    /**
-     * assign branch length as mean over all branch lengths of categories
-     */
-    void assignMeanMixBranches(Node *node = nullptr, Node *dad = nullptr);
-
-
-    /**
-        parse the string containing branch length(s)
-        by default, this will parse just one length
-        @param lenstr string containing branch length(s)
-        @param[out] branch_len output branch length(s)
-    */
-//    virtual void parseBranchLength(string &lenstr, DoubleVector &branch_len);
 
     /**
      *  internal function called by printTree to print branch length
@@ -132,9 +89,10 @@ public:
     virtual void printResultTree(string suffix = "") override;
 
     /**
-        initialize mixture branch lengths
-    */
-    void initializeMixBranches(PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
+     *  Set the model factory
+     *  @param model_fac Model factory
+     */
+    virtual void setModelFactory(ModelFactory *model_fac) override;
 
     /** initialize parameters if necessary */
     void initializeMixlen(double tolerance, bool write_info);
@@ -206,9 +164,6 @@ public:
 	*/
 	virtual double derivativeFunk(double x[], double dfx[]) override;
 
-    /** For Mixlen stuffs */
-    virtual int getCurMixture() override { return cur_mixture; }
-
     /**
      *  Optimize current tree using NNI
      *
@@ -217,58 +172,29 @@ public:
      */
     virtual pair<int, int> optimizeNNI(bool speedNNI = true) override;
 
+protected:
+    /**
+     *  Initialize mixlen branch lengths from branch lengths and relative_treelen
+     */
+    void initializeMixBranches(PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
+
+    /**
+     *  Set branch lengths as respective mean mixlen branch lengths
+     */
+    void assignMeanMixBranches(Node *node = nullptr, Node *dad = nullptr);
+
+protected:
     /** number of mixture categories */
     int mixlen;
 
-    /** current category, for optimizing branch length */
+    /** current category, for optimizing a branch length */
     int cur_mixture;
 
-
-/*************** Using cppoptlib for branch length optimization ***********/
-
-#ifdef USE_CPPOPTLIB
-
-//    using typename BoundedProblem<double>::TVector;
-//    using typename BoundedProblem<double>::THessian;
-
-    /**
-    * @brief returns objective value in x
-    * @details [long description]
-    *
-    * @param x [description]
-    * @return [description]
-    */
-    double value(const TVector &x);
-
-    /**
-    * @brief returns gradient in x as reference parameter
-    * @details should be overwritten by symbolic gradient
-    *
-    * @param grad [description]
-    */
-    void gradient(const TVector &x, TVector &grad);
-
-    /**
-    * @brief This computes the hessian
-    * @details should be overwritten by symbolic hessian, if solver relies on hessian
-    */
-    void hessian(const TVector &x, THessian &hessian);
-
-#endif
-
-    /**
-     * clear the array "relative_treelen"
-     */
-    void clear_relative_treelen();
-
-protected:
-    
     /** relative rate, used to initialize branch lengths */
     DoubleVector relative_treelen;
 
-    /** true if during initialization phase */
+    /** true if within initializeMixlen() */
     bool initializing_mixlen;
-
 };
 
-#endif /* defined(__iqtree__phylotreemixlen__) */
+#endif /* PHYLOTREEMIXLEN_H_ */

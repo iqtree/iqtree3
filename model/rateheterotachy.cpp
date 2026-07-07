@@ -10,6 +10,7 @@
 #include "rateheterotachy.h"
 
 RateHeterotachy::RateHeterotachy(int ncat, string params, PhyloTree *tree) : RateHeterogeneity() {
+    ASSERT(tree->isMixlen());
     phylo_tree = tree;
     prop = nullptr;
     fix_params = 0;

@@ -376,14 +376,11 @@ void PhyloTree::copyPhyloTree(PhyloTree *tree, bool borrowSummary) {
     }
 }
 
-void PhyloTree::copyPhyloTreeMixlen(PhyloTree *tree, int mix, bool borrowSummary) {
-    if (tree->isMixlen()) {
-        ((PhyloTreeMixlen*)tree)->cur_mixture = mix;
-    }
+void PhyloTree::copyPhyloTreeMixlen(PhyloTree *tree, int c, bool borrowSummary) {
+    ASSERT(tree->getCurMixture() == -1);
+    tree->setCurMixture(c);
     copyPhyloTree(tree, borrowSummary);
-    if (tree->isMixlen()) {
-        ((PhyloTreeMixlen*)tree)->cur_mixture = -1;
-    }
+    tree->setCurMixture(-1);
 }
 
 #define FAST_NAME_CHECK 1

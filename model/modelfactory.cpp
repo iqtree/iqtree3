@@ -1042,10 +1042,6 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     } catch (const char* str) {
         outError(str);
     }
-    if (tree->isMixlen() && tree->getMixlen() != site_rate->getNRate()) {
-        ((PhyloTreeMixlen*)tree)->setMixlen(site_rate->getNRate());
-//        outError("#heterotachy classes and #mixture branch lengths do not match");
-    }
 }
 
 void ModelFactory::setCheckpoint(Checkpoint *checkpoint) {

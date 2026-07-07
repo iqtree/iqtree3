@@ -757,26 +757,25 @@ string computeFastMLTree(Params &params, Alignment *aln,
 
     if (aln->isSuperAlignment()) {
         SuperAlignment *saln = (SuperAlignment*)aln;
-        if (params.partition_type == TOPO_UNLINKED)
+        if (params.partition_type == TOPO_UNLINKED) {
             iqtree = new PhyloSuperTreeUnlinked(saln);
-        else if (params.partition_type == BRLEN_OPTIMIZE)
+        } else if (params.partition_type == BRLEN_OPTIMIZE) {
             iqtree = new PhyloSuperTree(saln);
-        else
+        } else {
             iqtree = new PhyloSuperTreePlen(saln, brlen_type);
+        }
         for (int part = 0; part != subst_names.size(); part++) {
             saved_model_names.push_back(saln->partitions[part]->model_name);
             saln->partitions[part]->model_name = subst_names[part] + rate_names[part];
         }
     } else if (posRateHeterotachy(rate_names[0]) != string::npos) {
-        iqtree = new PhyloTreeMixlen(aln, 0);
+        iqtree = new PhyloTreeMixlen(aln);
     } else {
         iqtree = new IQTree(aln);
     }
-
     if (params.constraint_tree_file) {
         iqtree->constraintTree.readConstraint(params.constraint_tree_file, aln->getSeqNames());
     }
-
     if ((params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) && !iqtree->isInitializedPLL()) {
         /* Initialized all data structure for PLL*/
         iqtree->initializePLL(params);
@@ -1938,27 +1937,30 @@ string CandidateModel::evaluate(Params &params,
     IQTree *iqtree = nullptr;
     if (in_aln->isSuperAlignment()) {
         SuperAlignment *saln = (SuperAlignment*)in_aln;
-        if (params.partition_type == BRLEN_OPTIMIZE)
+        if (params.partition_type == BRLEN_OPTIMIZE) {
             iqtree = new PhyloSuperTree(saln);
-        else
+        } else {
             iqtree = new PhyloSuperTreePlen(saln, brlen_type);
+        }
         StrVector subst_names;
         StrVector rate_names;
         convert_string_vec(subst_name.c_str(), subst_names);
         convert_string_vec(rate_name.c_str(), rate_names);
         ASSERT(subst_names.size() == rate_names.size());
-        for (int part = 0; part != subst_names.size(); part++)
+        for (int part = 0; part != subst_names.size(); part++) {
             saln->partitions[part]->model_name = subst_names[part]+rate_names[part];
-    } else if (posRateHeterotachy(getName()) != string::npos)
-        iqtree = new PhyloTreeMixlen(in_aln, 0);
-    else
+        }
+    } else if (posRateHeterotachy(getName()) != string::npos) {
+        iqtree = new PhyloTreeMixlen(in_aln);
+    } else {
         iqtree = new IQTree(in_aln);
+    }
     iqtree->setParams(&params);
     iqtree->setLikelihoodKernel(params.SSE);
     iqtree->optimize_by_newton = params.optimize_by_newton;
     iqtree->setNumThreads(num_threads);
-
     iqtree->setCheckpoint(&in_model_info);
+
 #ifdef _OPENMP
 #pragma omp critical
 #endif
@@ -7437,18 +7439,15 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
     
 
     // create a new IQTree object for this mixture model
-    // allocate heterotachy tree if neccessary
-    int pos = posRateHeterotachy(aln->model_name);
-    if (params.num_mixlen > 1) {
-        new_iqtree = new PhyloTreeMixlen(aln, params.num_mixlen);
-    } else if (pos != string::npos) {
-        new_iqtree = new PhyloTreeMixlen(aln, 0);
+    if (posRateHeterotachy(aln->model_name) != string::npos) {
+        new_iqtree = new PhyloTreeMixlen(aln);
     } else {
         new_iqtree = new IQTree(aln);
     }
     new_iqtree->setCheckpoint(iqtree->getCheckpoint());
-    if (!iqtree->constraintTree.empty())
+    if (!iqtree->constraintTree.empty()) {
         new_iqtree->constraintTree.readConstraint(iqtree->constraintTree);
+    }
     new_iqtree->removed_seqs = iqtree->removed_seqs;
     new_iqtree->twin_seqs = iqtree->twin_seqs;
     if (params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) {

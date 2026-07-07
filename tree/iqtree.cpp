@@ -2963,20 +2963,15 @@ void IQTree::refineBootTrees() {
 
         // create bootstrap tree
         IQTree *boot_tree;
-        if (aln->isSuperAlignment()){
-            if(params->partition_type != BRLEN_OPTIMIZE){
-                boot_tree = new PhyloSuperTreePlen((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) this);
+        if (aln->isSuperAlignment()) {
+            if (params->partition_type != BRLEN_OPTIMIZE) {
+                boot_tree = new PhyloSuperTreePlen((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)this);
             } else {
-                boot_tree = new PhyloSuperTree((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) this);
+                boot_tree = new PhyloSuperTree((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)this);
             }
         } else {
-            // allocate heterotachy tree if neccessary
-            int pos = posRateHeterotachy(aln->model_name);
-            
-            if (params->num_mixlen > 1) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, params->num_mixlen);
-            } else if (pos != string::npos) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, 0);
+            if (posRateHeterotachy(aln->model_name) != string::npos) {
+                boot_tree = new PhyloTreeMixlen(bootstrap_alignment);
             } else {
                 boot_tree = new IQTree(bootstrap_alignment);
             }
@@ -4981,10 +4976,10 @@ int PhyloTree::testNumThreads() {
 
     cout << "BEST NUMBER OF THREADS: " << bestProc+1 << endl << endl;
     setNumThreads(bestProc+1);
-    
-    // clear the relative treelength arrays if it is GHOST model
+
+    // clear the relative_treelen vector if it is GHOST model
     if (isMixlen()) {
-        ((PhyloTreeMixlen*)this)->clear_relative_treelen();
+        ((PhyloTreeMixlen*)this)->clearRelativeTreelen();
     }
 
     return bestProc+1;

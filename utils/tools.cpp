@@ -4980,16 +4980,6 @@ void parseArg(int argc, char *argv[], Params &params) {
 				continue;
 			}
 
-			if (strcmp(argv[cnt], "-mixlen") == 0) {
-				cnt++;
-				if (cnt >= argc)
-					throw "Use -mixlen <number of mixture branch lengths for heterotachy model>";
-				params.num_mixlen = convert_int(argv[cnt]);
-				if (params.num_mixlen < 1)
-					throw("-mixlen must be >= 1");
-				continue;
-			}
-            
 			if (strcmp(argv[cnt], "--link-alpha") == 0) {
 				params.link_alpha = true;
 				continue;
@@ -7437,7 +7427,6 @@ void Params::setDefault() {
     lmap_num_quartets = -1;
     lmap_cluster_file = nullptr;
     print_lmap_quartet_lh = false;
-    num_mixlen = 1;
     link_alpha = false;
     link_model = false;
     model_joint = "";

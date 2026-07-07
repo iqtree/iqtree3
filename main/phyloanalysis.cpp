@@ -3441,9 +3441,31 @@ void startTreeReconstruction(Params &params, IQTree* &iqtree, ModelCheckpoint &m
     string best_subst_name, best_rate_name;
     map <string, vector<string> > nest_network;
     runModelFinder(params, *iqtree, model_info, best_subst_name, best_rate_name, nest_network);
-    
     runMixtureFinder(params, iqtree, model_info);
-    
+
+    // ModelFinder or MixtureFinder could selected a heterotachy rate model,
+    // so we need to check and possibly switch the tree type
+    if (posRateHeterotachy(iqtree->aln->model_name) != string::npos && !iqtree->isMixlen()) {
+        ASSERT(!iqtree->isSuperTree() && !iqtree->isTreeMix());
+        // create a new instance
+        IQTree* iqtree_new = new PhyloTreeMixlen(iqtree->aln);
+        iqtree_new->setCheckpoint(iqtree->getCheckpoint());
+        if (!iqtree->constraintTree.empty()) {
+            iqtree_new->constraintTree.readConstraint(iqtree->constraintTree);
+        }
+        iqtree_new->removed_seqs = iqtree->removed_seqs;
+        iqtree_new->twin_seqs = iqtree->twin_seqs;
+        if (params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) {
+            /* Initialized all data structure for PLL*/
+            iqtree_new->initializePLL(params);
+        }
+        iqtree_new->setParams(&params);
+        iqtree_new->copyPhyloTree(iqtree, false);
+        // replace iqtree object
+        delete iqtree;
+        iqtree = iqtree_new;
+    }
+
     // if users want to perform tree dating (with mcmc)
     // and if ModelFinder was run, the traversal starting node was incidently deleted (after copyTree and restoreCheckpoint)
     // we have to delete tree nodes to force IQ-TREE to re-read the tree from the treefile
@@ -3494,11 +3516,6 @@ void optimizeConTree(Params &params, IQTree *tree) {
     tree->getCheckpoint()->put("contree", contree);
 }
 
-// check whether it is tree-mixture model
-bool isTreeMixture(Params& params) {
-    return (params.model_name.find("+T") != string::npos);
-}
-
 void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 
     iqtree->aln->checkAbsentStates("alignment");
@@ -3519,39 +3536,11 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     if ((params.start_tree == STT_BIONJ || params.iqp || params.leastSquareBranch) && !iqtree->root) {
         computeInitialDist(params, *iqtree);
     }
-    
+
     /******************** Pass the parameter object params to IQTree *******************/
     iqtree->setParams(&params);
-    
-    ModelsBlock *models_block = readModelsDefinition(params);
 
     initializeParams(params, *iqtree);
-
-    if (posRateHeterotachy(iqtree->aln->model_name) != string::npos && !iqtree->isMixlen()) {
-        // rate mixture
-        
-        if (iqtree->isTreeMix()) {
-            outError("Tree-mixture model does not work with rate mixture");
-        }
-        
-        // create a new instance
-        IQTree* iqtree_new = new PhyloTreeMixlen(iqtree->aln, 0);
-        iqtree_new->setCheckpoint(iqtree->getCheckpoint());
-        if (!iqtree->constraintTree.empty())
-            iqtree_new->constraintTree.readConstraint(iqtree->constraintTree);
-        iqtree_new->removed_seqs = iqtree->removed_seqs;
-        iqtree_new->twin_seqs = iqtree->twin_seqs;
-        if (params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) {
-            /* Initialized all data structure for PLL*/
-            iqtree_new->initializePLL(params);
-        }
-        iqtree_new->setParams(&params);
-        iqtree_new->copyPhyloTree(iqtree, false);
-
-        // replace iqtree object
-        delete iqtree;
-        iqtree = iqtree_new;
-    }
 
     if (!params.compute_ml_tree_only) {
         iqtree->setRootNode(params.root);
@@ -3567,17 +3556,13 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     iqtree->initSettings(params);
 
     /*********************** INITIAL MODEL OPTIMIZATION *****************/
-
-
     if (!iqtree->getModelFactory()) {
+        ModelsBlock *models_block = readModelsDefinition(params);
         iqtree->initializeModel(params, iqtree->aln->model_name, models_block);
+        delete models_block;
     }
-    if (iqtree->getRate()->isHeterotachy() && !iqtree->isMixlen()) {
-        ASSERT(0 && "Heterotachy tree not properly created");
-    }
-//    iqtree.restoreCheckpoint();
 
-    delete models_block;
+//    iqtree.restoreCheckpoint();
 
     // UpperBounds analysis. Here, to analyse the initial tree without any tree search or optimization
     /*
@@ -4181,32 +4166,26 @@ void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree 
         init_random(params.ran_seed);
         
         IQTree *iqtree;
-        if (alignment->isSuperAlignment()){
-            if(params.partition_type != BRLEN_OPTIMIZE){
-                iqtree = new PhyloSuperTreePlen((SuperAlignment*) alignment, (PhyloSuperTree*) tree);
+        if (alignment->isSuperAlignment()) {
+            if (params.partition_type != BRLEN_OPTIMIZE) {
+                iqtree = new PhyloSuperTreePlen((SuperAlignment*)alignment, (PhyloSuperTree*)tree);
             } else {
-                iqtree = new PhyloSuperTree((SuperAlignment*) alignment, (PhyloSuperTree*) tree);
+                iqtree = new PhyloSuperTree((SuperAlignment*)alignment, (PhyloSuperTree*)tree);
             }
         } else {
-            // allocate heterotachy tree if neccessary
-            int pos = posRateHeterotachy(alignment->model_name);
-            
-            if (params.num_mixlen > 1) {
-                iqtree = new PhyloTreeMixlen(alignment, params.num_mixlen);
-            } else if (pos != string::npos) {
-                iqtree = new PhyloTreeMixlen(alignment, 0);
-            } else
+            if (posRateHeterotachy(alignment->model_name) != string::npos) {
+                iqtree = new PhyloTreeMixlen(alignment);
+            } else {
                 iqtree = new IQTree(alignment);
+            }
         }
-        
         if (!tree->constraintTree.empty()) {
             iqtree->constraintTree.readConstraint(tree->constraintTree);
         }
-        
         // set checkpoint
         iqtree->setCheckpoint(tree->getCheckpoint());
         iqtree->num_precision = tree->num_precision;
-        
+        // run reconstruction for this tree
         runTreeReconstruction(params, iqtree);
         // read in the output tree file
         stringstream ss;
@@ -4264,8 +4243,7 @@ void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree 
     
     cout << "Run " << best_run+1 <<  " gave best log-likelihood: " << runLnL[best_run] << endl;
 
-    // initialize tree and model strucgture
-    ModelsBlock *models_block = readModelsDefinition(params);
+    // initialize tree and model structure
     tree->setParams(&params);
     // restore thread count for tree search after ModelFinder's per-partition reduction
     if (params.num_threads_max > params.num_threads) {
@@ -4276,12 +4254,10 @@ void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree 
     }
     tree->setNumThreads(params.num_threads);
     if (!tree->getModelFactory()) {
+        ModelsBlock *models_block = readModelsDefinition(params);
         tree->initializeModel(params, tree->aln->model_name, models_block);
+        delete models_block;
     }
-    if (tree->getRate()->isHeterotachy() && !tree->isMixlen()) {
-        ASSERT(0 && "Heterotachy tree not properly created");
-    }
-    delete models_block;
 
     // restore the tree and model from the best run
     tree->getCheckpoint()->startStruct("run" + convertIntToString(best_run+1));
@@ -4594,52 +4570,50 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
         finish_random();
         randstream = saved_randstream;
 
-        if (params.print_tree_lh && MPIHelper::getInstance().isMaster()) {
-            double prob;
-            bootstrap_alignment->multinomialProb(*alignment, prob);
-            ofstream boot_lh;
-            if (sample == 0)
-                boot_lh.open(bootlh_name.c_str());
-            else
-                boot_lh.open(bootlh_name.c_str(), ios_base::out | ios_base::app);
-            boot_lh << "0\t" << prob << endl;
-            boot_lh.close();
+        if (MPIHelper::getInstance().isMaster()) {
+            if (params.print_tree_lh) {
+                double prob;
+                bootstrap_alignment->multinomialProb(*alignment, prob);
+                ofstream boot_lh;
+                if (sample == 0) {
+                    boot_lh.open(bootlh_name.c_str());
+                } else {
+                    boot_lh.open(bootlh_name.c_str(), ios_base::out | ios_base::app);
+                }
+                boot_lh << sample << "\t" << prob << endl;
+                boot_lh.close();
+            }
+            if (params.print_bootaln) {
+                bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
+            }
+            if (params.print_boot_site_freq) {
+                string sample_name = (string)params.out_prefix + "." + convertIntToString(sample);
+                printSiteStateFreq((sample_name + ".bootsitefreq").c_str(), bootstrap_alignment);
+                bootstrap_alignment->printAlignment(params.aln_output_format, (sample_name + ".bootaln").c_str());
+            }
         }
+
         IQTree *boot_tree;
-        if (alignment->isSuperAlignment()){
-            if(params.partition_type != BRLEN_OPTIMIZE){
-                boot_tree = new PhyloSuperTreePlen((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) tree);
+        if (alignment->isSuperAlignment()) {
+            if (params.partition_type != BRLEN_OPTIMIZE) {
+                boot_tree = new PhyloSuperTreePlen((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)tree);
             } else {
-                boot_tree = new PhyloSuperTree((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) tree);
+                boot_tree = new PhyloSuperTree((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)tree);
             }
         } else {
-            // allocate heterotachy tree if neccessary
-            int pos = posRateHeterotachy(alignment->model_name);
-            
-            if (params.num_mixlen > 1) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, params.num_mixlen);
-            } else if (pos != string::npos) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, 0);
-            } else
+            if (posRateHeterotachy(alignment->model_name) != string::npos) {
+                boot_tree = new PhyloTreeMixlen(bootstrap_alignment);
+            } else {
                 boot_tree = new IQTree(bootstrap_alignment);
+            }
         }
-        if (params.print_bootaln && MPIHelper::getInstance().isMaster()) {
-            bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
-        }
-
-        if (params.print_boot_site_freq && MPIHelper::getInstance().isMaster()) {
-            printSiteStateFreq((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsitefreq").c_str(), bootstrap_alignment);
-                bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
-        }
-
         if (!tree->constraintTree.empty()) {
             boot_tree->constraintTree.readConstraint(tree->constraintTree);
         }
-
         // set checkpoint
         boot_tree->setCheckpoint(tree->getCheckpoint());
         boot_tree->num_precision = tree->num_precision;
-
+        // run reconstruction for this tree
         runTreeReconstruction(params, boot_tree);
         // read in the output tree file
         stringstream ss;
@@ -4894,47 +4868,41 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
 
 IQTree *newIQTree(Params &params, Alignment *alignment) {
     IQTree *tree;
-    
-    // check whether it is a tree mixture model
-    bool isTreeMix = isTreeMixture(params);
-    
+    // check whether it is a multitree mixture model
+    bool isTreeMix = (params.model_name.find("+T") != string::npos);
     if (alignment->isSuperAlignment()) {
         if (params.partition_type == TOPO_UNLINKED) {
-            if (isTreeMix)
-                outError("Error! The topology-unlinked option is not supported for multitree mixture model");
+            if (isTreeMix) {
+                outError("Topology-unlinked partition model is not supported for multitree mixture model");
+            }
             tree = new PhyloSuperTreeUnlinked((SuperAlignment*)alignment);
-        } else if(params.partition_type != BRLEN_OPTIMIZE){
-            if (isTreeMix)
-                outError("Error! The proportional edge option is not supported for multitree mixture model");
-            // initialize supertree - Proportional Edges case
+        } else if (params.partition_type != BRLEN_OPTIMIZE) {
+            if (isTreeMix) {
+                outError("Edge-linked partition models are not supported for multitree mixture model");
+            }
             tree = new PhyloSuperTreePlen((SuperAlignment*)alignment, params.partition_type);
         } else {
             if (isTreeMix) {
                 tree = new PhyloSuperHmm((SuperAlignment*)alignment, params);
             } else {
-                // initialize supertree stuff if user specifies partition file with -sp option
                 tree = new PhyloSuperTree((SuperAlignment*)alignment);
             }
         }
-        // this alignment will actually be of type SuperAlignment
-        //        alignment = tree->aln;
-        if (((PhyloSuperTree*)tree)->rescale_codon_brlen)
+        if (((PhyloSuperTree*)tree)->rescale_codon_brlen) {
             cout << "NOTE: Mixed codon and other data, branch lengths of codon partitions are rescaled by 3!" << endl;
-        
+        }
     } else {
-        // allocate heterotachy tree if neccessary
-        int pos = posRateHeterotachy(alignment->model_name);
-        
-        if (params.num_mixlen > 1) {
-            tree = new PhyloTreeMixlen(alignment, params.num_mixlen);
-        } else if (pos != string::npos) {
-            tree = new PhyloTreeMixlen(alignment, 0);
+        if (posRateHeterotachy(alignment->model_name) != string::npos) {
+            if (isTreeMix) {
+                outError("Heterotachy rate model is not supported for multitree mixture model");
+            }
+            tree = new PhyloTreeMixlen(alignment);
         } else if (isTreeMix) {
             tree = new IQTreeMixHmm(params, alignment);
-        } else
+        } else {
             tree = new IQTree(alignment);
+        }
     }
-
     return tree;
 }
 
@@ -5633,80 +5601,65 @@ bool runCMaple(Params &params)
     are unlinked between partitions
  */
 void runUnlinkedPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
-    SuperAlignment *super_aln;
-    
     ASSERT(params.partition_file);
-    
     /****************** read in alignment **********************/
-    // Partition model analysis
-    super_aln = new SuperAlignmentUnlinked(params);
+    SuperAlignment *super_aln = new SuperAlignmentUnlinked(params);
     PhyloSuperTree *super_tree = new PhyloSuperTree(super_aln);
- 
     /**** do separate tree reconstruction for each partition ***/
-    
     MTreeSet part_trees;
-    
     if (params.user_file) {
         // reading user tree file for all partitions
         bool is_rooted = false;
         part_trees.readTrees(params.user_file, is_rooted, 0, super_aln->partitions.size());
-        if (is_rooted)
+        if (is_rooted) {
             outError("Rooted trees not allowed: ", params.user_file);
-        if (part_trees.size() != super_aln->partitions.size())
+        }
+        if (part_trees.size() != super_aln->partitions.size()) {
             outError("User tree file does not have the same number of trees as partitions");
+        }
         params.user_file = nullptr;
     }
-
     ModelCheckpoint *model_info = new ModelCheckpoint;
-    int part = 0;
-    for (auto alnit = super_aln->partitions.begin(); alnit != super_aln->partitions.end(); alnit++, part++) {
-        
-        checkpoint->startStruct((*alnit)->name);
-
-        // allocate heterotachy tree if neccessary
-        int pos = posRateHeterotachy((*alnit)->model_name);
+    for (size_t part = 0; part < super_aln->partitions.size(); ++part) {
+        Alignment *part_aln = super_aln->partitions[part];
+        checkpoint->startStruct(part_aln->name);
         IQTree *tree;
-        
-        if (params.num_mixlen > 1) {
-            tree = new PhyloTreeMixlen((*alnit), params.num_mixlen);
-        } else if (pos != string::npos) {
-            tree = new PhyloTreeMixlen((*alnit), 0);
-        } else
-            tree = new IQTree((*alnit));
-
+        if (posRateHeterotachy(part_aln->model_name) != string::npos) {
+            tree = new PhyloTreeMixlen(part_aln);
+        } else {
+            tree = new IQTree(part_aln);
+        }
         tree->setCheckpoint(checkpoint);
         if (checkpoint->getBool("finished")) {
             tree->restoreCheckpoint();
         } else {
-            if (!part_trees.empty())
+            if (!part_trees.empty()) {
                 tree->copyTree(part_trees[part]);
-
+            }
             startTreeReconstruction(params, tree, *model_info);
             // call main tree reconstruction
-            if (params.num_runs == 1)
+            if (params.num_runs == 1) {
                 runTreeReconstruction(params, tree);
-            else
+            } else {
                 runMultipleTreeReconstruction(params, tree->aln, tree);
+            }
             checkpoint->putBool("finished", true);
             checkpoint->dump();
         }
-
         super_tree->at(part)->copyTree(tree);
-        
         delete tree;
         checkpoint->endStruct();
     }
-    
     IQTree *iqtree = super_tree;
     super_tree->setCheckpoint(checkpoint);
     startTreeReconstruction(params, iqtree, *model_info);
     runTreeReconstruction(params, iqtree);
-    if (MPIHelper::getInstance().isMaster())
+    if (MPIHelper::getInstance().isMaster()) {
         reportPhyloAnalysis(params, *iqtree, *model_info);
-
+    }
+    delete model_info;
     delete super_tree;
     delete super_aln;
-    delete model_info;
 }
 
 void assignBranchSupportNew(Params &params) {
