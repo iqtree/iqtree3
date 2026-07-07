@@ -4806,24 +4806,26 @@ void convertAlignment(Params &params, IQTree *iqtree) {
     2016-08-04: compute a site frequency model for profile mixture model
 */
 void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
-
-    cout << endl << "===> COMPUTING SITE FREQUENCY MODEL BASED ON TREE FILE " << params.tree_freq_file << endl;
     ASSERT(params.tree_freq_file);
-    PhyloTree *tree = new PhyloTree(alignment);
+    cout << endl << "===> COMPUTING SITE FREQUENCY MODEL BASED ON TREE FILE " << params.tree_freq_file << endl;
+    double saved_min_branch_length = params.min_branch_length;
+    params.min_branch_length = 1e-6;
+    IQTree *tree;
+    if (posRateHeterotachy(alignment->model_name) != string::npos) {
+        tree = new PhyloTreeMixlen(alignment);
+    } else {
+        tree = new IQTree(alignment);
+    }
     tree->setParams(&params);
+    tree->setLikelihoodKernel(params.SSE);
+    tree->setNumThreads(params.num_threads);
     bool myrooted = params.is_rooted;
     tree->readTree(params.tree_freq_file, myrooted);
-    tree->setAlignment(alignment);
     tree->setRootNode(params.root);
-    
+    tree->setAlignment(alignment);
     ModelsBlock *models_block = readModelsDefinition(params);
     tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
     delete models_block;
-    tree->setModel(tree->getModelFactory()->model);
-    tree->setRate(tree->getModelFactory()->site_rate);
-    tree->setLikelihoodKernel(params.SSE);
-    tree->setNumThreads(params.num_threads);
-    
     if (!tree->getModel()->isMixture())
         outError("No mixture model was specified!");
     uint64_t mem_size = tree->getMemoryRequired();
@@ -4854,10 +4856,9 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
     }
     printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
     params.print_site_state_freq = WSF_NONE;
-    
     delete [] ptn_state_freq;
     delete tree;
-    
+    params.min_branch_length = saved_min_branch_length;
     cout << endl << "===> CONTINUE ANALYSIS USING THE INFERRED SITE FREQUENCY MODEL" << endl;
 }
 
