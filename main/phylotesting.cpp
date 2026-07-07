@@ -36,7 +36,7 @@
 #include "model/modelliemarkov.h"
 #include "model/modelpomo.h"
 #include "utils/timeutil.h"
-#include "model/modelfactorymixlen.h"
+#include "model/modelfactory.h"
 #include "tree/phylosupertreeplen.h"
 #include "tree/phylosupertreeunlinked.h"
 
@@ -819,9 +819,9 @@ string computeFastMLTree(Params &params, Alignment *aln,
         // disable thorough I+G optimization
         params.opt_gammai = false;
         initTree = iqtree->optimizeModelParameters(false, params.modelEps*50.0);
-        if (iqtree->isMixlen())
-            initTree = ((ModelFactoryMixlen*)iqtree->getModelFactory())->sortClassesByTreeLength();
-
+        if (iqtree->isMixlen()) {
+            initTree = iqtree->getModelFactory()->sortClassesByTreeLength();
+        }
         // do quick NNI search
         if (params.start_tree != STT_USER_TREE) {
             cout << "Perform nearest neighbor interchange..." << endl;

@@ -57,7 +57,7 @@
 #include "whtest/whtest_wrapper.h"
 #include "model/partitionmodel.h"
 #include "model/modelmixture.h"
-#include "model/modelfactorymixlen.h"
+#include "model/modelfactory.h"
 //#include "guidedbootstrap.h"
 #include "model/modelset.h"
 #include "utils/timeutil.h"

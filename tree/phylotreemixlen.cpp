@@ -8,8 +8,6 @@
 
 #include "phylotreemixlen.h"
 #include "phylonodemixlen.h"
-#include "model/modelfactorymixlen.h"
-#include "model/modelmixture.h"
 #include "model/ratefree.h"
 #include "utils/MPIHelper.h"
 
@@ -109,17 +107,6 @@ void PhyloTreeMixlen::readTreeString(const string &tree_string) {
     treeLengths(relative_treelen);
     if (mixlen > 0 && relative_treelen[0] == 0.0)
         relative_treelen.clear();
-}
-
-void PhyloTreeMixlen::initializeModel(Params &params, string model_name, ModelsBlock *models_block) {
-    try {
-        if (!getModelFactory()) {
-            setModelFactory(new ModelFactoryMixlen(params, model_name, this, models_block));
-        }
-    } catch (string & str) {
-        outError(str);
-    }
-    IQTree::initializeModel(params, model_name, models_block);
 }
 
 void PhyloTreeMixlen::treeLengths(DoubleVector &lenvec, Node *node, Node *dad) {

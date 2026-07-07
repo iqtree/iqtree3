@@ -341,21 +341,18 @@ Phylogenetic Tree class
         @author BUI Quang Minh, Steffen Klaere, Arndt von Haeseler <minh.bui@univie.ac.at>
  */
 class PhyloTree : public MTree, public Optimization, public CheckpointFactory {
-
-	friend class PhyloSuperTree;
-	friend class PhyloSuperTreePlen;
-	friend class RateGamma;
-	friend class RateGammaInvar;
-	friend class RateKategory;
+    friend class PhyloSuperTree;
+    friend class PhyloSuperTreePlen;
+    friend class RateGamma;
+    friend class RateGammaInvar;
+    friend class RateKategory;
     friend class ModelMixture;
     friend class RateFree;
     friend class RateHeterotachy;
     friend class PhyloTreeMixlen;
-    friend class ModelFactoryMixlen;
     friend class MemSlotVector;
     friend class ModelFactory;
     friend class IQTreeMix;
-
 public:
     /**
        default constructor ( everything is initialized to nullptr)

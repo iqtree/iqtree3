@@ -24,13 +24,11 @@
 #include "phylosupertree.h"
 #include "phylosupertreeplen.h"
 #include "model/partitionmodelplen.h"
-#include "model/modelfactorymixlen.h"
+#include "model/modelfactory.h"
 #include "mexttree.h"
 #include "utils/timeutil.h"
 #include "model/modelmarkov.h"
 #include "model/rategamma.h"
-//#include "phylotreemixlen.h"
-//#include "model/modelfactorymixlen.h"
 #include <numeric>
 #include "utils/tools.h"
 #include "utils/MPIHelper.h"
@@ -2374,7 +2372,8 @@ string IQTree::ensureModelParametersAreSet(double initEpsilon) {
         initTree = getTreeString();
         cout << "CHECKPOINT: Model parameters restored, LogL: " << getCurScore() << endl;
     } else {
-        // for mixtureFinder, verify whether the likelihood is the same as the best likelihood obtained in mixtureFinder
+        // for mixtureFinder, verify that the likelihood is the same as
+        // the best likelihood obtained in mixtureFinder
         double mixFinderLogL;
         if (getCheckpoint()->get("MixFinderLogL", mixFinderLogL)) {
             double allowableDiff = 0.01;
@@ -2382,10 +2381,9 @@ string IQTree::ensureModelParametersAreSet(double initEpsilon) {
             ASSERT(fabs(currLogL - mixFinderLogL) < allowableDiff);
             getCheckpoint()->eraseKeyPrefix("MixFinderLogL");
         }
-        
         initTree = optimizeModelParameters(true, initEpsilon);
         if (isMixlen()) {
-            initTree = ((ModelFactoryMixlen*)getModelFactory())->sortClassesByTreeLength();
+            initTree = getModelFactory()->sortClassesByTreeLength();
         }
         saveCheckpoint();
         getModelFactory()->saveCheckpoint();

@@ -41,6 +41,7 @@
 #include "rateheterotachyinvar.h"
 //#include "ngs.h"
 #include <string>
+#include "tree/phylotreemixlen.h"
 #include "utils/timeutil.h"
 #include "nclextra/myreader.h"
 #include <sstream>
@@ -1041,7 +1042,10 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     } catch (const char* str) {
         outError(str);
     }
-
+    if (tree->isMixlen() && tree->getMixlen() != site_rate->getNRate()) {
+        ((PhyloTreeMixlen*)tree)->setMixlen(site_rate->getNRate());
+//        outError("#heterotachy classes and #mixture branch lengths do not match");
+    }
 }
 
 void ModelFactory::setCheckpoint(Checkpoint *checkpoint) {
@@ -1234,11 +1238,16 @@ void ModelFactory::initFromClassMinusOne(double init_weight) {
 }
 
 int ModelFactory::getNParameters(int brlen_type) {
-    int df = model->getNDim() + model->getNDimFreq() + site_rate->getNDim() +
-        site_rate->getTree()->getNBranchParameters(brlen_type);
-
+    int df = model->getNDim() + model->getNDimFreq() +
+             site_rate->getNDim() + site_rate->getTree()->getNBranchParameters(brlen_type);
+    if (brlen_type == BRLEN_OPTIMIZE) {
+        df += site_rate->phylo_tree->branchNum * (site_rate->phylo_tree->getMixlen() - 1);
+    } else if (brlen_type == BRLEN_SCALE) {
+        df += (site_rate->phylo_tree->getMixlen() - 1);
+    }
     return df;
 }
+
 /*
 double ModelFactory::initGTRGammaIParameters(RateHeterogeneity *rate, ModelSubst *model, double initAlpha,
                                            double initPInvar, double *initRates, double *initStateFreqs)  {
@@ -1554,13 +1563,13 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
                                         double logl_epsilon, double gradient_epsilon) {
     ASSERT(model);
     ASSERT(site_rate);
-
-//    double defaultEpsilon = logl_epsilon;
-
-    double begin_time = getRealTime();
-    double cur_lh;
     PhyloTree *tree = site_rate->getTree();
     ASSERT(tree);
+    if (tree->isMixlen()) {
+        ((PhyloTreeMixlen*)tree)->initializeMixlen(logl_epsilon, write_info);
+    }
+    double begin_time = getRealTime();
+    double cur_lh;
 
     stopStoringTransMatrix();
 
@@ -1830,9 +1839,84 @@ ModelFactory::~ModelFactory()
     clear();
 }
 
+string ModelFactory::sortClassesByTreeLength() {
+    ASSERT(model);
+    ASSERT(site_rate);
+    PhyloTree *tree = site_rate->getTree();
+    ASSERT(tree);
+    if (!tree->isMixlen()) {
+        return tree->getTreeString();
+    }
+    DoubleVector brlen;
+    tree->saveBranchLengths(brlen);
+    size_t nmixlen = tree->getMixlen();
+    ASSERT(brlen.size() == tree->branchNum * nmixlen);
+    // compute tree lengths
+    int index[nmixlen];
+    double treelen[nmixlen];
+    memset(treelen, 0, nmixlen*sizeof(double));
+    for (size_t i = 0; i < nmixlen; ++i) {
+        index[i] = i;
+    }
+    for (size_t b = 0; b < brlen.size(); ++b) {
+        treelen[b%nmixlen] += brlen[b];
+    }
+    // sort tree lengths and reorder mixlen classes
+    quicksort(treelen, 0, nmixlen-1, index);
+    bool sorted = true;
+    for (size_t i = 0; i < nmixlen; ++i) {
+        sorted &= (index[i] == i);
+    }
+    if (!sorted) {
+        double score = tree->curScore;
+        cout << "Reordering rate classes by tree lengths" << endl;
+        // reorder mixlen class branch lengths
+        DoubleVector sorted_brlen(brlen.size(), 0.0);
+        for (size_t b = 0; b < tree->branchNum; ++b) {
+            for (size_t i = 0; i < nmixlen; ++i) {
+                sorted_brlen[b*nmixlen + i] = brlen[b*nmixlen + index[i]];
+            }
+        }
+        tree->restoreBranchLengths(sorted_brlen);
+        // reoder mixlen class weights
+        ASSERT(site_rate->getNRate() == nmixlen);
+        double prop[nmixlen];
+        for (size_t i = 0; i < nmixlen; ++i) {
+            prop[i] = site_rate->getProp(index[i]);
+        }
+        for (size_t i = 0; i < nmixlen; ++i) {
+            site_rate->setProp(i, prop[i]);
+        }
+        // reorder fused mixture models
+        if (fused_mix_rate) {
+            ASSERT(model->getNMixtures() == nmixlen);
+            ModelSubst *models[nmixlen];
+            for (size_t i = 0; i < nmixlen; ++i) {
+                ASSERT(model->getMixtureWeight(i) == 1.0);
+                models[i] = model->getMixtureClass(index[i]);
+            }
+            for (size_t i = 0; i < nmixlen; ++i) {
+                model->setMixtureClass(i, models[i]);
+            }
+            int num_states = model->num_states;
+            for (size_t i = 0; i < nmixlen; ++i) {
+                ((ModelMarkov*)model->getMixtureClass(i))->setEigenvalues(&model->getEigenvalues()[i*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setEigenvectors(&model->getEigenvectors()[i*num_states*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setInverseEigenvectors(&model->getInverseEigenvectors()[i*num_states*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setInverseEigenvectorsTransposed(&model->getInverseEigenvectorsTransposed()[i*num_states*num_states]);
+            }
+            model->decomposeRateMatrix();
+            site_rate->writeInfo(cout);
+        }
+        tree->clearAllPartialLH();
+        ASSERT(fabs(score - tree->computeLikelihood()) < 0.1);
+    }
+    return tree->getTreeString();
+}
+
 /************* FOLLOWING SERVE FOR JOINT OPTIMIZATION OF MODEL AND RATE PARAMETERS *******/
-int ModelFactory::getNDim()
-{
+
+int ModelFactory::getNDim() {
     return model->getNDim() + site_rate->getNDim();
 }
 

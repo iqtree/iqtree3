@@ -28,9 +28,6 @@ class PhyloTreeMixlen : public IQTree, public cppoptlib::BoundedProblem<double>
 class PhyloTreeMixlen : public IQTree
 #endif
 {
-
-    friend class ModelFactoryMixlen;
-
 public:
 
     /**
@@ -79,8 +76,6 @@ public:
             @param tree_string tree string to read from
      */
     virtual void readTreeString(const string &tree_string) override;
-
-    virtual void initializeModel(Params &params, string model_name, ModelsBlock *models_block) override;
 
     /**
         @return true if this is a tree with mixture branch lengths, default: false
