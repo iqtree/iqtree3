@@ -159,13 +159,17 @@ public:
     virtual void readTreeString(const string &tree_string) override;
 
     /**
-     * save branch lengths into a vector
+     *  Save branch lengths into a vector
      */
-    virtual void saveBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
+    virtual void saveBranchLengths(DoubleVector &lenvec, size_t startid = 0,
+                                   PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
+
     /**
-     * restore branch lengths from a vector previously called with saveBranchLengths
+     *  Restore branch lengths from a vector that
+     *  was previously filled by saveBranchLengths()
      */
-    virtual void restoreBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
+    virtual void restoreBranchLengths(DoubleVector &lenvec, size_t startid = 0,
+                                      PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
 
     /**
         Collapse all internal branches with length <= threshold

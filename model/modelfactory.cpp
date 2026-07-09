@@ -1236,11 +1236,6 @@ void ModelFactory::initFromClassMinusOne(double init_weight) {
 int ModelFactory::getNParameters(int brlen_type) {
     int df = model->getNDim() + model->getNDimFreq() +
              site_rate->getNDim() + site_rate->getTree()->getNBranchParameters(brlen_type);
-    if (brlen_type == BRLEN_OPTIMIZE) {
-        df += site_rate->phylo_tree->branchNum * (site_rate->phylo_tree->getMixlen() - 1);
-    } else if (brlen_type == BRLEN_SCALE) {
-        df += (site_rate->phylo_tree->getMixlen() - 1);
-    }
     return df;
 }
 
@@ -1845,7 +1840,7 @@ string ModelFactory::sortClassesByTreeLength() {
     }
     DoubleVector brlen;
     tree->saveBranchLengths(brlen);
-    size_t nmixlen = tree->getMixlen();
+    size_t nmixlen = tree->getNMixlen();
     ASSERT(brlen.size() == tree->branchNum * nmixlen);
     // compute tree lengths
     int index[nmixlen];

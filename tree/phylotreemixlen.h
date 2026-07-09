@@ -22,7 +22,7 @@ public:
 
     virtual bool isMixlen() const override { return !initializing_mixlen; }
 
-    virtual int getMixlen() const override { return (initializing_mixlen) ? 1 : mixlen; }
+    virtual int getNMixlen() const override { return (initializing_mixlen) ? 1 : mixlen; }
 
     virtual int getCurMixture() const override { return cur_mixture; }
 
