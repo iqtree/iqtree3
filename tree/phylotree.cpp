@@ -376,14 +376,11 @@ void PhyloTree::copyPhyloTree(PhyloTree *tree, bool borrowSummary) {
     }
 }
 
-void PhyloTree::copyPhyloTreeMixlen(PhyloTree *tree, int mix, bool borrowSummary) {
-    if (tree->isMixlen()) {
-        ((PhyloTreeMixlen*)tree)->cur_mixture = mix;
-    }
+void PhyloTree::copyPhyloTreeMixlen(PhyloTree *tree, int c, bool borrowSummary) {
+    ASSERT(tree->getCurMixture() == -1);
+    tree->setCurMixture(c);
     copyPhyloTree(tree, borrowSummary);
-    if (tree->isMixlen()) {
-        ((PhyloTreeMixlen*)tree)->cur_mixture = -1;
-    }
+    tree->setCurMixture(-1);
 }
 
 #define FAST_NAME_CHECK 1
@@ -730,30 +727,33 @@ string PhyloTree::getModelNameParams(bool show_fixed_params) {
     return name;
 }
 
-void PhyloTree::saveBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
+void PhyloTree::saveBranchLengths(DoubleVector &lenvec, size_t startid, PhyloNode *node, PhyloNode *dad) {
     if (!node) {
-        node = (PhyloNode*) root;
-        ASSERT(branchNum == nodeNum-1);
-        if (lenvec.empty()) lenvec.resize((branchNum*getMixlen()) + startid);
+        node = (PhyloNode*)root;
+        ASSERT(branchNum == nodeNum - 1);
+        size_t min_size = startid + (branchNum * getNMixlen());
+        lenvec.resize(max(lenvec.size(), min_size), 0.0);
     }
-    FOR_NEIGHBOR_IT(node, dad, it){
-        (*it)->getLength(lenvec, (*it)->id*getMixlen() + startid);
-        PhyloTree::saveBranchLengths(lenvec, startid, (PhyloNode*) (*it)->node, node);
+    FOR_NEIGHBOR_IT(node, dad, it) {
+        size_t this_startid = startid + ((*it)->id * getNMixlen());
+        (*it)->getLength(lenvec, this_startid);
+        PhyloTree::saveBranchLengths(lenvec, startid, (PhyloNode*)(*it)->node, node);
     }
 }
 
-void PhyloTree::restoreBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
+void PhyloTree::restoreBranchLengths(DoubleVector &lenvec, size_t startid, PhyloNode *node, PhyloNode *dad) {
     if (!node) {
-        node = (PhyloNode*) root;
-        ASSERT(!lenvec.empty());
+        node = (PhyloNode*)root;
+        size_t min_size = startid + (branchNum * getNMixlen());
+        ASSERT(lenvec.size() >= min_size);
     }
-    FOR_NEIGHBOR_IT(node, dad, it){
-        (*it)->setLength(lenvec, (*it)->id*getMixlen() + startid, getMixlen());
-        (*it)->node->findNeighbor(node)->setLength(lenvec, (*it)->id*getMixlen() + startid, getMixlen());
-        PhyloTree::restoreBranchLengths(lenvec, startid, (PhyloNode*) (*it)->node, node);
+    FOR_NEIGHBOR_IT(node, dad, it) {
+        size_t this_startid = startid + ((*it)->id * getNMixlen());
+        (*it)->setLength(lenvec, this_startid, getNMixlen());
+        (*it)->node->findNeighbor(node)->setLength(lenvec, this_startid, getNMixlen());
+        PhyloTree::restoreBranchLengths(lenvec, startid, (PhyloNode*)(*it)->node, node);
     }
 }
-
 
 /****************************************************************************
  Parsimony function
@@ -893,7 +893,7 @@ size_t PhyloTree::getBufferPartialLhSize() {
     buffer_size += get_safe_upper_limit(3*block*model->num_states);
 
     if (isMixlen()) {
-        size_t nmix = max(getMixlen(), getRate()->getNRate());
+        size_t nmix = max(getNMixlen(), getRate()->getNRate());
         buffer_size += nmix*(nmix+1)*VECTOR_SIZE + (nmix+3)*nmix*VECTOR_SIZE*num_packets;
     }
     return buffer_size;
@@ -2596,29 +2596,31 @@ void PhyloTree::optimizePatternRates(DoubleVector &pattern_rates) {
 }
 
 int PhyloTree::getNBranchParameters(int brlen_type) {
-    if (params->fixed_branch_length || brlen_type == BRLEN_FIX)
+    if (params->fixed_branch_length) {
         return 0;
-
+    }
     int df = 0;
-
-    if (brlen_type == BRLEN_OPTIMIZE) {
-        df = branchNum - (int)rooted;
-    // If model is Lie-Markov, and is in fact time reversible, one of the
-    // degrees of freedom is illusary. (Of the two edges coming from the
-    // root, only sum of their lenghts affects likelihood.)
-    // So correct for this. Without this correction, K2P and RY2.2b
-    // would not be synonymous, for example.
-
-//    string className(typeid(*model).name());
-//    if (className.find("ModelLieMarkov")!=string::npos && model->isReversible())
-//        df--;
-
-        // BQM 2017-04-28, alternatively, check if there is a virtual_root and model is reversible
-        if (rooted && model && model->isReversible())
-            df--;
-
-    } else if (brlen_type == BRLEN_SCALE)
+    if (brlen_type == BRLEN_SCALE) {
+        // one scaler for all branches and mixlen categories
         df = 1;
+    } else if (brlen_type == BRLEN_OPTIMIZE) {
+        df = branchNum;
+        if (rooted) {
+            // a rooted tree always has an additional root leaf,
+            // its branch length does not affect the likelihood
+            df--;
+            if (model && model->isReversible()) {
+                // if a reversible model is used with a rooted tree, then
+                // of the two edges coming from the root, only the sum
+                // of their lenghts affects the likelihood
+                // Example: for Lie-Markov models, without this correction
+                // K2P and RY2.2b would not be synonymous
+                df--;
+            }
+        }
+        // each mixlen category has its own set of branch lengths
+        df *= getNMixlen();
+    }
     return df;
 }
 
@@ -4325,7 +4327,7 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
                 ((PhyloNeighbor*)*saved_it[id])->size = 0;
         }
 
-        int nni5_num_eval = max(params->nni5_num_eval, getMixlen());
+        int nni5_num_eval = max(params->nni5_num_eval, getNMixlen());
 
         for (int step = 0; step < nni5_num_eval; step++) {
 

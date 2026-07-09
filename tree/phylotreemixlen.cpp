@@ -5,121 +5,70 @@
 //  Created by Minh Bui on 24/08/15.
 //
 //
-
 #include "phylotreemixlen.h"
 #include "phylonodemixlen.h"
-#include "model/modelfactorymixlen.h"
-#include "model/modelmixture.h"
 #include "model/ratefree.h"
 #include "utils/MPIHelper.h"
 
-#ifdef USE_CPPOPTLIB
-#include "cppoptlib/solver/newtondescentsolver.h"
-#include "cppoptlib/solver/lbfgsbsolver.h"
-#endif
+PhyloTreeMixlen::PhyloTreeMixlen()
+: IQTree(), mixlen(1), cur_mixture(-1), initializing_mixlen(false) {}
 
-PhyloTreeMixlen::PhyloTreeMixlen() : IQTree()
-#ifdef USE_CPPOPTLIB
-, cppoptlib::BoundedProblem<double>()
-#endif
-{
-	mixlen = 1;
-    cur_mixture = -1;
-//    relative_treelen = nullptr;
-    initializing_mixlen = false;
-}
+PhyloTreeMixlen::PhyloTreeMixlen(Alignment *aln)
+: IQTree(aln), mixlen(1), cur_mixture(-1), initializing_mixlen(false) {}
 
-PhyloTreeMixlen::PhyloTreeMixlen(Alignment *aln, int mixlen) : IQTree(aln)
-#ifdef USE_CPPOPTLIB
-, cppoptlib::BoundedProblem<double>(mixlen)
-#endif
-{
-//	cout << "Initializing heterotachy mixture branch lengths" << endl;
-    cur_mixture = -1;
-//    relative_treelen = nullptr;
-    initializing_mixlen = false;
-    setMixlen(mixlen);
-}
-
-PhyloTreeMixlen::~PhyloTreeMixlen() {
-//    if (relative_treelen)
-//        aligned_free(relative_treelen);
+void PhyloTreeMixlen::setCurMixture(int c) {
+    ASSERT(c >= -1 && c < (int)mixlen);
+    cur_mixture = c;
 }
 
 void PhyloTreeMixlen::startCheckpoint() {
-    if (mixlen > 0)
-        checkpoint->startStruct("PhyloTreeMixlen" + convertIntToString(getMixlen()));
-    else
+    if (mixlen > 1) {
+        checkpoint->startStruct("PhyloTreeMixlen" + convertIntToString(mixlen));
+    } else {
         PhyloTree::startCheckpoint();
+    }
 }
 
 void PhyloTreeMixlen::saveCheckpoint() {
-    if (mixlen > 0) {
+    if (mixlen > 1) {
         startCheckpoint();
-        if (this->relative_treelen.size() > 0) {
-            ASSERT(mixlen == this->relative_treelen.size());
-            double relative_treelen[mixlen];
-            for (int i = 0; i < mixlen; i++)
-                relative_treelen[i] = this->relative_treelen[i];
-            CKP_ARRAY_SAVE(mixlen, relative_treelen);
+        if (relative_treelen.size() > 0) {
+            ASSERT(mixlen == relative_treelen.size());
+            CKP_ARRAY_SAVE(mixlen, &relative_treelen[0]);
         }
         endCheckpoint();
     }
     IQTree::saveCheckpoint();
 }
 
-/** 
-    restore object from the checkpoint
-*/
 void PhyloTreeMixlen::restoreCheckpoint() {
-    if (mixlen > 0) {
+    if (mixlen > 1) {
         startCheckpoint();
-        double relative_treelen[mixlen];
-        if (CKP_ARRAY_RESTORE(mixlen, relative_treelen)) {
-            this->relative_treelen.resize(mixlen);
-            for (int i = 0; i < mixlen; i++)
-                this->relative_treelen[i] = relative_treelen[i];
+        DoubleVector restored_relative_treelen(mixlen, 0.0);
+        if (CKP_ARRAY_RESTORE(mixlen, &restored_relative_treelen[0])) {
+            relative_treelen = restored_relative_treelen;
         }
         endCheckpoint();
     }
     IQTree::restoreCheckpoint();
-    if (!root) {
-        // if not success, try to restore from PhyloTree
-        int orig_mixlen = mixlen;
-        mixlen = 0;
-        PhyloTree::restoreCheckpoint();
-        mixlen = orig_mixlen;
-    }
 }
 
 Node* PhyloTreeMixlen::newNode(int node_id, const char* node_name) {
-    return (Node*) (new PhyloNodeMixlen(node_id, node_name));
+    return (Node*)(new PhyloNodeMixlen(node_id, node_name));
 }
 
 Node* PhyloTreeMixlen::newNode(int node_id, int node_name) {
-    return (Node*) (new PhyloNodeMixlen(node_id, node_name));
-}
-
-void PhyloTreeMixlen::setMixlen(int mixlen) {
-	this->mixlen = mixlen;
+    return (Node*)(new PhyloNodeMixlen(node_id, node_name));
 }
 
 void PhyloTreeMixlen::readTreeString(const string &tree_string) {
     IQTree::readTreeString(tree_string);
-    treeLengths(relative_treelen);
-    if (mixlen > 0 && relative_treelen[0] == 0.0)
-        relative_treelen.clear();
-}
-
-void PhyloTreeMixlen::initializeModel(Params &params, string model_name, ModelsBlock *models_block) {
-    try {
-        if (!getModelFactory()) {
-            setModelFactory(new ModelFactoryMixlen(params, model_name, this, models_block));
+    if (mixlen > 1) {
+        treeLengths(relative_treelen);
+        if (relative_treelen[0] == 0.0) {
+            relative_treelen.clear();
         }
-    } catch (string & str) {
-        outError(str);
     }
-    IQTree::initializeModel(params, model_name, models_block);
 }
 
 void PhyloTreeMixlen::treeLengths(DoubleVector &lenvec, Node *node, Node *dad) {
@@ -133,6 +82,15 @@ void PhyloTreeMixlen::treeLengths(DoubleVector &lenvec, Node *node, Node *dad) {
     }
 }
 
+void PhyloTreeMixlen::setModelFactory(ModelFactory *model_fac) {
+    IQTree::setModelFactory(model_fac);
+    if (site_rate) {
+        ASSERT(site_rate->isHeterotachy());
+        mixlen = site_rate->getNRate();
+        // clear, as we now have new weights and mixlen
+        relative_treelen.clear();
+    }
+}
 
 void PhyloTreeMixlen::initializeMixBranches(PhyloNode *node, PhyloNode *dad) {
     if (!node) {
@@ -297,6 +255,7 @@ void PhyloTreeMixlen::initializeMixlen(double tolerance, bool write_info) {
     }
 
     if (((PhyloNeighborMixlen*)root->neighbors[0])->lengths.size() != mixlen) {
+        ASSERT(relative_treelen.size() == mixlen);
         // assign branch length from rate model
         DoubleVector saved_treelen = relative_treelen;
         DoubleVector lenvec;
@@ -348,31 +307,6 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
     int i;
 
     theta_computed = false;
-
-#ifdef USE_CPPOPTLIB
-    if (params->optimize_alg_mixlen.find("cppopt") != string::npos) {
-        //----- using cppoptlib ------//
-
-        TVector lower_bound(mixlen), upper_bound(mixlen), variables(mixlen);
-
-    //    variables.resize(mixlen);
-        for (i = 0; i < mixlen; i++) {
-            lower_bound[i] = params->min_branch_length;
-            variables[i] = current_it->getLength(i);
-            upper_bound[i] = params->max_branch_length;
-        }
-
-        setBoxConstraint(lower_bound, upper_bound);
-
-        cppoptlib::NewtonDescentSolver<PhyloTreeMixlen> solver;
-    //    cppoptlib::LbfgsbSolver<PhyloTreeMixlen> solver;
-        solver.minimize(*this, variables);
-        for (i = 0; i < mixlen; i++) {
-            current_it->setLength(i, variables[i]);
-            current_it_back->setLength(i, variables[i]);
-        }
-    } else
-#endif
 
     if (params->optimize_alg_mixlen.find("newton") != string::npos) {
 
@@ -685,50 +619,6 @@ void PhyloTreeMixlen::printResultTree(string suffix) {
 
     if (verbose_mode >= VB_MED)
         cout << "Best tree printed to " << tree_file_name << endl;
-}
-
-
-/*************** Using cppoptlib for branch length optimization ***********/
-
-#ifdef USE_CPPOPTLIB
-double PhyloTreeMixlen::value(const TVector &x) {
-    double xx[mixlen+1];
-    for (int i = 0; i < mixlen; i++)
-        xx[i+1] = x(i);
-    return targetFunk(xx);
-}
-
-void PhyloTreeMixlen::gradient(const TVector &x, TVector &grad) {
-    int i;
-    double xx[mixlen];
-    for (i = 0; i < mixlen; i++)
-        xx[i] = x(i);
-    double df[mixlen+1], ddf[mixlen*mixlen];
-    computeFuncDervMulti(xx, df, ddf);
-    for (i = 0; i < mixlen; i++)
-        grad(i) = df[i];
-}
-
-void PhyloTreeMixlen::hessian(const TVector &x, THessian &hessian) {
-    int i, j;
-    double xx[mixlen];
-    for (i = 0; i < mixlen; i++)
-        xx[i] = x(i);
-    int mixlen2 = mixlen*mixlen;
-    double df[mixlen+1], ddf[mixlen2];
-    computeFuncDervMulti(xx, df, ddf);
-
-    for (i = 0; i < mixlen; i++)
-        for (j = 0; j < mixlen; j++)
-            hessian(i, j) = ddf[i*mixlen+j];
-}
-#endif
-
-/**
- * clear the array "relative_treelen"
- */
-void PhyloTreeMixlen::clear_relative_treelen() {
-    relative_treelen.clear();
 }
 
 // defining log-likelihood derivative function for EM algorithm

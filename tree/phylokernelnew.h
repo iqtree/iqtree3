@@ -2082,7 +2082,7 @@ void PhyloTree::computeLikelihoodBufferGenericSIMD(PhyloNeighbor *dad_branch, Ph
     // reserve 3*block for computeLikelihoodDerv
     double *buffer_partial_lh_ptr = buffer_partial_lh + 3*get_safe_upper_limit(block);
     if (isMixlen()) {
-        size_t nmix = getMixlen();
+        size_t nmix = getNMixlen();
         buffer_partial_lh_ptr += nmix*(nmix+1)*VectorClass::size() + (nmix+3)*nmix*VectorClass::size()*num_packets;
     }
 
@@ -2367,7 +2367,7 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
 
     VectorClass *all_dfvec = nullptr;
     VectorClass *all_ddfvec = nullptr;
-    size_t nmixlen = getMixlen(), nmixlen2 = nmixlen*nmixlen;
+    size_t nmixlen = getNMixlen(), nmixlen2 = nmixlen*nmixlen;
     if (isMixlen()) {
         ASSERT(nmixlen == ncat);
         all_dfvec = (VectorClass*)buffer_partial_lh_ptr;

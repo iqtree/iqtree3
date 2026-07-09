@@ -266,7 +266,11 @@ public:
 	 */
 	double optimizeParametersOnly(int num_steps, double gradient_epsilon, double cur_logl);
 
-	/************* FOLLOWING FUNCTIONS SERVE FOR JOINT OPTIMIZATION OF MODEL AND RATE PARAMETERS *******/
+    /**
+     *  Sort mixlen classes in ascending order of tree lengths
+     *  @return Tree string with sorted branch lengths
+     */
+    string sortClassesByTreeLength();
 
 	/**
 	 * TRUE to optimize all parameters simultaneously, default: FALSE

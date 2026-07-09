@@ -299,36 +299,31 @@ void PhyloSuperTree::readTreeString(const string &tree_string) {
 
 }
 
-
-/**
- * save branch lengths into a vector
- */
-void PhyloSuperTree::saveBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
-    ASSERT(getMixlen() == 1); // supertree and treemixlen not allowed together
-	int totalBranchNum = branchNum * getMixlen();
-	iterator it;
-	for (it = begin(); it != end(); it++) {
-		totalBranchNum += (*it)->branchNum * (*it)->getMixlen();
-	}
-	lenvec.resize(startid + totalBranchNum);
-
-	PhyloTree::saveBranchLengths(lenvec, startid);
-	startid += branchNum * getMixlen();
-	for (iterator it = begin(); it != end(); it++) {
-		(*it)->saveBranchLengths(lenvec, startid);
-		startid += (*it)->branchNum * (*it)->getMixlen();
-	}
+void PhyloSuperTree::saveBranchLengths(DoubleVector &lenvec, size_t startid, PhyloNode *, PhyloNode *) {
+    if (!isSuperTreeUnlinked()) {
+        PhyloTree::saveBranchLengths(lenvec, startid);
+        startid += branchNum * getNMixlen();
+    }
+    size_t min_size = startid;
+    for (iterator it = begin(); it != end(); ++it) {
+        min_size += (*it)->branchNum * (*it)->getNMixlen();
+    }
+    lenvec.resize(max(lenvec.size(), min_size), 0.0);
+    for (iterator it = begin(); it != end(); ++it) {
+        (*it)->saveBranchLengths(lenvec, startid);
+        startid += (*it)->branchNum * (*it)->getNMixlen();
+    }
 }
-/**
- * restore branch lengths from a vector previously called with saveBranchLengths
- */
-void PhyloSuperTree::restoreBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
-	PhyloTree::restoreBranchLengths(lenvec, startid);
-	startid += branchNum * getMixlen();
-	for (iterator it = begin(); it != end(); it++) {
-		(*it)->restoreBranchLengths(lenvec, startid);
-		startid += (*it)->branchNum * (*it)->getMixlen();
-	}
+
+void PhyloSuperTree::restoreBranchLengths(DoubleVector &lenvec, size_t startid, PhyloNode *, PhyloNode *) {
+    if (!isSuperTreeUnlinked()) {
+        PhyloTree::restoreBranchLengths(lenvec, startid);
+        startid += branchNum * getNMixlen();
+    }
+    for (iterator it = begin(); it != end(); ++it) {
+        (*it)->restoreBranchLengths(lenvec, startid);
+        startid += (*it)->branchNum * (*it)->getNMixlen();
+    }
 }
 
 int PhyloSuperTree::collapseInternalBranches(Node *node, Node *dad, double threshold) {

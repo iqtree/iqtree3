@@ -94,16 +94,7 @@ public:
      restore object from the checkpoint
      */
     virtual void restoreCheckpoint() override;
-    
-    /**
-     * save branch lengths into a vector
-     */
-    virtual void saveBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
-    /**
-     * restore branch lengths from a vector previously called with saveBranchLengths
-     */
-    virtual void restoreBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr) override;
-    
+
     /** set the root by name
      @param my_root root node name
      @param multi_taxa TRUE if my_root is a comma-separated list of nodes
