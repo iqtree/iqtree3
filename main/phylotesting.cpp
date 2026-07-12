@@ -1910,22 +1910,20 @@ PhyloSuperTree* mergePartitions(PhyloSuperTree* super_tree, vector<set<int> > &g
 }
 
 /**
- called when some partition is changed
+ *  Called after some partitions could be changed by ModelOMatic
  */
-void fixPartitions(PhyloSuperTree* super_tree) {
-    SuperAlignment *super_aln = (SuperAlignment*)super_tree->aln;
-    int part;
-    bool aln_changed = false;
-    for (part = 0; part < super_tree->size(); part++)
-        if (super_aln->partitions[part] != super_tree->at(part)->aln) {
-            aln_changed = true;
-            super_aln->partitions[part] = super_tree->at(part)->aln;
-        }
-    if (!aln_changed)
-        return;
-    super_aln->buildPattern();
-    super_aln->orderPatternByNumChars(PAT_VARIANT);
-    super_tree->deleteAllPartialLh();
+static void fixPartitions(PhyloSuperTree *stree) {
+    // Alignments of some subtrees might have changed seq_type
+    // (from CODON to DNA or PROT), but we don't know which ones.
+    // They are dangling pointers in saln->partitions now, so we
+    // reset all partitions and recompute all relevant info in saln
+    SuperAlignment *saln = (SuperAlignment*)stree->aln;
+    for (size_t part = 0; part < stree->size(); ++part) {
+        saln->partitions[part] = stree->at(part)->aln;
+    }
+    saln->countConstSites();
+    saln->orderPatternByNumChars(PAT_VARIANT);
+    stree->deleteAllPartialLh();
 }
 
 string CandidateModel::evaluate(Params &params,
