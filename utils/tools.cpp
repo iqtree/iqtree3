@@ -4549,10 +4549,12 @@ void parseArg(int argc, char *argv[], Params &params) {
 			}
 			if (strcmp(argv[cnt], "-AIC") == 0) {
 				params.model_test_criterion = MTC_AIC;
+				params.merit_specified = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-AICc") == 0 || strcmp(argv[cnt], "-AICC") == 0) {
 				params.model_test_criterion = MTC_AICC;
+				params.merit_specified = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-merit") == 0 || strcmp(argv[cnt], "--merit") == 0) {
@@ -4561,10 +4563,13 @@ void parseArg(int argc, char *argv[], Params &params) {
 					throw "Use -merit AIC|AICC|BIC";
                 if (strcmp(argv[cnt], "AIC") == 0) {
                     params.model_test_criterion = MTC_AIC;
+                    params.marginal_lh_aic = false;
                 } else if (strcmp(argv[cnt], "AICc") == 0 || strcmp(argv[cnt], "AICC") == 0) {
                     params.model_test_criterion = MTC_AICC;
+                    params.marginal_lh_aic = false;
                 } else if (strcmp(argv[cnt], "BIC") == 0) {
                     params.model_test_criterion = MTC_BIC;
+                    params.marginal_lh_aic = false;
                 } else if (strcmp(argv[cnt], "mAIC") == 0) {
                     params.marginal_lh_aic = true;
                     params.model_test_criterion = MTC_AIC;
@@ -4572,8 +4577,9 @@ void parseArg(int argc, char *argv[], Params &params) {
                     params.marginal_lh_aic = true;
                     params.model_test_criterion = MTC_BIC;
                 } else {
-                    throw "Use -merit AIC|AICC|BIC";
+                    throw "Use -merit AIC|AICC|BIC|mAIC|mAIC+BIC";
                 }
+                params.merit_specified = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-ms") == 0) {
@@ -5617,6 +5623,12 @@ void parseArg(int argc, char *argv[], Params &params) {
         if (params.partition_merge == MERGE_NONE)
             params.partition_merge = MERGE_RCLUSTERF;
 
+    // merging defaults to mAIC (i.e. -merit mAIC), unless the user asked for a particular merit
+    if (params.partition_merge != MERGE_NONE && !params.merit_specified) {
+        params.marginal_lh_aic = true;
+        params.model_test_criterion = MTC_AIC;
+    }
+
     // Set MrBayes Block Output if -mset mrbayes
     if (params.model_set == "mrbayes")
         params.mr_bayes_output = true;
@@ -5915,7 +5927,11 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "                       (e.g. -mrate E,I,G,I+G,R is used for -m MF)" << endl
     << "  --cmin NUM           Min categories for FreeRate model [+R] (default: 2)" << endl
     << "  --cmax NUM           Max categories for FreeRate model [+R] (default: 10)" << endl
-    << "  --merit AIC|AICc|BIC  Akaike|Bayesian information criterion (default: BIC)" << endl
+    << "  --merit AIC|AICc|BIC|mAIC|mAIC+BIC" << endl
+    << "                       Akaike|Bayesian information criterion (default: BIC," << endl
+    << "                       or mAIC when merging partitions). mAIC uses the" << endl
+    << "                       marginal AIC to merge partitions; mAIC+BIC merges by" << endl
+    << "                       mAIC but selects individual models by BIC" << endl
 //            << "  -msep                Perform model selection and then rate selection" << endl
     << "  --mtree              Perform full tree search for every model" << endl
     << "  --madd STR,...       List of mixture models to consider" << endl
@@ -7156,7 +7172,8 @@ void Params::setDefault() {
     merge_models = "1";
     merge_rates = "1";
     partfinder_log_rate = true;
-    
+    marginal_lh_aic = false; // turned on by default for +MERGE, see parseArg
+
     sequence_type = nullptr;
     aln_output = nullptr;
     aln_site_list = nullptr;
@@ -7403,6 +7420,7 @@ void Params::setDefault() {
     num_threads_orig = 0;
     openmp_by_model = false;
     model_test_criterion = MTC_BIC;
+    merit_specified = false;
     //    model_test_stop_rule = MTC_ALL;
     model_test_sample_size = 0;
     root_state = nullptr;

@@ -2388,6 +2388,10 @@ public:
     /** either MTC_AIC, MTC_AICc, MTC_BIC */
     ModelTestCriterion model_test_criterion;
 
+    /** true if the user selected a merit explicitly (-merit/-AIC/-AICc), which then
+        overrides the mAIC merging criterion that +MERGE turns on by default */
+    bool merit_specified;
+
     /** either MTC_AIC, MTC_AICc, MTC_BIC, or MTC_ALL to stop +R increasing categories */
 //    ModelTestCriterion model_test_stop_rule;
 
