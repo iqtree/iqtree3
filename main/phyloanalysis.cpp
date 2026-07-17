@@ -926,13 +926,13 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     // mAIC report
     if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED) {
         // compute mAIC/mBIC/mAICc if it is a partition model
-        double mix_lh = tree.getModelFactory()->computeMarginalLh(params.remove_empty_seq);
+        double mar_lh = tree.getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
         double mAIC, mAICc, mBIC;
-        computeInformationScores(mix_lh, df, ssize, mAIC, mAICc, mBIC);
+        computeInformationScores(mar_lh, df, ssize, mAIC, mAICc, mBIC);
 
         out << endl;
-        out << "Marginal log-likelihood of the tree: " << mix_lh << endl;
+        out << "Marginal log-likelihood of the tree: " << mar_lh << endl;
         out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << endl;
         //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
         //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
@@ -3995,6 +3995,12 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         cout << iqtree->collapseInternalBranches(nullptr, nullptr, params.min_branch_length*4);
         cout << " collapsed" << endl;
     }
+
+    // Pre-compute the marginal log-likelihood (mAIC) here, before the total runtime is
+    // reported, so its cost is included in the reported time. reportTree then just loads
+    // and prints the cached value like AIC/BIC.
+    if (iqtree->isSuperTree() && params.partition_type != TOPO_UNLINKED)
+        iqtree->getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
     printFinalSearchInfo(params, *iqtree, search_cpu_time, search_real_time);
 
