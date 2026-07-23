@@ -166,10 +166,15 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                 
                 // set the new PhyloTreeMixlen to the new tree
                 current_tree = new_tree;
-                
+
+                // update the pointer stored in the super tree's vector of partition
+                // trees; otherwise it keeps referencing the just-deleted old tree,
+                // causing a dangling-pointer crash later (e.g. in initSequences())
+                ((PhyloSuperTree*) tree)->at(i) = current_tree;
+
                 // re-load the tree/branch-lengths from the file
                 current_tree->IQTree::readTree(params->user_file, is_rooted, tree_line_index);
-                
+
                 // re-initialize the model
                 initializeModel(current_tree, current_tree->aln->model_name);
             }
