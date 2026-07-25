@@ -67,6 +67,10 @@
 #include <Eigen/Eigenvalues>
 #include <unsupported/Eigen/MatrixFunctions>
 
+#include "utils/mutsel_wrapper.h"
+#include "utils/self_process.h"
+#include <filesystem>
+
 using namespace Eigen;
 using Eigen::Map;
 
@@ -2570,7 +2574,30 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
 
 }
 
+// For MUTSEL model write a different file since we here only have the actual substitution rate
+void printMutselSiteRates(Alignment &alignment, const char *rate_file) {
+    DoubleVector site_rates = computeMutselSiteRates(alignment);
+    try {
+        ofstream out;
+        out.exceptions(ios::failbit | ios::badbit);
+        out.open(rate_file);
+        out.setf(ios::fixed, ios::floatfield);
+        out.precision(5);
+        out << "Site\tRate" << endl;
+        for (size_t i = 0; i < site_rates.size(); ++i)
+            out << i + 1 << "\t" << site_rates[i] << endl;
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, rate_file);
+    }
+    cout << "Site rates printed to " << rate_file << endl;
+}
+
 void printSiteRates(IQTree &iqtree, const char *rate_file, bool bayes) {
+    if (Params::getInstance().model_name.rfind("MUTSEL") == 0) {
+        printMutselSiteRates(*iqtree.aln, rate_file);
+        return;
+    }
     try {
         ofstream out;
         out.exceptions(ios::failbit | ios::badbit);
@@ -2588,7 +2615,7 @@ void printSiteRates(IQTree &iqtree, const char *rate_file, bool bayes) {
             << "#   Site:   Site ID within partition (starting from 1 for each partition)" << endl;
         } else
             out << "#   Site:   Alignment site ID" << endl;
-        
+
         if (bayes)
             out << "#   Rate:   Posterior mean site rate weighted by posterior probability" << endl
                 << "#   Cat:    Category with highest posterior (0=invariable, 1=slow, etc)" << endl
@@ -5196,18 +5223,57 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 
         // Initialize site-frequency model
         if (params.tree_freq_file) {
-            if (checkpoint->getBool("finishedSiteFreqFile")) {
-                alignment->readSiteStateFreq(((string)params.out_prefix + ".sitefreq").c_str());
-                params.print_site_state_freq = WSF_NONE;
-                cout << "CHECKPOINT: Site frequency model restored" << endl;
+            if ((std::string)params.tree_freq_file == "AUTO") {
+                cout << "INFO: Automatic guide tree inference using LG+F+G4" << endl;
+                auto guide_tree_out = (std::string)params.out_prefix + ".guide_tree";
+                if (fileExists(guide_tree_out + ".treefile")) {
+                    cout << "INFO: Guide tree already exists at " << guide_tree_out + ".treefile" << endl;
+                    params.tree_freq_file = strdup((guide_tree_out + ".treefile").c_str());
+                } else {
+                    cout << "INFO: Guide tree does not exist, inferring..." << endl;
+                    auto arguments = std::vector<std::string>{"-s", (std::string)params.aln_file, "-m", "LG+F+G4", "-nt", std::to_string(params.num_threads), "-pre", guide_tree_out};
+                    auto process = selfproc::spawn_self(arguments);
+                    auto exit_code = process.wait();
+                    if (exit_code != 0) {
+                        outError("Guide tree inference failed with exit code " + std::to_string(exit_code));
+                        exit(1);
+                    }
+                    cout << "INFO: Guide tree written to " << guide_tree_out + ".treefile" << endl;
+                    params.tree_freq_file = strdup((guide_tree_out + ".treefile").c_str());
+                }
+            }
+            if (params.model_name.rfind("MUTSEL") == 0) {
+                if (checkpoint->getBool("finishedSiteModelFile")) {
+                    auto rate_string = read_site_model_file((string)params.out_prefix + ".sitemodel", *alignment);
+                    alignment->model_name = "MUTSEL+" + rate_string;
+                    params.print_site_state_freq = WSF_NONE;
+                    cout << "CHECKPOINT: Site model restored" << endl;
+                } else {
+                    auto rate_string = computeMutselSiteFrequencyModel(params, alignment);
+                    alignment->model_name = "MUTSEL+" + rate_string;
+                    checkpoint->putBool("finishedSiteModelFile", true);
+                    checkpoint->dump();
+                }
             } else {
-                computeSiteFrequencyModel(params, alignment);
-                checkpoint->putBool("finishedSiteFreqFile", true);
-                checkpoint->dump();
+                if (checkpoint->getBool("finishedSiteFreqFile")) {
+                    alignment->readSiteStateFreq(((string)params.out_prefix + ".sitefreq").c_str());
+                    params.print_site_state_freq = WSF_NONE;
+                    cout << "CHECKPOINT: Site frequency model restored" << endl;
+                } else {
+                    computeSiteFrequencyModel(params, alignment);
+                    checkpoint->putBool("finishedSiteFreqFile", true);
+                    checkpoint->dump();
+                }
             }
         }
         if (params.site_freq_file) {
             alignment->readSiteStateFreq(params.site_freq_file);
+        }
+        if (params.site_model_file.empty() == false) {
+            auto rate_string = read_site_model_file(params.site_model_file, *alignment);
+            alignment->model_name = "MUTSEL+" + rate_string;
+            params.model_name = alignment->model_name;
+            params.print_site_state_freq = WSF_NONE;
         }
     }
 
@@ -5225,6 +5291,10 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     tree = newIQTree(params, alignment);
 
     tree->setCheckpoint(checkpoint);
+    // Increase the maximum branch length if MutSel is used because the time unit is different.
+    if (params.model_name.rfind("MUTSEL") == 0) {
+        params.max_branch_length = 200.0;
+    }
     if (tree->isTreeMix()) {
         ((IQTreeMix*) tree)->setMinBranchLen(params);
     } else if (params.min_branch_length <= 0.0) {
@@ -5243,6 +5313,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
             cout.precision(3);
         }
+
     }
     // Increase the minimum branch length if PoMo is used.
     if (alignment->seq_type == SEQ_POMO) {

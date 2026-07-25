@@ -4098,6 +4098,10 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
                         memcpy(state_freq, aln->ptn_state_freq[ptn], num_states*sizeof(double));
                     }
                     ptn_state_freq.push_back(state_freq);
+                    if (!aln->site_rate_matrices.empty()) {
+                        const double *rate_matrix = aln->site_rate_matrices.data() + ptn * 190;
+                        site_rate_matrices.insert(site_rate_matrices.end(), rate_matrix, rate_matrix + 190);
+                    }
                 }
                 if (pattern_freq) {
                     ((*pattern_freq)[ptn])++;
@@ -4181,6 +4185,9 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     		begin_site += site_vec[part];
     		out_site += site_vec[part+1];
     	}
+    }
+    if (!aln->site_rate_matrices.empty()) {
+        ASSERT(aln->site_rate_matrices.size() == aln->getNPattern() * 190);
     }
     if (aln->isSSF()) {
         ASSERT(ptn_state_freq.size() == getNPattern());

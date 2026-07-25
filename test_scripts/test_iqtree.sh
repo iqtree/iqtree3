@@ -118,3 +118,5 @@ run_timed ${IQTREE_BIN} -s $AA_FASTA -m "MIX{LG+F,WAG+F}" --prefix ${OUT_DIR}/tu
 run_timed ${IQTREE_BIN} -s $AA_FASTA -p $AA_NEX -g ${WD}/turtle.constr.tree --prefix ${OUT_DIR}/turtle_aa.nex.constr -T 1 -seed $SEED
 
 run_timed ${IQTREE_BIN} -s $AA_FASTA -p $AA_NEX -g ${WD}/turtle.constr.tree2 -B 1000 -alrt 1000 --prefix ${OUT_DIR}/turtle_aa.nex.constr2 -T 1 -seed $SEED
+
+run_timed ${IQTREE_BIN} -s $AA_FASTA -m "MUTSEL" -ft AUTO --prefix ${OUT_DIR}/turtle_aa.mutsel -T 1 -seed $SEED

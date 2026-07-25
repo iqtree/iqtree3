@@ -14,6 +14,7 @@ add_library(main
     terraceanalysis.h
 )
 
+
 if (USE_BOOSTER)
     target_link_libraries(main booster)
 endif()

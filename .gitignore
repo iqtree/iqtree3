@@ -35,3 +35,4 @@ zlib-1.2.7/
 /.direnv/
 /.envrc
 softwipe_build
+mutsel_rust/target/

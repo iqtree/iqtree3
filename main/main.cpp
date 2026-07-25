@@ -64,6 +64,7 @@
 #include "utils/operatingsystem.h" //for getOSName()
 #include <stdlib.h>
 #include "vectorclass/instrset.h"
+#include "main/outstreambuf.h"
 #include "alignment/alignment.h"
 
 #include "utils/MPIHelper.h"
@@ -1686,30 +1687,6 @@ void processNCBITree(Params &params) {
     }
 }
 
-/* write simultaneously to cout/cerr and a file */
-class outstreambuf : public streambuf {
-public:
-    outstreambuf* open( const char* name, ios::openmode mode = ios::out);
-    bool is_open();
-    outstreambuf* close();
-    ~outstreambuf() { close(); }
-    streambuf *get_fout_buf() {
-        return fout_buf;
-    }
-    streambuf *get_cout_buf() {
-        return cout_buf;
-    }
-    ofstream *get_fout() {
-        return &fout;
-    }
-    
-protected:
-    ofstream fout;
-    streambuf *cout_buf;
-    streambuf *fout_buf;
-    virtual int     overflow( int c = EOF);
-    virtual int     sync();
-};
 
 outstreambuf* outstreambuf::open( const char* name, ios::openmode mode) {
     if (!(Params::getInstance().suppress_output_flags & OUT_LOG)) {

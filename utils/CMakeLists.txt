@@ -13,7 +13,17 @@ progress.cpp progress.h
 timeutil.h hammingdistance.h
 operatingsystem.cpp operatingsystem.h
 heapsort.h
+mutsel_wrapper.cpp mutsel_wrapper.h
+self_process.h
 )
+
+if (USE_MUTSEL STREQUAL "ON")
+    add_dependencies(utils mutsel)
+    target_link_libraries(utils "${MUTSEL_RUST_LIB_PATH}")
+    if (WIN32)
+        target_link_libraries(utils ntdll userenv bcrypt ws2_32)
+    endif()
+endif()
 
 if(ZLIB_FOUND)
   target_link_libraries(utils ${ZLIB_LIBRARIES})

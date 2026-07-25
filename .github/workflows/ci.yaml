@@ -45,6 +45,13 @@ jobs:
           sudo apt-get update -q -y
           sudo apt-get install -q -y clang-${{ matrix.clang-version }} lld-${{ matrix.clang-version }} libomp-${{ matrix.clang-version }}-dev libeigen3-dev libboost-dev
           sudo ln -sf $(which ld.lld-${{ matrix.clang-version }}) /usr/local/bin/ld.lld
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
 
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
@@ -55,7 +62,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which clang-${{ matrix.clang-version }}) -DCMAKE_CXX_COMPILER=$(which clang++-${{ matrix.clang-version }})
+          cmake .. -DUSE_MUTSEL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DIQTREE_FLAGS=static -DCMAKE_C_COMPILER=$(which clang-${{ matrix.clang-version }}) -DCMAKE_CXX_COMPILER=$(which clang++-${{ matrix.clang-version }})
           make -j
           make package
           file iqtree3 | grep x86-64
@@ -109,11 +116,18 @@ jobs:
           sudo apt-get update -q -y
           sudo apt-get install -q -y gcc g++ libeigen3-dev libboost-dev
 
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
       - name: Build
         run: |
           mkdir build
           cd build
-          cmake .. -DIQTREE_FLAGS=static
+          cmake .. -DIQTREE_FLAGS=static -DUSE_MUTSEL=ON 
           make -j
           make package
           file iqtree3 | grep aarch64
@@ -199,6 +213,13 @@ jobs:
       - name: Install dependencies
         run: brew install make eigen boost libomp
 
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
       - name: Build
         run: |
           set -x
@@ -206,7 +227,7 @@ jobs:
           cd build
           export CPPFLAGS="-I/usr/local/opt/libomp/include"
           export CXXFLAGS="-I/usr/local/opt/libomp/include"
-          cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DEIGEN3_INCLUDE_DIR=$(brew --prefix eigen)/include/eigen3
+          cmake .. -DUSE_MUTSEL=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DEIGEN3_INCLUDE_DIR=$(brew --prefix eigen)/include/eigen3
           make -j
           make package
           file iqtree3 | grep x86_64
@@ -256,6 +277,13 @@ jobs:
       - name: Install dependencies
         run: brew install make eigen boost libomp
 
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
       - name: Build
         run: |
           set -x
@@ -263,7 +291,7 @@ jobs:
           cd build
           export CPPFLAGS="-I/opt/homebrew/opt/libomp/include"
           export CXXFLAGS="-I/opt/homebrew/opt/libomp/include"
-          cmake .. -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DEIGEN3_INCLUDE_DIR=$(brew --prefix eigen)/include/eigen3
+          cmake .. -DUSE_MUTSEL=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DEIGEN3_INCLUDE_DIR=$(brew --prefix eigen)/include/eigen3
           make -j
           make package
           file iqtree3 | grep arm64
@@ -378,6 +406,14 @@ jobs:
         shell: cmd
         run: choco install eigen
 
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          target: x86_64-pc-windows-gnu
       - name: Compile
         shell: cmd
         run: |
@@ -385,14 +421,19 @@ jobs:
           mkdir build
           cd build
           cmake -G "MinGW Makefiles" ^
+            -DUSE_MUTSEL=ON ^
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ^
-            -DCMAKE_C_FLAGS=--target=x86_64-pc-windows-gnu ^
-            -DCMAKE_CXX_FLAGS=--target=x86_64-pc-windows-gnu ^
+            -DCMAKE_C_FLAGS="--target=x86_64-pc-windows-gnu --sysroot=C:/mingw64 -B C:/mingw64/bin" ^
+            -DCMAKE_CXX_FLAGS="--target=x86_64-pc-windows-gnu --sysroot=C:/mingw64 -B C:/mingw64/bin" ^
             -DCMAKE_MAKE_PROGRAM=mingw32-make ^
             -DBoost_INCLUDE_DIR="C:/local/boost/include" ^
             -DBoost_LIBRARY_DIRS="C:/local/boost/lib" ^
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ^
-            -DIQTREE_FLAGS="static cpp14" ..
+            -DIQTREE_FLAGS="static" ..
+            
+          type CMakeFiles\iqtree3.dir\link.txt
+          type CMakeFiles\iqtree3.dir\linkLibs.rsp
+
           make -j
           make package
         env:
