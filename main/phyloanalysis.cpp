@@ -5244,13 +5244,13 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             }
             if (params.model_name.rfind("MUTSEL") == 0) {
                 if (checkpoint->getBool("finishedSiteModelFile")) {
-                    auto rate_string = read_site_model_file((string)params.out_prefix + ".sitemodel", *alignment);
-                    alignment->model_name = "MUTSEL+" + rate_string;
+                    read_site_model_file((string)params.out_prefix + ".sitemodel", *alignment);
+                    alignment->model_name = params.model_name;
                     params.print_site_state_freq = WSF_NONE;
                     cout << "CHECKPOINT: Site model restored" << endl;
                 } else {
-                    auto rate_string = computeMutselSiteFrequencyModel(params, alignment);
-                    alignment->model_name = "MUTSEL+" + rate_string;
+                    computeMutselSiteFrequencyModel(params, alignment);
+                    alignment->model_name = params.model_name;
                     checkpoint->putBool("finishedSiteModelFile", true);
                     checkpoint->dump();
                 }
@@ -5270,8 +5270,9 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             alignment->readSiteStateFreq(params.site_freq_file);
         }
         if (params.site_model_file.empty() == false) {
-            auto rate_string = read_site_model_file(params.site_model_file, *alignment);
-            alignment->model_name = "MUTSEL+" + rate_string;
+            read_site_model_file(params.site_model_file, *alignment);
+            std::cout << "INFO: Site model read from " << params.site_model_file << std::endl;
+            alignment->model_name = "MUTSEL";
             params.model_name = alignment->model_name;
             params.print_site_state_freq = WSF_NONE;
         }

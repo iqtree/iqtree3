@@ -242,7 +242,7 @@ pub struct MutselParams {
     branch_reg: f64,
 }
 
-fn parse_musel_str(model_str: &str) -> MutselParams {
+fn parse_mustel_str(model_str: &str) -> MutselParams {
     let model_str = model_str.trim();
     let model_upper = model_str.to_ascii_uppercase();
 
@@ -290,16 +290,12 @@ pub unsafe extern "C" fn rust_mutsel(
     num_sites: u32,
     num_leaves: u32,
     num_nodes: u32,
-    _pi_reg: f64,
-    _R_reg: f64,
     model_str: *const std::os::raw::c_char,
     prior_R_file: *const std::os::raw::c_char,
     prior_pi_file: *const std::os::raw::c_char,
-    _: *const std::os::raw::c_char,
     verbose: u8,
     out_site_freq: *mut f64,
     out_rate_matrix: *mut f64,
-    out_rate_para: *mut f64,
     output_prefix: *const std::os::raw::c_char,
 ) {
     let out_prefix = unsafe { std::ffi::CStr::from_ptr(output_prefix) }
@@ -330,24 +326,8 @@ pub unsafe extern "C" fn rust_mutsel(
     let model_str = model_cstr.to_str().unwrap();
 
     println!("Starting mutsel optimization with {}", model_str);
-    // Split at a + sign to separate the MUSTEL part and the rate model part
-    let plus_pos = model_str.find("+");
-    let (rate_model, mutsel_str) = if let Some(pos) = plus_pos {
-        (&model_str[pos + 1..], &model_str[..pos])
-    } else {
-        ("G1", model_str) // default
-    };
 
-    let mutsel_params = parse_musel_str(mutsel_str);
-
-    let rate_model = parse_rate_model(rate_model);
-
-    let out_rate_para = unsafe {
-        std::slice::from_raw_parts_mut(
-            out_rate_para as *mut MaybeUninit<f64>,
-            rate_model.num_para(),
-        )
-    };
+    let mutsel_params = parse_mustel_str(model_str);
 
     let felsenstein = io::create_felsenstein_tree(
         parents,
@@ -379,12 +359,12 @@ pub unsafe extern "C" fn rust_mutsel(
         num_leaves as usize,
     );
 
-    let (S, sqrt_pi, rate_para, _substitution_rates) = optimization::optimize_internal(
+    let (S, sqrt_pi, _rate_para, _substitution_rates) = optimization::optimize_internal(
         felsenstein,
         branch_lengths,
         aa_dist,
         mutsel_params,
-        rate_model,
+        RateModel::R(1),
         prior_R_file,
         prior_pi_file,
         substitution_model,
@@ -414,10 +394,6 @@ pub unsafe extern "C" fn rust_mutsel(
             }
         }
     }
-    let rate_para_vec = rate_para.to_vec1().unwrap();
-    for i in 0..rate_model.num_para() {
-        out_rate_para[i].write(rate_para_vec[i]);
-    }
     std::io::stdout().flush().unwrap();
     restore_stdout_stderr(saved_stdout, saved_stderr, tee_handle);
 }
@@ -427,16 +403,6 @@ enum RateModel {
     G(usize),
     R(usize),
     X(f64, SiteSpecificRateModel), // this is the strength of the prior
-}
-
-impl RateModel {
-    fn num_para(&self) -> usize {
-        match self {
-            RateModel::G(_) => 1,
-            RateModel::R(n) => 2 * n,
-            RateModel::X(_, _) => 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
