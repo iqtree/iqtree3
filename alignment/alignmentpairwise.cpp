@@ -33,12 +33,11 @@ AlignmentPairwise::AlignmentPairwise()
     STATE_UNKNOWN      = 0;
     trans_size         = 0;
     trans_mat          = nullptr;
-    sum_trans_mat      = nullptr;
     trans_derv1        = nullptr;
     trans_derv2        = nullptr;
+    sum_trans          = nullptr;
     sum_derv1          = nullptr;
     sum_derv2          = nullptr;
-    sum_trans          = nullptr;
     pairCount = 0;
     derivativeCalculationCount = 0;
     costCalculationCount = 0;
@@ -69,12 +68,11 @@ void AlignmentPairwise::setTree(PhyloTree* atree) {
     }
     pair_freq     = new double[total_size];
     trans_mat     = new double[trans_size];
-    sum_trans_mat = new double[trans_size];
+    trans_derv1   = new double[trans_size];
+    trans_derv2   = new double[trans_size];
     sum_trans     = new double[trans_size];
     sum_derv1     = new double[trans_size];
     sum_derv2     = new double[trans_size];
-    trans_derv1   = new double[trans_size];
-    trans_derv2   = new double[trans_size];
 
     pairCount = 0;
     derivativeCalculationCount = 0;
@@ -182,124 +180,21 @@ bool AlignmentPairwise::addPattern(int state1, int state2, int freq, int cat) {
 
 double AlignmentPairwise::computeFunction(double value) {
     ++costCalculationCount;
-    ModelSubst *model = tree->getModel();
-    RateHeterogeneity *site_rate = tree->getRate();
-    ModelFactory *model_factory = tree->getModelFactory();
-    size_t nptn = tree->aln->getNPattern();
-    size_t ncat = site_rate->getNRate(); // # rate categories
-    size_t mcat = (model_factory->fused_mix_rate) ? 1 : ncat; // # rate categories per mixture class
-    size_t nmix = model->getNMixtures(); // # mixture classes
-    size_t ncat_mix = mcat * nmix; // # rate-mixture categories
-    double lh = 0.0;
-    const double MIN_FREQ = Params::getInstance().min_branch_length;
-    const char *sequence1 = tree->getConvertedSequenceByNumber(seq_id1);
-    const char *sequence2 = tree->getConvertedSequenceByNumber(seq_id2);
-    const int *frequencies = tree->getConvertedSequenceFrequencies();
-    size_t sequenceLength = tree->getConvertedSequenceLength();
-    bool use_converted = tree->hasMatrixOfConvertedSequences() && (sequenceLength == nptn);
-    auto getPtnStatesAndFreq =
-    [use_converted, sequence1, sequence2, frequencies, this](size_t ptn, int &state1, int &state2, double &freq) {
-        if (use_converted) {
-            state1 = sequence1[ptn];
-            state2 = sequence2[ptn];
-            freq = double(frequencies[ptn]);
-        } else {
-            const Pattern &pat = tree->aln->at(ptn);
-            state1 = pat[seq_id1];
-            state2 = pat[seq_id2];
-            freq = double(pat.frequency);
-        }
-    };
-    // site-specific model or rates
-    // Covers all relevant combinations:
-    // - site-specific model + site-specific/categorized/usual rates
-    // - usual model + site-specific rates
-    if (model->isSiteSpecificModel() || site_rate->isSiteSpecificRate()) {
-#ifdef _OPENMP
-#pragma omp parallel for reduction(-:lh) schedule(dynamic,100)
-#endif
-        for (size_t ptn = 0; ptn < nptn; ++ptn) {
-            double freq;
-            int state1, state2;
-            getPtnStatesAndFreq(ptn, state1, state2, freq);
-            if (state1 >= num_states || state2 >= num_states) {
-                continue;
-            }
-            double lh_ptn = 0.0;
-            int model_id = model->getPtnModelID(ptn);
-            double rate = site_rate->getPtnRate(ptn);
-            for (size_t cm = 0; cm < ncat_mix; ++cm) {
-                size_t m = cm/mcat;
-                size_t c = cm%ncat;
-                if (nmix > 1) {
-                    model_id = m;
-                }
-                if (ncat > 1) {
-                    rate = site_rate->getRate(c);
-                }
-                double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
-                double trans = model_factory->computeTrans(value * rate, state1, state2, model_id);
-                lh_ptn += trans * prop;
-            }
-            if (state1 == state2) {
-                lh_ptn += site_rate->getPInvar();
-            }
-            lh -= log(lh_ptn) * freq;
-        }
-        return lh;
-    }
-    // usual model and categorized rates
-    if (site_rate->getPtnCat(0) >= 0) {
-        ASSERT(site_rate->getPInvar() == 0.0);
-        for (size_t cat = 0; cat < site_rate->getNDiscreteRate(); ++cat) {
-            std::fill_n(sum_trans_mat, trans_size, 0.0);
-            double rate = site_rate->getRate(cat);
-            for (size_t m = 0; m < nmix; ++m) {
-                double prop = model->getMixtureWeight(m);
-                model_factory->computeTransMatrix(value * rate, trans_mat, m);
-                for (int i = 0; i < trans_size; ++i) {
-                    sum_trans_mat[i] += trans_mat[i] * prop;
-                }
-            }
-            double *pair_pos = pair_freq + cat*trans_size;
-            for (int i = 0; i < trans_size; ++i) {
-                if (pair_pos[i] > MIN_FREQ) {
-                    ASSERT(sum_trans_mat[i] > 0.0);
-                    lh -= log(sum_trans_mat[i]) * pair_pos[i];
-                }
-            }
-        }
-        return lh;
-    }
-    // usual model and rates
-    std::fill_n(sum_trans_mat, trans_size, 0.0);
-    for (size_t cm = 0; cm < ncat_mix; ++cm) {
-        size_t m = cm/mcat;
-        size_t c = cm%ncat;
-        double rate = site_rate->getRate(c);
-        double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
-        model_factory->computeTransMatrix(value * rate, trans_mat, m);
-        for (int i = 0; i < trans_size; ++i) {
-            sum_trans_mat[i] += trans_mat[i] * prop;
-        }
-    }
-    double p_invar = site_rate->getPInvar();
-    if (p_invar > 0.0) {
-        for (int x = 0; x < num_states; ++x) {
-            sum_trans_mat[x*num_states+x] += p_invar;
-        }
-    }
-    for (int i = 0; i < trans_size; ++i) {
-        if (pair_freq[i] > MIN_FREQ) {
-            ASSERT(sum_trans_mat[i] > 0.0);
-            lh -= log(sum_trans_mat[i]) * pair_freq[i];
-        }
-    }
-    return lh;
+    double lh = 0.0, df = 0.0, ddf = 0.0;
+    likelihoodKernelFunction<false>(value, lh, df, ddf);
+    return -lh;
 }
 
 void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
     ++derivativeCalculationCount;
+    double lh = 0.0;
+    likelihoodKernelFunction<true>(value, lh, df, ddf);
+    df = -df;
+    ddf = -ddf;
+}
+
+template <bool COMPUTE_DERV>
+void AlignmentPairwise::likelihoodKernelFunction(double value, double &lh, double &df, double &ddf) {
     ModelSubst *model = tree->getModel();
     RateHeterogeneity *site_rate = tree->getRate();
     ModelFactory *model_factory = tree->getModelFactory();
@@ -308,7 +203,7 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
     size_t mcat = (model_factory->fused_mix_rate) ? 1 : ncat; // # rate categories per mixture class
     size_t nmix = model->getNMixtures(); // # mixture classes
     size_t ncat_mix = mcat * nmix; // # rate-mixture categories
-    df = ddf = 0.0;
+    lh = df = ddf = 0.0;
     const double MIN_FREQ = Params::getInstance().min_branch_length;
     const char *sequence1 = tree->getConvertedSequenceByNumber(seq_id1);
     const char *sequence2 = tree->getConvertedSequenceByNumber(seq_id2);
@@ -334,7 +229,7 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
     // - usual model + site-specific rates
     if (model->isSiteSpecificModel() || site_rate->isSiteSpecificRate()) {
 #ifdef _OPENMP
-#pragma omp parallel for reduction(-:df,ddf) schedule(dynamic,100)
+#pragma omp parallel for reduction(+:lh,df,ddf) schedule(dynamic,100)
 #endif
         for (size_t ptn = 0; ptn < nptn; ++ptn) {
             double freq;
@@ -356,24 +251,33 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
                     rate = site_rate->getRate(c);
                 }
                 double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
-                double prop_rate = prop * rate;
-                double prop_rate2 = prop_rate * rate;
-                double derv1, derv2;
-                double trans = model_factory->computeTrans(value * rate, state1, state2, derv1, derv2, model_id);
-                lh_ptn += trans * prop;
-                df_ptn += derv1 * prop_rate;
-                ddf_ptn += derv2 * prop_rate2;
+                if (!COMPUTE_DERV) {
+                    double trans = model_factory->computeTrans(value * rate, state1, state2, model_id);
+                    lh_ptn += trans * prop;
+                } else {
+                    double prop_rate = prop * rate;
+                    double prop_rate2 = prop_rate * rate;
+                    double derv1, derv2;
+                    double trans = model_factory->computeTrans(value * rate, state1, state2, derv1, derv2, model_id);
+                    lh_ptn += trans * prop;
+                    df_ptn += derv1 * prop_rate;
+                    ddf_ptn += derv2 * prop_rate2;
+                }
             }
             if (state1 == state2) {
                 lh_ptn += site_rate->getPInvar();
             }
-            // df = log(lh)' = lh'/lh
-            df_ptn /= lh_ptn;
-            df -= df_ptn * freq;
-            // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
-            ddf_ptn /= lh_ptn;
-            ddf_ptn -= df_ptn * df_ptn;
-            ddf -= ddf_ptn * freq;
+            if (!COMPUTE_DERV) {
+                lh += log(lh_ptn) * freq;
+            } else {
+                // df = log(lh)' = lh'/lh
+                df_ptn /= lh_ptn;
+                df += df_ptn * freq;
+                // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
+                ddf_ptn /= lh_ptn;
+                ddf_ptn -= df_ptn * df_ptn;
+                ddf += ddf_ptn * freq;
+            }
         }
         return;
     }
@@ -387,25 +291,36 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
             double rate = site_rate->getRate(cat);
             for (size_t m = 0; m < nmix; ++m) {
                 double prop = model->getMixtureWeight(m);
-                double prop_rate = prop * rate;
-                double prop_rate2 = prop_rate * rate;
-                model_factory->computeTransDerv(value * rate, trans_mat, trans_derv1, trans_derv2, m);
-                for (int i = 0; i < trans_size; ++i) {
-                    sum_trans[i] += trans_mat[i] * prop;
-                    sum_derv1[i] += trans_derv1[i] * prop_rate;
-                    sum_derv2[i] += trans_derv2[i] * prop_rate2;
+                if (!COMPUTE_DERV) {
+                    model_factory->computeTransMatrix(value * rate, trans_mat, m);
+                    for (int i = 0; i < trans_size; ++i) {
+                        sum_trans[i] += trans_mat[i] * prop;
+                    }
+                } else {
+                    double prop_rate = prop * rate;
+                    double prop_rate2 = prop_rate * rate;
+                    model_factory->computeTransDerv(value * rate, trans_mat, trans_derv1, trans_derv2, m);
+                    for (int i = 0; i < trans_size; ++i) {
+                        sum_trans[i] += trans_mat[i] * prop;
+                        sum_derv1[i] += trans_derv1[i] * prop_rate;
+                        sum_derv2[i] += trans_derv2[i] * prop_rate2;
+                    }
                 }
             }
             double *pair_pos = pair_freq + cat*trans_size;
             for (int i = 0; i < trans_size; ++i) {
                 if (pair_pos[i] > MIN_FREQ) {
                     ASSERT(sum_trans[i] > 0.0);
-                    // df = log(lh)' = lh'/lh
-                    double df_pair = sum_derv1[i] / sum_trans[i];
-                    df -= df_pair * pair_pos[i];
-                    // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
-                    double ddf_pair = sum_derv2[i] / sum_trans[i] - df_pair * df_pair;
-                    ddf -= ddf_pair * pair_pos[i];
+                    if (!COMPUTE_DERV) {
+                        lh += log(sum_trans[i]) * pair_pos[i];
+                    } else {
+                        // df = log(lh)' = lh'/lh
+                        double df_pair = sum_derv1[i] / sum_trans[i];
+                        df += df_pair * pair_pos[i];
+                        // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
+                        double ddf_pair = sum_derv2[i] / sum_trans[i] - df_pair * df_pair;
+                        ddf += ddf_pair * pair_pos[i];
+                    }
                 }
             }
         }
@@ -420,13 +335,20 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
         size_t c = cm%ncat;
         double rate = site_rate->getRate(c);
         double prop = site_rate->getProp(c) * model->getMixtureWeight(m);
-        double prop_rate = prop * rate;
-        double prop_rate2 = prop_rate * rate;
-        model_factory->computeTransDerv(value * rate, trans_mat, trans_derv1, trans_derv2, m);
-        for (int i = 0; i < trans_size; ++i) {
-            sum_trans[i] += trans_mat[i] * prop;
-            sum_derv1[i] += trans_derv1[i] * prop_rate;
-            sum_derv2[i] += trans_derv2[i] * prop_rate2;
+        if (!COMPUTE_DERV) {
+            model_factory->computeTransMatrix(value * rate, trans_mat, m);
+            for (int i = 0; i < trans_size; ++i) {
+                sum_trans[i] += trans_mat[i] * prop;
+            }
+        } else {
+            double prop_rate = prop * rate;
+            double prop_rate2 = prop_rate * rate;
+            model_factory->computeTransDerv(value * rate, trans_mat, trans_derv1, trans_derv2, m);
+            for (int i = 0; i < trans_size; ++i) {
+                sum_trans[i] += trans_mat[i] * prop;
+                sum_derv1[i] += trans_derv1[i] * prop_rate;
+                sum_derv2[i] += trans_derv2[i] * prop_rate2;
+            }
         }
     }
     double p_invar = site_rate->getPInvar();
@@ -438,12 +360,16 @@ void AlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
     for (int i = 0; i < trans_size; ++i) {
         if (pair_freq[i] > MIN_FREQ) {
             ASSERT(sum_trans[i] > 0.0);
-            // df = log(lh)' = lh'/lh
-            double df_pair = sum_derv1[i] / sum_trans[i];
-            df -= df_pair * pair_freq[i];
-            // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
-            double ddf_pair = sum_derv2[i] / sum_trans[i] - df_pair * df_pair;
-            ddf -= ddf_pair * pair_freq[i];
+            if (!COMPUTE_DERV) {
+                lh += log(sum_trans[i]) * pair_freq[i];
+            } else {
+                // df = log(lh)' = lh'/lh
+                double df_pair = sum_derv1[i] / sum_trans[i];
+                df += df_pair * pair_freq[i];
+                // ddf = log(lh)'' = (lh'/lh)' = lh''/lh - (lh'/lh)^2
+                double ddf_pair = sum_derv2[i] / sum_trans[i] - df_pair * df_pair;
+                ddf += ddf_pair * pair_freq[i];
+            }
         }
     }
 }
@@ -527,7 +453,6 @@ AlignmentPairwise::~AlignmentPairwise()
     delete [] sum_trans;
     delete [] trans_derv2;
     delete [] trans_derv1;
-    delete [] sum_trans_mat;
     delete [] trans_mat;
     delete [] pair_freq;
 }
