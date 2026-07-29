@@ -832,7 +832,7 @@ void ModelCodon::decomposeRateMatrix() {
     ModelMarkov::decomposeRateMatrix();
 }
 
-void ModelCodon::getQMatrix(double *q_mat, int mixture) {
+void ModelCodon::getQMatrix(double *q_mat, int) {
 
     double **rate_matrix = (double**) new double[num_states];
     int i, j;

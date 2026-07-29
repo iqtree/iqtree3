@@ -107,7 +107,7 @@ PartitionModel::PartitionModel(Params &params, PhyloSuperTree *tree, ModelsBlock
         cout << "rowsum: " << Q.rowwise().sum() << endl;
         Map<Matrix<double,Dynamic, Dynamic, RowMajor> >(pair_freq, nstates, nstates) = Q;
          */
-        ((ModelMarkov*)linked_models.begin()->second)->setFullRateMatrix(pair_freq, state_freq);
+        ((ModelMarkov*)linked_models.begin()->second)->setQMatrix(pair_freq, state_freq);
         ((ModelMarkov*)linked_models.begin()->second)->decomposeRateMatrix();
         delete [] state_freq;
         delete [] pair_freq;

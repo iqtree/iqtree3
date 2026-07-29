@@ -1,7 +1,7 @@
 //
 // C++ Implementation: substmodel
 //
-// Description: 
+// Description:
 //
 //
 // Author: BUI Quang Minh, Steffen Klaere, Arndt von Haeseler <minh.bui@univie.ac.at>, (C) 2008
@@ -10,19 +10,23 @@
 //
 //
 #include "modelsubst.h"
-#include "utils/tools.h"
 
-ModelSubst::ModelSubst(int nstates) : Optimization(), CheckpointFactory()
-{
-	num_states = nstates;
-	name = "JC";
-	full_name = "JC (Juke and Cantor, 1969)";
-	state_freq = new double[num_states];
-	for (int i = 0; i < num_states; i++)
-		state_freq[i] = 1.0 / num_states;
-	freq_type = FREQ_EQUAL;
+#include "utils/tools.h"
+#include <algorithm>
+
+ModelSubst::ModelSubst(int nstates) {
+    num_states = nstates;
     fixed_parameters = false;
-//    linked_model = nullptr;
+    name = "JC";
+    full_name = "JC (Jukes and Cantor, 1969)";
+    freq_type = FREQ_EQUAL;
+    state_freq = new double[num_states];
+    std::fill_n(state_freq, num_states, 1.0 / nstates);
+}
+
+ModelSubst::~ModelSubst() {
+    delete [] state_freq;
+    state_freq = nullptr;
 }
 
 void ModelSubst::startCheckpoint() {
@@ -31,11 +35,6 @@ void ModelSubst::startCheckpoint() {
 
 void ModelSubst::saveCheckpoint() {
     startCheckpoint();
-//    CKP_SAVE(num_states);
-//    CKP_SAVE(name);
-//    CKP_SAVE(full_name);
-//    CKP_SAVE(freq_type);
-    // if (freq_type == FREQ_ESTIMATE && !fixed_parameters)
     // output the frequencies in any circumstances
     CKP_ARRAY_SAVE(num_states, state_freq);
     endCheckpoint();
@@ -45,189 +44,102 @@ void ModelSubst::saveCheckpoint() {
 void ModelSubst::restoreCheckpoint() {
     CheckpointFactory::restoreCheckpoint();
     startCheckpoint();
-//    CKP_RESTORE(num_states);
-//    CKP_RESTORE(name);
-//    CKP_RESTORE(full_name);
-//    int freq_type = this->freq_type;
-//    CKP_RESTORE(freq_type);
-//    this->freq_type = (StateFreqType)freq_type;
-    if (freq_type == FREQ_ESTIMATE && !fixed_parameters)
+    if (freq_type == FREQ_ESTIMATE && !fixed_parameters) {
         CKP_ARRAY_RESTORE(num_states, state_freq);
+    }
     endCheckpoint();
-
     decomposeRateMatrix();
 }
 
-// here the simplest Juke-Cantor model is implemented, valid for all kind of data (DNA, AA,...)
-void ModelSubst::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
-	double non_diagonal = (1.0 - exp(-time*num_states/(num_states - 1))) / num_states;
-	double diagonal = 1.0 - non_diagonal * (num_states - 1);
-	int nstates_sqr = num_states * num_states;
+// The following functions directly implement the simplest Jukes-Cantor model,
+// which is valid for all kinds of data (DNA, AA, MORPH, etc)
 
-	for (int i = 0; i < nstates_sqr; i++)
-		if (i % (num_states+1) == 0) 
-			trans_matrix[i] = diagonal; 
-		else 
-			trans_matrix[i] = non_diagonal;
-}
-
-
-double ModelSubst::computeTrans(double time, int state1, int state2) {
-	double expt = exp(-time * num_states / (num_states-1));
-	if (state1 != state2) {
-		return (1.0 - expt) / num_states;
-	}
-	return (1.0 + (num_states-1)*expt) / num_states;
-
-/*	double non_diagonal = (1.0 - exp(-time*num_states/(num_states - 1))) / num_states;
-	if (state1 != state2)
-		return non_diagonal;
-	return 1.0 - non_diagonal * (num_states - 1);*/
-}
-
-double ModelSubst::computeTrans(double time, int model_id, int state1, int state2) {
-	return computeTrans(time, state1, state2);
-}
-
-double ModelSubst::computeTrans(double time, int state1, int state2, double &derv1, double &derv2) {
-	double coef = -double(num_states) / (num_states-1);
-	double expt = exp(time * coef);
-	if (state1 != state2) {
-		derv1 = expt / (num_states-1);
-		derv2 = derv1 * coef;
-		return (1.0 - expt) / num_states;
-	}
-
-	derv1 = -expt;
-	derv2 = derv1 * coef;
-	return (1.0 + (num_states-1)*expt) / num_states;
-}
-
-double ModelSubst::computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) {
-	return computeTrans(time, state1, state2, derv1, derv2);
-}
-
-void ModelSubst::getRateMatrix(double *rate_mat) {
-	int nrate = getNumRateEntries();
-	for (int i = 0; i < nrate; i++)
-		rate_mat[i] = 1.0;
-}
-
-void ModelSubst::getQMatrix(double *q_mat, int mixture) {
-	int i, j, k;
-	for (i = 0, k = 0; i < num_states; i++)
-		for (j = 0; j < num_states; j++, k++)
-			if (i == j) q_mat[k] = -1.0; else q_mat[k] = 1.0/3;
-}
-
-void ModelSubst::getStateFrequency(double *state_freq, int mixture) {
-	double freq = 1.0 / num_states;
-	for (int i = 0; i < num_states; i++)
-		state_freq[i] = freq;
-}
-
-void ModelSubst::setStateFrequency(double *state_freq) {
-    memcpy(this->state_freq, state_freq, sizeof(double)*num_states);
-}
-
-void ModelSubst::computeTransDerv(double time, double *trans_matrix, 
-		double *trans_derv1, double *trans_derv2, int mixture)
-{
-	double expf = exp(-time*num_states/(num_states - 1));
-	double non_diag = (1.0 - expf) / num_states;
-	double diag = 1.0 - non_diag * (num_states - 1);
-	double derv1_non_diag = expf / (num_states-1);
-	double derv1_diag = -expf;
-	double derv2_non_diag = -derv1_non_diag*num_states/(num_states-1);
-	double derv2_diag = -derv1_diag*num_states/(num_states-1);
-
-	int nstates_sqr = num_states * num_states;
-	int i;
-	for (i = 0; i < nstates_sqr; i++)
-		if (i % (num_states+1) == 0) { 
-			trans_matrix[i] = diag;
-			trans_derv1[i] = derv1_diag;
-			trans_derv2[i] = derv2_diag;
-		} else { 
-			trans_matrix[i] = non_diag;
-			trans_derv1[i] = derv1_non_diag;
-			trans_derv2[i] = derv2_non_diag;
-		}
-
-	// DEBUG
-	/*int j;
-	if (verbose_mode == VB_DEBUG) {
-		cout.precision(4);
-		cout << "time = " << time << endl;
-		for (i = 0; i < num_states; i++, cout << endl) {
-			for (j = 0; j < num_states; j++) {
-				cout.width(8);
-				cout << right << trans_matrix[i*num_states+j] << " ";
-			}
-			cout << "| ";
-			for (j = 0; j < num_states; j++) {
-				cout << right << trans_derv1[i*num_states+j] << " ";
-				cout.width(8);
-			}
-			cout << "| ";
-			for (j = 0; j < num_states; j++) {
-				cout.width(8);
-				cout << right << trans_derv2[i*num_states+j] << " ";
-			}
-		}
-		cout.precision(10);
-	}*/
-
-}
-
-void ModelSubst::multiplyWithInvEigenvector(double *state_lk) {
-    int mnstates = get_safe_upper_limit(num_states);
-    int nmixtures = getNMixtures();
-    double *inv_eigenvectors = getInverseEigenvectors();
-    double saved_state_lk[num_states];
-    memcpy(saved_state_lk, state_lk, sizeof(double)*num_states);
-    memset(state_lk, 0, sizeof(double)*num_states*nmixtures);
-    for (int m = 0; m < nmixtures; m++) {
-        double *inv_evec = &inv_eigenvectors[m * mnstates * num_states];
-        double *this_state_lk = &state_lk[m*num_states];
-        for (int i = 0; i < num_states; i++)
-            for (int j = 0; j < num_states; j++, inv_evec++)
-              this_state_lk[i] += (*inv_evec) * saved_state_lk[j];
+void ModelSubst::computeTransMatrix(double time, double *trans_matrix, int, int) {
+    double coef = -double(num_states) / (num_states-1);
+    double expt = exp(time * coef);
+    double lh_non_diag = (1.0 - expt) / num_states;
+    double lh_diag = 1.0 - (lh_non_diag * (num_states-1));
+    for (int i = 0, k = 0; i < num_states; ++i) {
+        for (int j = 0; j < num_states; ++j, ++k) {
+            trans_matrix[k] = (i == j) ? lh_diag : lh_non_diag;
+        }
     }
+}
+
+void ModelSubst::computeTransDerv(double time, double *trans_matrix,
+                                  double *trans_derv1, double *trans_derv2, int) {
+    double coef = -double(num_states) / (num_states-1);
+    double expt = exp(time * coef);
+    double lh_non_diag = (1.0 - expt) / num_states;
+    double lh_diag = 1.0 - (lh_non_diag * (num_states-1));
+    double derv1_non_diag = expt / (num_states-1);
+    double derv1_diag = -expt;
+    double derv2_non_diag = derv1_non_diag * coef;
+    double derv2_diag = derv1_diag * coef;
+    for (int i = 0, k = 0; i < num_states; ++i) {
+        for (int j = 0; j < num_states; ++j, ++k) {
+            trans_matrix[k] = (i == j) ? lh_diag : lh_non_diag;
+            trans_derv1[k] = (i == j) ? derv1_diag : derv1_non_diag;
+            trans_derv2[k] = (i == j) ? derv2_diag : derv2_non_diag;
+        }
+    }
+}
+
+double ModelSubst::computeTrans(double time, int state1, int state2, int) {
+    double coef = -double(num_states) / (num_states-1);
+    double expt = exp(time * coef);
+    if (state1 != state2) {
+        return (1.0 - expt) / num_states;
+    }
+    return (1.0 + (expt * (num_states-1))) / num_states;
+}
+
+double ModelSubst::computeTrans(double time, int state1, int state2,
+                                double &derv1, double &derv2, int) {
+    double coef = -double(num_states) / (num_states-1);
+    double expt = exp(time * coef);
+    if (state1 != state2) {
+        derv1 = expt / (num_states-1);
+        derv2 = derv1 * coef;
+        return (1.0 - expt) / num_states;
+    }
+    derv1 = -expt;
+    derv2 = derv1 * coef;
+    return (1.0 + (expt * (num_states-1))) / num_states;
+}
+
+void ModelSubst::getRateMatrix(double *rate_mat, int) {
+    int nrate = getNumRateEntries();
+    std::fill_n(rate_mat, nrate, 1.0);
+}
+
+void ModelSubst::getQMatrix(double *q_mat, int) {
+    double q_non_diag = 1.0 / (num_states-1);
+    for (int i = 0, k = 0; i < num_states; ++i) {
+        for (int j = 0; j < num_states; ++j, ++k) {
+            q_mat[k] = (i == j) ? -1.0 : q_non_diag;
+        }
+    }
+}
+
+void ModelSubst::getStateFrequency(double *freq_vec, int) {
+    std::fill_n(freq_vec, num_states, 1.0 / num_states);
 }
 
 void ModelSubst::computeTipLikelihood(PML::StateType state, double *state_lk) {
     if (state < num_states) {
         // single state
-        memset(state_lk, 0, num_states*sizeof(double));
+        std::fill_n(state_lk, num_states, 0.0);
         state_lk[state] = 1.0;
     } else {
         // unknown state
-        for (int i = 0; i < num_states; i++)
-            state_lk[i] = 1.0;
+        std::fill_n(state_lk, num_states, 1.0);
     }
 }
 
-double *ModelSubst::newTransMatrix() {
-	return new double[num_states * num_states];
-}
-
-void ModelSubst::printMrBayesModelText(ofstream& out, string partition, string charset) {
+void ModelSubst::printMrBayesModelText(ofstream &out, string partition, string charset) {
     out << "using MrBayes model GTR+G+I]" << endl;
     out << "  [Model not supported by MrBayes, defaulting to GTR+G+I (DNA)]" << endl;
     outWarning("MrBayes output is not supported by model " + name + ", defaulting to GTR+G+I (DNA)!");
-
     out << "  lset applyto=(" << partition << ") nucmodel=4by4 nst=" << 6 << " rates=" << "invgamma" << ";" << endl;
 }
-
-ModelSubst::~ModelSubst()
-{
-    // mem space pointing to target model and thus avoid double free here
-//    if (linked_model && linked_model != this)
-//        return;
-
-    if (state_freq) delete [] state_freq;
-}
-
-
-
