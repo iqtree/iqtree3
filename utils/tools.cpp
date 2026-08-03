@@ -5888,7 +5888,7 @@ void usage_iqtree(char* argv[], bool full_command) {
     << endl << "ULTRAFAST BOOTSTRAP/JACKKNIFE:" << endl
     << "  -B, --ufboot NUM     Replicates for ultrafast bootstrap (>=1000)" << endl
     << "  -J, --ufjack NUM     Replicates for ultrafast jackknife (>=1000)" << endl
-    << "  --jack-prop NUM      Subsampling proportion for jackknife (default: 0.5)" << endl
+    << "  --jack-prop NUM      Site removal proportion for jackknife (default: 0.5)" << endl
     << "  --sampling STRING    GENE|GENESITE resampling for partitions (default: SITE)" << endl
     << "  --boot-trees         Write bootstrap trees to .ufboot file (default: none)" << endl
     << "  --wbtl               Like --boot-trees but also writing branch lengths" << endl
@@ -5901,7 +5901,7 @@ void usage_iqtree(char* argv[], bool full_command) {
     << endl << "NON-PARAMETRIC BOOTSTRAP/JACKKNIFE:" << endl
     << "  -b, --boot NUM       Replicates for bootstrap + ML tree + consensus tree" << endl
     << "  -j, --jack NUM       Replicates for jackknife + ML tree + consensus tree" << endl
-    << "  --jack-prop NUM      Subsampling proportion for jackknife (default: 0.5)" << endl
+    << "  --jack-prop NUM      Site removal proportion for jackknife (default: 0.5)" << endl
     << "  --bcon NUM           Replicates for bootstrap + consensus tree" << endl
     << "  --bonly NUM          Replicates for bootstrap only" << endl
 #ifdef USE_BOOSTER

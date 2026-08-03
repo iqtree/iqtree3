@@ -2151,7 +2151,11 @@ int Alignment::buildPattern(StrVector &sequences, char *sequence_type, int nseq,
         break;
     default:
         if (!sequence_type) {
-            throw "Unknown sequence type";
+            throw (string)
+            "IQ-TREE cannot confidently detect the sequence data type.\n"+
+            "Please specify the sequence type by adding the command line\n"+
+            "option -st e.g. -st DNA, -st AA, etc. A list of all available\n"+
+            "sequence data types is maintained here:\n"+ "https://iqtree.github.io/doc/Command-Reference";
         }
     }
     bool nt2aa = false;
