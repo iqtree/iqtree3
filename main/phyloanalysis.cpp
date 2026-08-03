@@ -1278,7 +1278,7 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         cout << "  Logl of intermediate trees:    " << params.out_prefix <<  ".ditrees_lh" << endl;
     }
 
-    if (params.gbo_replicates) {
+    if (params.gbo_replicates && tree.leafNum > 3) {
         cout << endl << "Ultrafast " << RESAMPLE_NAME << " approximation results written to:" << endl;
         if (!tree.isSuperTreeUnlinked())
             cout << "  Split support values:          " << params.out_prefix << ".splits.nex" << endl
@@ -1726,7 +1726,7 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
          << "Burn-in: " << params.tree_burnin << endl << endl;
          }*/
 
-        if (params.consensus_type == CT_CONSENSUS_TREE && !tree.isSuperTreeUnlinked()) {
+        if (params.consensus_type == CT_CONSENSUS_TREE && !tree.isSuperTreeUnlinked() && tree.leafNum > 3) {
             out << "CONSENSUS TREE" << endl << "--------------" << endl << endl;
             out << "Consensus tree is constructed from "
                     << (params.num_bootstrap_samples ? params.num_bootstrap_samples : params.gbo_replicates)
@@ -3981,7 +3981,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         }
     }
 
-    if (params.gbo_replicates > 0) {
+    if (params.gbo_replicates > 0 && iqtree->leafNum > 3) {
         cout << "Creating " << RESAMPLE_NAME << " support values..." << endl;
         if (!params.online_bootstrap)
             outError("Obsolete feature");
@@ -4019,7 +4019,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     */
     
-    if (params.gbo_replicates && params.online_bootstrap && !iqtree->isSuperTreeUnlinked()) {
+    if (params.gbo_replicates && params.online_bootstrap && !iqtree->isSuperTreeUnlinked() && iqtree->leafNum > 3) {
         
         cout << endl << "Computing " << RESAMPLE_NAME << " consensus tree..." << endl;
         string splitsfile = params.out_prefix;
@@ -5361,7 +5361,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 //        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
 //            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
         if (alignment->getNSeq() < 4)
-            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+            outWarning("It makes no sense to perform bootstrap with less than 4 sequences.");
         runStandardBootstrap(params, alignment, tree);
     }
 

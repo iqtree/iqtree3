@@ -335,7 +335,7 @@ void IQTree::initSettings(Params &params) {
 
     if (params.online_bootstrap && params.gbo_replicates > 0 && !isSuperTreeUnlinked()) {
         if (aln->getNSeq() < 4) {
-            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+            outWarning("It makes no sense to perform bootstrap with less than 4 sequences.");
         }
 
         string bootaln_name = params.out_prefix;
