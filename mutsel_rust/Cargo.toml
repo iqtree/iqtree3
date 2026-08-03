@@ -1,0 +1,28 @@
+[package]
+name = "mutsel_rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+lazy_static = "1.5.0"
+phylo_grad = { git = "https://github.com/soedinglab/phylo_grad", rev="939dedb07605411bd6b2dbb4d3d733f842a15ff5"}
+rayon = "1.11.0"
+phylotree = "0.1.3"
+seq_io = "0.3.4"
+libc = "0.2.182"
+spec_math = "0.1.6"
+
+[lib]
+name = "mutsel_rust"
+crate-type = ["staticlib", "rlib"]
+
+[profile.release]
+lto = false # There seems to be an issue with LLVM which makes the code slower when using lto
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
+

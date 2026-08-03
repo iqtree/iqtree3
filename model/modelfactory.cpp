@@ -639,39 +639,61 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 //        fused_mix_rate &= model->isMixture() && site_rate->getNRate() > 1;
     } else {
         // site-specific model
-        if (model_str == "JC" || model_str == "POISSON")
-            outError("JC is not suitable for site-specific model");
-        model = new ModelSet(model_str.c_str(), tree);
-        ModelSet *models = (ModelSet*)model; // assign pointer for convenience
-        models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
-        double *state_freq = new double[model->num_states];
-        double *rates = new double[model->getNumRateEntries()];
-        for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
-            ModelMarkov *modeli;
-            if (i == 0) {
-                modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
-                modeli->getStateFrequency(state_freq);
-                modeli->getRateMatrix(rates);
-            } else {
-                modeli = (ModelMarkov*)createModel(model_str, models_block, FREQ_EQUAL, "", tree);
-                modeli->setStateFrequency(state_freq);
-                modeli->setRateMatrix(rates);
+
+        if (tree->aln->site_rate_matrices.empty()) {
+            // PMSF
+            if (model_str == "JC" || model_str == "POISSON")
+                outError("JC is not suitable for site-specific model");
+            model = new ModelSet(model_str.c_str(), tree);
+            ModelSet *models = (ModelSet*)model; // assign pointer for convenience
+            models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
+            double *state_freq = new double[model->num_states];
+            double *rates = new double[model->getNumRateEntries()];
+            for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
+                ModelMarkov *modeli;
+                if (i == 0) {
+                    modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
+                    modeli->getStateFrequency(state_freq);
+                    modeli->getRateMatrix(rates);
+                } else {
+                    modeli = (ModelMarkov*)createModel(model_str, models_block, FREQ_EQUAL, "", tree);
+                    modeli->setStateFrequency(state_freq);
+                    modeli->setRateMatrix(rates);
+                }
+                if (tree->aln->ptn_state_freq[i])
+                    modeli->setStateFrequency (tree->aln->ptn_state_freq[i]);
+
+                modeli->init(FREQ_USER_DEFINED);
+                models->push_back(modeli);
             }
-            if (tree->aln->ptn_state_freq[i])
+            delete [] rates;
+            delete [] state_freq;
+
+            models->joinEigenMemory();
+            models->decomposeRateMatrix();
+        } else {
+            // MUTSEL
+            ModelSet *models = new ModelSet(model_str.c_str(), tree);
+            
+            models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
+            models->fixParameters(true);
+            
+            for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
+                ModelMarkov *modeli = new ModelMarkov(tree, true, true); // dummy model for getting num_states and num_rate_entries
                 modeli->setStateFrequency(tree->aln->ptn_state_freq[i]);
+                modeli->setRateMatrix(tree->aln->site_rate_matrices.data() + i * 190);
+                
+                modeli->normalize_matrix = false;
+                modeli->init(FREQ_USER_DEFINED);
+                modeli->fixParameters(true);
+                models->push_back(modeli);
+            }
+            
+            models->joinEigenMemory();
+            models->decomposeRateMatrix();
 
-            modeli->init(FREQ_USER_DEFINED);
-            models->push_back(modeli);
+            model = models;
         }
-        delete [] rates;
-        delete [] state_freq;
-
-        models->joinEigenMemory();
-        models->decomposeRateMatrix();
-
-        // delete information of the old alignment
-//        tree->aln->ordered_pattern.clear();
-//        tree->deleteAllPartialLh();
     }
 
 //    if (model->isMixture())

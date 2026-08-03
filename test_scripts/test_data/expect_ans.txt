@@ -20,3 +20,4 @@ turtle_aa.nex.iqtree	Log-likelihood of the tree	-5027.9688	1
 turtle_aa.test.iqtree	Log-likelihood of the tree	-5039.6498	1
 turtle_aa.wpl.iqtree	Log-likelihood of the tree	-5030.7986	1
 turtle_aa.mix.iqtree	Log-likelihood of the tree	-5212.5728	1
+turtle_aa.mutsel.iqtree	Log-likelihood of the tree	-3547.550	1

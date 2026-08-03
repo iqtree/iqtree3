@@ -285,6 +285,43 @@ else()
 endif()
 
 ##################################################################
+# Include Rust dependecies: phylo_grad, MUTSEL model
+##################################################################
+
+if (USE_MUTSEL STREQUAL "ON")
+    message("Compile Rust Dependencies: ON")
+    if (WIN32)
+        set(MUTSEL_RUST_LIB_FILE "x86_64-pc-windows-gnu/release/libmutsel_rust.a")
+    else()
+        set(MUTSEL_RUST_LIB_FILE "release/libmutsel_rust.a")
+    endif()
+    set(MUTSEL_RUST_LIB_PATH "${CMAKE_SOURCE_DIR}/mutsel_rust/target/${MUTSEL_RUST_LIB_FILE}")
+
+    if (WIN32)
+        set(CARGO_TARGET --target x86_64-pc-windows-gnu)
+    else()
+        set(CARGO_TARGET "")
+    endif()
+
+
+    include(ExternalProject)
+    ExternalProject_Add(
+        mutsel
+        SOURCE_DIR "${CMAKE_SOURCE_DIR}/mutsel_rust"  # Where your Rust source is
+        CONFIGURE_COMMAND ""                           # No configure step for Rust
+        BUILD_COMMAND cargo build --release --lib ${CARGO_TARGET}
+        BUILD_BYPRODUCTS "${MUTSEL_RUST_LIB_PATH}"
+        INSTALL_COMMAND ""  # No install step for Rust
+        BUILD_IN_SOURCE 1  # Build in source directory
+        LOG_BUILD ON
+        LOG_OUTPUT_ON_FAILURE ON
+    )
+    add_definitions(-DUSE_MUTSEL)
+else()
+    message("Compile Rust Dependencies: OFF")
+endif()
+
+##################################################################
 # build IQTREE library
 ##################################################################
 option(BUILD_LIB "Build IQTREE library" OFF)
@@ -313,16 +350,10 @@ elseif (APPLE)
         # set the first version of mac 11 that supports ARM
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=arm64-apple-macos11.0.1")
 	else()
-		# to be compatible back to Mac OS X 10.7
-    	if (IQTREE_FLAGS MATCHES "oldmac")
-        	add_definitions("-mmacosx-version-min=10.5")
-        	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -mmacosx-version-min=10.5")
-    	else()
-            # supports the first version changed from OS X to macOS
-        	add_definitions("--target=x86_64-apple-macos10.12")
-            set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12)
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=x86_64-apple-macos10.12")
-    	endif()
+        # supports the first version changed from OS X to macOS
+        add_definitions("--target=x86_64-apple-macos11.0.1")
+        set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0.1)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --target=x86_64-apple-macos11.0.1")
 	endif()
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
 elseif (UNIX)
@@ -1017,7 +1048,8 @@ endif()
 
 # basic linking librararies
 target_link_libraries(iqtree3 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
-    gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
+    gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB} ${CMAKE_DL_LIBS})
+
 
 # Link the bundled LLVM libomp.a even for GCC builds
 # dl is needed by libomp on Linux for dlsym

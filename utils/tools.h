@@ -2925,6 +2925,27 @@ public:
      *  input tree string (instead of a file)
      */
     string intree_str;
+
+    // MUTSEL parameters
+
+    /**
+     *  the file containing the site-specific model parameters.
+     *  it uses a simple binary format and will be output by a MUTSEL run.
+     *  The file is not intended to be human-readable.
+     */
+    std::string site_model_file;
+
+    /**
+     *  the file containing the prior state frequencies for the mutsel model, in the format of "site_ID state1_freq state2_freq ... state20_freq"
+     *  by default MUTSEL will calculate these priors by an approximated PMSF method.
+     */
+    std::string mutsel_prior_freq_file;
+
+    /**
+     *  the prior for the shared rates in PAML format.
+     *  by default MUTSEL will use the CODON model (A matrix derived for this purpose, for more information see the paper).
+     */
+    std::string mutsel_prior_rate_file;
 };
 
 /**

@@ -122,3 +122,5 @@ Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -m `"MIX{LG+F,WAG+F}`" --prefi
 Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -p $WD/turtle_aa.nex -g $WD/turtle.constr.tree --prefix $OutDir/turtle_aa.nex.constr -T 1 -seed $SEED"
 
 Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -p $WD/turtle_aa.nex -g $WD/turtle.constr.tree2 -B 1000 -alrt 1000 --prefix $OutDir/turtle_aa.nex.constr2 -T 1 -seed $SEED"
+
+Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -m MUTSEL -ft AUTO --prefix $OutDir/turtle_aa.mutsel -T 1 -seed $SEED"

@@ -4623,6 +4623,29 @@ void parseArg(int argc, char *argv[], Params &params) {
                 continue;
             }
 
+            if (strcmp(argv[cnt], "--site-model-file") == 0 || strcmp(argv[cnt], "-site-model-file") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --site-model-file <site_model_file>";
+                params.site_model_file = argv[cnt];
+                continue;
+            }
+
+            if (strcmp(argv[cnt], "--mutsel-prior-freq-file") == 0 || strcmp(argv[cnt], "-mutsel-prior-freq-file") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --mutsel-prior-freq-file <mutsel_prior_freq_file>";
+                params.mutsel_prior_freq_file = argv[cnt];
+                continue;
+            }
+
+            if (strcmp(argv[cnt], "--mutsel-prior-rate-file") == 0 || strcmp(argv[cnt], "-mutsel-prior-rate-file") == 0) {
+                cnt++;
+                if (cnt >= argc)
+                    throw "Use --mutsel-prior-rate-file <mutsel_prior_rate_file>";
+                params.mutsel_prior_rate_file = argv[cnt];
+                continue;
+            }
 //			if (strcmp(argv[cnt], "-rootstate") == 0) {
 //                cnt++;
 //                if (cnt >= argc)
