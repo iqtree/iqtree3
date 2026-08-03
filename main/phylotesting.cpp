@@ -3410,53 +3410,6 @@ CandidateModel CandidateModelSet::test(Params &params, PhyloTree* in_tree, Model
     model_info.put("best_model_AICc", at(best_model_AICc).getName());
     model_info.put("best_model_BIC", at(best_model_BIC).getName());
 
-    // For RNA doublet partitions: print two-group model selection summary.
-    // RNA6 models (ignoring mismatches) and RNA7/RNA16 models (considering
-    // mismatches) use different amounts of data, so they should not be
-    // compared directly.  Report the best model in each group separately.
-    if (in_tree->aln && in_tree->aln->seq_type == SEQ_DOUBLET) {
-        int best_with_mm = -1, best_without_mm = -1;
-        double best_score_with_mm = DBL_MAX, best_score_without_mm = DBL_MAX;
-
-        for (model = 0; model < (int)size(); model++) {
-            if (!at(model).hasFlag(MF_DONE))
-                continue;
-            string mname = at(model).getName();
-            double score = model_scores[model];
-            if (score >= DBL_MAX)
-                continue;
-
-            // S6 models ignore mismatches; S7/S16 consider them.
-            // getName() may echo either spelling (S6A.. or RNA6A..).
-            bool is_rna6 = (mname.find("S6") != string::npos ||
-                            mname.find("RNA6") != string::npos);
-
-            if (is_rna6) {
-                if (score < best_score_without_mm) {
-                    best_score_without_mm = score;
-                    best_without_mm = model;
-                }
-            } else {
-                if (score < best_score_with_mm) {
-                    best_score_with_mm = score;
-                    best_with_mm = model;
-                }
-            }
-        }
-
-        cout << endl;
-        cout << "RNA model selection for partition " << set_name << ":" << endl;
-        if (best_with_mm >= 0)
-            cout << "  Best model (considering mismatches): "
-                 << at(best_with_mm).getName()
-                 << "  (BIC: " << best_score_with_mm << ")" << endl;
-        if (best_without_mm >= 0)
-            cout << "  Best model (ignoring mismatches):    "
-                 << at(best_without_mm).getName()
-                 << "  (BIC: " << best_score_without_mm << ")" << endl;
-        cout << endl;
-    }
-
     CKP_SAVE(best_score_AIC);
     CKP_SAVE(best_score_AICc);
     CKP_SAVE(best_score_BIC);
