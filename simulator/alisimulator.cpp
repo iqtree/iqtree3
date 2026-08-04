@@ -3237,24 +3237,32 @@ void AliSimulator::handleSubs(int segment_start, double &total_sub_rate, vector<
 int AliSimulator::selectValidPositionForIndels(int upper_bound, vector<short int> &sequence)
 {
     int position = -1;
+    // Fast random site selection: select a site across only non-gapped sites.
+    // max attempts: upper_bound.
+    // Cheap (O(1) amortized) whenever gaps are not the majority of the sequence
     for (int i = 0; i < upper_bound; i++)
     {
         position = random_int(upper_bound);
-        
-        // try to move to the following site if the selected site is a gap
-        if (position < sequence.size() && sequence[position] == STATE_UNKNOWN)
-            for (; position < upper_bound; position++)
-                if (position == sequence.size() || sequence[position] != STATE_UNKNOWN)
-                    break;
-        
+
         // a valid position must not be a deleted site
         if (position == sequence.size() || sequence[position] != STATE_UNKNOWN)
-            break;
+            return position;
     }
-    // validate the position
-    if (position < sequence.size() && sequence[position] == STATE_UNKNOWN)
+
+    // Fallback: when the sequence is heavily gapped (i.e., extreme cases), so random draws kept missing
+    // the non-gapped sites within the max attempts.
+    // Collect all non-gapped positions once and pick uniformly among them.
+    vector<int> valid_positions;
+    valid_positions.reserve(upper_bound);
+    for (int i = 0; i < upper_bound; i++)
+        if (i == sequence.size() || sequence[i] != STATE_UNKNOWN)
+            valid_positions.push_back(i);
+
+    // validate that at least one valid position exists
+    if (valid_positions.empty())
         outError("Sorry! Could not select a valid position (not a deleted-site) for insertion/deletion events. You may specify a too high deletion rate, thus almost all sites were deleted. Please try again a a smaller deletion ratio!");
-    return position;
+
+    return valid_positions[random_int((int)valid_positions.size())];
 }
 
 /**
