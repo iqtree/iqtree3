@@ -3237,9 +3237,9 @@ void AliSimulator::handleSubs(int segment_start, double &total_sub_rate, vector<
 int AliSimulator::selectValidPositionForIndels(int upper_bound, vector<short int> &sequence)
 {
     int position = -1;
-    // fast path: rejection sampling. Cheap (O(1) amortized) whenever gaps are
-    // not the majority of the sequence, and unbiased: every live site has the
-    // same probability of being picked, regardless of the surrounding gaps.
+    // Fast random site selection: select a site across only non-gapped sites.
+    // max attempts: upper_bound.
+    // Cheap (O(1) amortized) whenever gaps are not the majority of the sequence
     for (int i = 0; i < upper_bound; i++)
     {
         position = random_int(upper_bound);
@@ -3249,13 +3249,11 @@ int AliSimulator::selectValidPositionForIndels(int upper_bound, vector<short int
             return position;
     }
 
-    // fallback: the sequence is heavily gapped, so random draws kept missing
-    // the live sites within the attempt budget above. Rather than erroring
-    // out on bad luck, collect all valid positions once and pick uniformly
-    // among them. Still exactly unbiased, just O(upper_bound) instead of
-    // O(1); only taken in this rare, heavily-gapped case.
+    // Fallback: when the sequence is heavily gapped (i.e., extreme cases), so random draws kept missing
+    // the non-gapped sites within the max attempts.
+    // Collect all non-gapped positions once and pick uniformly among them.
     vector<int> valid_positions;
-    valid_positions.reserve(upper_bound); // at most upper_bound valid positions exist, so this is a single allocation
+    valid_positions.reserve(upper_bound);
     for (int i = 0; i < upper_bound; i++)
         if (i == sequence.size() || sequence[i] != STATE_UNKNOWN)
             valid_positions.push_back(i);
