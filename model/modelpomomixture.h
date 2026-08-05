@@ -156,16 +156,7 @@ public:
   virtual void update_eigen_pointers(double *eval, double *evec
                                      , double *inv_evec, double *inv_evec_transposed);
 
-
-	/**
-     compute the transition probability matrix.
-     @param time time between two events
-     @param mixture (optional) class for mixture model
-     @param selected_row (optional) only compute the entries of one selected row. By default, compute all rows
-     @param trans_matrix (OUT) the transition matrix between all pairs of states.
-     Assume trans_matrix has size of num_states * num_states.
-	*/
-	virtual void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1);
+    virtual void computeTransMatrix(double time, double *trans_matrix, int model_id = -1, int selected_row = -1);
 
 protected:
 
