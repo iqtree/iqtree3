@@ -5166,7 +5166,12 @@ void PhyloTree::resampleLh(double **pat_lh, double *lh_new, int *rstream) {
     memset(lh_new, 0, sizeof(double) * 3);
     int i;
     int *boot_freq = aligned_alloc<int>(getAlnNPattern());
-    aln->createBootstrapAlignment(boot_freq, params->bootstrap_spec, rstream);
+    // The RELL replicates of the SH-aLRT and the local bootstrap probability are bootstrap
+    // samples of the sites (Guindon et al. 2010; Adachi & Hasegawa 1996), whatever resampling
+    // -j/-J selected for the tree search: a jackknife sample sums only (1 - jack_prop) of the
+    // sites, so the statistics lh_new - lh below would no longer be centred and every support
+    // value would move (issue #198).
+    aln->createBootstrapAlignment(boot_freq, params->bootstrap_spec, rstream, 0.0);
     for (i = 0; i < nptn; i++) {
 
         lh_new[0] += boot_freq[i] * pat_lh[0][i];

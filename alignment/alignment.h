@@ -631,8 +631,10 @@ public:
             @param pattern_freq (OUT) resampled pattern frequencies
             @param spec bootstrap specification, see above
             @param rstream random generator stream, nullptr to use the global randstream
+            @param jackknife_prop site removal proportion for jackknife resampling; 0.0 forces
+                bootstrap resampling; a negative value (default) uses the global --jack-prop setting
      */
-    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = nullptr, int *rstream = nullptr);
+    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = nullptr, int *rstream = nullptr, double jackknife_prop = -1.0);
 
 	/**
 			Diep: This is for UFBoot2-Corr
