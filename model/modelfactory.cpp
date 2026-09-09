@@ -20,6 +20,7 @@
 #include "rateinvar.h"
 #include "modelfactory.h"
 #include "rategamma.h"
+#include "rategammaunequal.h"
 #include "rategammainvar.h"
 #include "modelmarkov.h"
 #include "modelliemarkov.h"
@@ -364,6 +365,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             outError("PoMo does not yet support frequency mixture models (+FMIX).");
         if (posRateHeterotachy(rate_str) != string::npos)
             outError("PoMo does not yet support heterotachy models (+H).");
+        if (rate_str.find("+GU") != string::npos)
+            outError("PoMo does not yet support unequal-weight Gamma models (+GU).");
     }
 
     // PoMo. The +P{}, +GXX and +I flags are interpreted during model creation.
@@ -782,6 +785,19 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     }
 
     /******************** initialize site rate heterogeneity ****************************/
+
+    // +GU: discrete Gamma with unequal category weights (Lloyd-Max discretisation).
+    // Strip the 'U' here so that the number of categories and the shape parameter
+    // are parsed by the regular +G code below.
+    bool unequal_gamma = false;
+    string::size_type posGU = rate_str.find("+GU");
+    if (posGU == string::npos)
+        posGU = rate_str.find("*GU"); // fused mixture-rate variant
+    if (posGU != string::npos) {
+        unequal_gamma = true;
+        rate_str = rate_str.substr(0, posGU+2) + rate_str.substr(posGU+3);
+    }
+
     string::size_type posI = rate_str.find("+I");
     string::size_type posG = rate_str.find("+G");
     string::size_type posG2 = rate_str.find("*G");
@@ -962,6 +978,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         } else if (posH != string::npos) {
             site_rate = new RateHeterotachy(num_rate_cats, heterotachy_params, tree);
         } else if (posI != string::npos && posG != string::npos) {
+            if (unequal_gamma)
+                outError("Unequal-weight Gamma model (+GU) does not yet support invariable sites (+I)");
             site_rate = new RateGammaInvar(num_rate_cats, gamma_shape, params.gamma_median,
                     p_invar_sites, params.optimize_alg_gammai, tree, false);
         } else if (posI != string::npos && posR != string::npos) {
@@ -969,7 +987,10 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         } else if (posI != string::npos) {
             site_rate = new RateInvar(p_invar_sites, tree);
         } else if (posG != string::npos) {
-            site_rate = new RateGamma(num_rate_cats, gamma_shape, params.gamma_median, tree);
+            if (unequal_gamma)
+                site_rate = new RateGammaUnequal(num_rate_cats, gamma_shape, tree);
+            else
+                site_rate = new RateGamma(num_rate_cats, gamma_shape, params.gamma_median, tree);
         } else if (posR != string::npos) {
             site_rate = new RateFree(num_rate_cats, gamma_shape, freerate_params, !fused_mix_rate, params.optimize_alg_freerate, tree);
 //        } else if ((posX = rate_str.find("+M")) != string::npos) {
