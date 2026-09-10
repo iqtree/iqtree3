@@ -322,14 +322,14 @@ void ModelMarkov::init_state_freq(StateFreqType type) {
         if (phylo_tree->aln->seq_type == SEQ_CODON) {
             double ntfreq[12];
             phylo_tree->aln->computeCodonFreq(freq_type, state_freq, ntfreq);
-//                      phylo_tree->aln->computeCodonFreq(state_freq);
         } else if (phylo_tree->aln->seq_type != SEQ_POMO) {
-            double emp_state_freq[num_states];
-            phylo_tree->aln->computeStateFreq(emp_state_freq);
-            setStateFrequency(emp_state_freq);
-        } for (i = 0; i < num_states; i++)
-            if (state_freq[i] > state_freq[highest_freq_state])
-                highest_freq_state = i;
+            phylo_tree->aln->computeStateFreq(state_freq);
+        }
+        for (int x = 0; x < num_states; ++x) {
+            if (state_freq[x] > state_freq[highest_freq_state]) {
+                highest_freq_state = x;
+            }
+        }
         break;
     case FREQ_USER_DEFINED:
         {
@@ -460,7 +460,7 @@ void ModelMarkov::report_state_freqs(ostream& out, double *custom_state_freq) {
     }
 }
 
-void ModelMarkov::computeTransMatrixNonrev(double time, double *trans_matrix, int mixture) {
+void ModelMarkov::computeTransMatrixNonrev(double time, double *trans_matrix) {
     auto technique = phylo_tree->params->matrix_exp_technique;
     if (technique == MET_SCALING_SQUARING || nondiagonalizable) {
         // scaling and squaring technique
@@ -495,7 +495,7 @@ void ModelMarkov::computeTransMatrixNonrev(double time, double *trans_matrix, in
                 cout << "INFO: Switch to scaling-squaring due to unstable eigen-decomposition rowsum: "
                      << mincoeff << " to " << maxcoeff << endl;
             nondiagonalizable = true;
-            computeTransMatrixNonrev(time, trans_matrix, mixture);
+            computeTransMatrixNonrev(time, trans_matrix);
             nondiagonalizable = false;
         }
     } else {
@@ -504,10 +504,10 @@ void ModelMarkov::computeTransMatrixNonrev(double time, double *trans_matrix, in
 
 }
 
-void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
+void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int, int selected_row) {
 
     if (!is_reversible) {
-        computeTransMatrixNonrev(time, trans_matrix, mixture);
+        computeTransMatrixNonrev(time, trans_matrix);
         return;
     }
 
@@ -567,40 +567,61 @@ void ModelMarkov::computeTransMatrix(double time, double *trans_matrix, int mixt
 //	delete [] exptime;
 }
 
-double ModelMarkov::computeTrans(double time, int state1, int state2) {
-
+double ModelMarkov::computeTrans(double time, int state1, int state2, int) {
+    double trans = 0.0;
     if (is_reversible) {
+        // reversible
         double evol_time = time / total_num_subst;
-        int i;
-        double trans_prob = 0.0;
-        for (i = 0; i < num_states; i++) {
-            trans_prob += eigenvectors[state1*num_states+i] * inv_eigenvectors[i*num_states+state2] * exp(evol_time * eigenvalues[i]);
+        for (int i = 0; i < num_states; ++i) {
+            double cof = eigenvalues[i];
+            double lhval = eigenvectors[state1*num_states+i]
+                         * inv_eigenvectors[i*num_states+state2]
+                         * exp(evol_time * cof);
+            trans += lhval;
         }
-        return trans_prob;
     } else {
         // non-reversible
+        int addr = state1*num_states+state2;
         double *trans_matrix = new double[num_states*num_states];
         computeTransMatrix(time, trans_matrix);
-        double trans = trans_matrix[state1*num_states+state2];
+        trans = trans_matrix[addr];
         delete [] trans_matrix;
-        return trans;
     }
+    return trans;
 }
 
-double ModelMarkov::computeTrans(double time, int state1, int state2, double &derv1, double &derv2) {
-    double evol_time = time / total_num_subst;
-    double trans_prob = 0.0;
+double ModelMarkov::computeTrans(double time, int state1, int state2,
+                                 double &derv1, double &derv2, int) {
+    double trans = 0.0;
     derv1 = derv2 = 0.0;
-    for (int i = 0; i < num_states; i++) {
-        double trans = eigenvectors[state1*num_states+i]
-        * inv_eigenvectors[i*num_states+state2]
-        * exp(evol_time * eigenvalues[i]);
-        double trans2 = trans * eigenvalues[i];
-        trans_prob += trans;
-        derv1 += trans2;
-        derv2 += trans2 * eigenvalues[i];
+    if (is_reversible) {
+        // reversible
+        double evol_time = time / total_num_subst;
+        for (int i = 0; i < num_states; ++i) {
+            double cof = eigenvalues[i];
+            double lhval = eigenvectors[state1*num_states+i]
+                         * inv_eigenvectors[i*num_states+state2]
+                         * exp(evol_time * cof);
+            double dfval = cof*lhval;
+            trans += lhval;
+            derv1 += dfval;
+            derv2 += cof*dfval;
+        }
+    } else {
+        // non-reversible
+        int addr = state1*num_states+state2;
+        double *trans_matrix = new double[num_states*num_states];
+        double *trans_derv1 = new double[num_states*num_states];
+        double *trans_derv2 = new double[num_states*num_states];
+        computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2);
+        trans = trans_matrix[addr];
+        derv1 = trans_derv1[addr];
+        derv2 = trans_derv2[addr];
+        delete [] trans_matrix;
+        delete [] trans_derv1;
+        delete [] trans_derv2;
     }
-    return trans_prob;
+    return trans;
 }
 
 void ModelMarkov::calculateExponentOfScalarMultiply ( const double* source, int size
@@ -729,9 +750,8 @@ void ModelMarkov::aTimesDiagonalBTimesTransposeOfC(const double* matrixA, const 
     }
 }
 
-void ModelMarkov::computeTransDerv(double time, double *trans_matrix, 
-	double *trans_derv1, double *trans_derv2, int mixture)
-{
+void ModelMarkov::computeTransDerv(double time, double *trans_matrix,
+                                   double *trans_derv1, double *trans_derv2, int) {
     if (!is_reversible) {
         computeTransMatrix(time, trans_matrix);
         // First derivative = Q * e^(Qt)
@@ -844,92 +864,80 @@ void ModelMarkov::computeTransDerv(double time, double *trans_matrix,
 //	delete [] exptime;
 }
 
-void ModelMarkov::getRateMatrix(double *rate_mat) {
-	int nrate = getNumRateEntries();
-	memcpy(rate_mat, rates, nrate * sizeof(double));
+void ModelMarkov::getRateMatrix(double *rate_mat, int) {
+    ASSERT(rates);
+    int nrate = getNumRateEntries();
+    std::copy_n(rates, nrate, rate_mat);
 }
 
-void ModelMarkov::setRateMatrix(double* rate_mat)
-{
-	int nrate = getNumRateEntries();
-	memcpy(rates, rate_mat, nrate * sizeof(double));
+void ModelMarkov::setRateMatrix(double *rate_mat) {
+    ASSERT(rates);
+    int nrate = getNumRateEntries();
+    std::copy_n(rate_mat, nrate, rates);
 }
 
-void ModelMarkov::setFullRateMatrix(double* rate_mat, double *freq)
-{
-    int i, j, k;
+void ModelMarkov::setQMatrix(double *q_mat, double *freq_vec) {
+    // set rates
     if (isReversible()) {
-        for (i = 0, k = 0; i < num_states; i++)
-            for (j = i+1; j < num_states; j++)
-                rates[k++] = rate_mat[i*num_states+j] / freq[j];
-        memcpy(state_freq, freq, sizeof(double)*num_states);
+        // reversible
+        for (int i = 0, k = 0; i < num_states; ++i) {
+            for (int j = i+1; j < num_states; ++j) {
+                rates[k++] = q_mat[i*num_states+j] / freq_vec[j];
+            }
+        }
     } else {
         // non-reversible
-        for (i = 0, k = 0; i < num_states; i++)
-            for (j = 0; j < num_states; j++)
-                if (i != j)
-                    rates[k++] = rate_mat[i*num_states+j];
+        for (int i = 0, k = 0; i < num_states; ++i) {
+            for (int j = 0; j < num_states; ++j) {
+                if (i != j) {
+                    rates[k++] = q_mat[i*num_states+j];
+                }
+            }
+        }
     }
+    // set state_freq
+    setStateFrequency(freq_vec);
 }
 
-void ModelMarkov::getStateFrequency(double *freq, int mixture) {
-	ASSERT(state_freq);
-	ASSERT(freq_type != FREQ_UNKNOWN);
-	memcpy(freq, state_freq, sizeof(double) * num_states);
-  // // DEBUG.
-  // cout << setprecision(8);
-  // cout << "State frequency reported by ModelMarkov: ";
-  // for (int i = 0; i < num_states; i++) {
-  //   cout << state_freq[i] << " ";
-  // }
-  // cout << endl;
+void ModelMarkov::getStateFrequency(double *freq_vec, int) {
+    ASSERT(state_freq);
+    ASSERT(freq_type != FREQ_UNKNOWN);
+    std::copy_n(state_freq, num_states, freq_vec);
     // 2015-09-07: relax the sum of state_freq to be 1, this will be done at the end of optimization
     double sum = 0.0;
-    int i;
-    for (i = 0; i < num_states; i++) sum += freq[i];
-    sum = 1.0/sum;
-    for (i = 0; i < num_states; i++) freq[i] *= sum;
-}
-
-void ModelMarkov::setStateFrequency(double* freq)
-{
-	ASSERT(state_freq);
-    /*
-    if (!isReversible()) {
-        // integrate out state_freq from rate_matrix
-        int i, j, k = 0;
-        for (i = 0, k = 0; i < num_states; i++)
-            for (j = 0; j < num_states; j++)
-                if (i != j) {
-                    rates[k] = (rates[k])*freq[j];
-                    if (state_freq[j] != 0.0)
-                        rates[k] /= state_freq[j];
-                    k++;
-                }
+    for (int x = 0; x < num_states; ++x) {
+        sum += freq_vec[x];
     }
-     */
-    ModelSubst::setStateFrequency(freq);
+    for (int x = 0; x < num_states; ++x) {
+        freq_vec[x] /= sum;
+    }
 }
 
-void ModelMarkov::adaptStateFrequency(double* freq)
-{
+void ModelMarkov::setStateFrequency(double *freq_vec) {
+    ASSERT(state_freq);
+    std::copy_n(freq_vec, num_states, state_freq);
+}
+
+void ModelMarkov::adaptStateFrequency(double *freq_vec) {
     ASSERT(state_freq);
     if (!isReversible()) {
-        // integrate out state_freq from rate_matrix
-        int i, j, k = 0;
-        for (i = 0, k = 0; i < num_states; i++)
-            for (j = 0; j < num_states; j++)
+        // substitute state_freq with freq_vec in the Q matrix (rates)
+        for (int i = 0, k = 0; i < num_states; ++i) {
+            for (int j = 0; j < num_states; ++j) {
                 if (i != j) {
-                    rates[k] = (rates[k])*freq[j];
-                    if (state_freq[j] > ZERO_FREQ)
+                    rates[k] *= freq_vec[j];
+                    if (state_freq[j] > ZERO_FREQ) {
                         rates[k] /= state_freq[j];
+                    }
                     k++;
                 }
+            }
+        }
     }
-    ModelSubst::setStateFrequency(freq);
+    setStateFrequency(freq_vec);
 }
 
-void ModelMarkov::getQMatrix(double *q_mat, int mixture) {
+void ModelMarkov::getQMatrix(double *q_mat, int) {
 
     if (!is_reversible) {
         // non-reversible model
@@ -1902,6 +1910,24 @@ void ModelMarkov::internalFreeMem() {
 void ModelMarkov::freeMem()
 {
     internalFreeMem();
+}
+
+void ModelMarkov::multiplyWithInvEigenvector(double *state_lh) {
+    int nmix = getNMixtures();
+    int nstates = get_safe_upper_limit(num_states);
+    double saved_state_lh[num_states];
+    memcpy(saved_state_lh, state_lh, sizeof(double)*num_states);
+    memset(state_lh, 0, sizeof(double)*num_states*nmix);
+    const double *inv_eigenvectors = getInverseEigenvectors();
+    for (int m = 0; m < nmix; ++m) {
+        double *this_state_lh = &state_lh[m*num_states];
+        const double *inv_evec = &inv_eigenvectors[m * nstates * num_states];
+        for (int i = 0, k = 0; i < num_states; ++i) {
+            for (int j = 0; j < num_states; ++j) {
+              this_state_lh[i] += inv_evec[k++] * saved_state_lh[j];
+            }
+        }
+    }
 }
 
 double *ModelMarkov::getEigenvalues() const

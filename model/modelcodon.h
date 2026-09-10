@@ -100,7 +100,7 @@ public:
      * compute Q matrix
      * @param q_mat (OUT) Q matrix, assuming of size num_states * num_states
      */
-    virtual void getQMatrix(double *q_mat, int mixture = 0);
+    virtual void getQMatrix(double *q_mat, int model_id = -1);
 
 	/**
 	 * read codon model from a stream, modying rates and state_freq accordingly

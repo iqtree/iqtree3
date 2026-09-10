@@ -139,47 +139,29 @@ public:
 	*/
 	void stopStoringTransMatrix();
 
-	/**
-		Wrapper for computing the transition probability matrix from the model. It use ModelFactory
-		that stores matrix computed before for effiency purpose.
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-        @param selected_row (optional) only compute the entries of one selected row. By default, compute all rows
-		@param trans_matrix (OUT) the transition matrix between all pairs of states.
-			Assume trans_matrix has size of num_states * num_states.
-	*/
-	void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1);
+    /**
+     *  Wrapper for the computeTransMatrix() function of the model.
+     *  ModelFactory stores the matrix computed before for efficiency purposes
+     */
+    void computeTransMatrix(double time, double *trans_matrix, int model_id = -1, int selected_row = -1);
 
-	/**
-		Wrapper for computing the transition probability between two states.
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-	*/
-	double computeTrans(double time, int state1, int state2);
+    /**
+     *  Wrapper for the computeTransDerv() function of the model.
+     *  ModelFactory stores the matrix computed before for efficiency purposes
+     */
+    void computeTransDerv(double time, double *trans_matrix,
+                          double *trans_derv1, double *trans_derv2, int model_id = -1);
 
-	/**
-		Wrapper for computing the transition probability between two states
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-		@param derv1 (OUT) 1st derivative
-		@param derv2 (OUT) 2nd derivative
-	*/
-	virtual double computeTrans(double time, int state1, int state2, double &derv1, double &derv2);
+    /**
+     *  Wrapper for the computeTrans() function of the model
+     */
+    double computeTrans(double time, int state1, int state2, int model_id = -1);
 
-	/**
-		Wrapper for computing the transition probability matrix and the derivative 1 and 2 from the model.
-		It use ModelFactory that stores matrix computed before for effiency purpose.
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-		@param trans_matrix (OUT) the transition matrix between all pairs of states. 
-			Assume trans_matrix has size of num_states * num_states.
-		@param trans_derv1 (OUT) the 1st derivative matrix between all pairs of states. 
-		@param trans_derv2 (OUT) the 2nd derivative matrix between all pairs of states. 
-	*/
-	void computeTransDerv(double time, double *trans_matrix, 
-		double *trans_derv1, double *trans_derv2, int mixture = 0);
+    /**
+     *  Wrapper for the computeTrans() function of the model
+     */
+    double computeTrans(double time, int state1, int state2,
+                        double &derv1, double &derv2, int model_id = -1);
 
 	/**
 		 destructor

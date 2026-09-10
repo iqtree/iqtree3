@@ -110,7 +110,7 @@ void ModelUnrest::setRates() {
     return;
 }
 
-void ModelUnrest::setStateFrequency(double* freq) {
+void ModelUnrest::setStateFrequency(double *freq_vec) {
     // DOES NOTHING
 }
 

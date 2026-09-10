@@ -178,86 +178,113 @@ public:
 	*/
 	void readParametersString(string &model_str, bool adapt_tree = true);
 
-	/**
-		compute the transition probability matrix.
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-        @param selected_row (optional) only compute the entries of one selected row. By default, compute all rows
-		@param trans_matrix (OUT) the transition matrix between all pairs of states.
-			Assume trans_matrix has size of num_states * num_states.
-	*/
-	virtual void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1);
+    /**
+     *  Compute the transition probability matrix on a branch.
+     *  The default is the JC model, valid for all kinds of data
+     *  @param time The branch length
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     *  @param selected_row Only compute the entries for the selected row,
+     *                      the default is to compute entries for all rows
+     *  @param[out] trans_matrix The transition matrix between all pairs of states,
+     *                           assumed to have the size of num_states*num_states
+     */
+    virtual void computeTransMatrix(double time, double *trans_matrix, int model_id = -1, int selected_row = -1);
+
+    /** Helper function of computeTransMatrix() for non-reversible models */
+    void computeTransMatrixNonrev(double time, double *trans_matrix);
 
     /**
-     compute the transition probability matrix for non-reversible model
-     @param time time between two events
-     @param mixture (optional) class for mixture model
-     @param trans_matrix (OUT) the transition matrix between all pairs of states.
-     Assume trans_matrix has size of num_states * num_states.
+     *  The same as computeTransMatrix() above, but also computes the
+     *  1st and 2nd derivative matrices with respect to the branch length
+     *  @param[out] trans_matrix The transition matrix between all pairs of states,
+     *                           assumed to have the size of num_states*num_states
+     *  @param[out] trans_derv1 The 1st derivative matrix between all pairs of states
+     *  @param[out] trans_derv2 The 2nd derivative matrix between all pairs of states
      */
-    virtual void computeTransMatrixNonrev(double time, double *trans_matrix, int mixture = 0);
-
-	/**
-		compute the transition probability between two states
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-	*/
-	virtual double computeTrans(double time, int state1, int state2);
-
-	/**
-		compute the transition probability between two states
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-		@param derv1 (OUT) 1st derivative
-		@param derv2 (OUT) 2nd derivative
-	*/
-	virtual double computeTrans(double time, int state1, int state2, double &derv1, double &derv2);
-
-	/**
-		Get the rate matrix.
-		@param rate_mat (OUT) upper-triagle rate matrix. Assume rate_mat has size of num_states*(num_states-1)/2
-	*/
-	virtual void getRateMatrix(double *rate_mat);
-
-	/**
-		Set the rate matrix.
-		@param rate_mat upper-triagle rate matrix. Assume rate_mat has size of num_states*(num_states-1)/2
-	*/
-	virtual void setRateMatrix(double *rate_mat);
+    virtual void computeTransDerv(double time, double *trans_matrix,
+                                  double *trans_derv1, double *trans_derv2, int model_id = -1);
 
     /**
-     Set the full rate matrix of size num_states*num_states
-     @param rate_mat full rate matrix
-     @param freq state frequency
+     *  Compute the transition probability between the two states on a branch.
+     *  The default is the JC model, valid for all kinds of data
+     *  @param time The branch length between the two states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     *  @param state1 The start state
+     *  @param state2 The end state
+     *  @param[out] derv1 The 1st derivative
+     *  @param[out] derv2 The 2nd derivative
+     *  @return The transition probability
      */
-    virtual void setFullRateMatrix(double *rate_mat, double *freq);
-
-	/**
-		compute the state frequency vector
-        @param mixture (optional) class for mixture model
-		@param state_freq (OUT) state frequency vector. Assume state_freq has size of num_states
-	*/
-	virtual void getStateFrequency(double *state_freq, int mixture = 0);
-
-	/**
-		set the state frequency vector
-		@param state_freq (IN) state frequency vector. Assume state_freq has size of num_states
-	*/
-	virtual void setStateFrequency(double *state_freq);
+    virtual double computeTrans(double time, int state1, int state2, int model_id = -1);
 
     /**
-     set the state frequency vector
-     @param state_freq (IN) state frequency vector. Assume state_freq has size of num_states
+     *  The same as computeTrans() above, but also computes the
+     *  1st and 2nd derivatives with respect to the branch length
+     *  @param[out] derv1 The 1st derivative
+     *  @param[out] derv2 The 2nd derivative
+     *  @return The transition probability
      */
-    virtual void adaptStateFrequency(double *state_freq);
+    virtual double computeTrans(double time, int state1, int state2,
+                                double &derv1, double &derv2, int model_id = -1);
 
-	/**
-	 * compute Q matrix 
-	 * @param q_mat (OUT) Q matrix, assuming of size num_states * num_states
-	 */
-	virtual void getQMatrix(double *q_mat, int mixture = 0);
+    /**
+     *  Get the rate parameters, such as a,b,c,d,e,f for a DNA model.
+     *  Get the above-diagonal entries of the rate matrix, assuming that
+     *  the last element is 1.
+     *  The default is equal rates of 1 (JC Model), valid for all kinds of data
+     *  @param[out] rate_mat An upper-triangle rate matrix, assumed to have the
+     *                       size of num_states*(num_states-1)/2
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getRateMatrix(double *rate_mat, int model_id = -1);
+
+    /**
+     *  Set the rate parameters
+     *  @param rate_mat An upper-triangle rate matrix, assumed to have the
+     *                  size of num_states*(num_states-1)/2
+     */
+    virtual void setRateMatrix(double *rate_mat);
+
+    /**
+     *  Get the instantaneous rate matrix Q.
+     *  The default is derived from equal rates and equal state frequencies
+     *  @param[out] q_mat A full matrix: qij >= 0, qii = -sum_j qij (j != i),
+     *                    assumed to have the size of num_states*num_states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getQMatrix(double *q_mat, int model_id = -1);
+
+    /**
+     *  Set the instantaneous rate matrix Q.
+     *  @param q_mat A full matrix: qij >= 0, qii = -sum_j qij (j != i),
+     *               assumed to have the size of num_states*num_states
+     *  @param freq_vec Respective state frequency vector, assumed to have the
+     *                  size of num_states
+     */
+    virtual void setQMatrix(double *q_mat, double *freq_vec);
+
+    /**
+     *  Get the state frequency vector.
+     *  The default is equal state frequencies, valid for all kinds of data
+     *  @param[out] freq_vec A state frequency vector, assumed to have the
+     *                       size of num_states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getStateFrequency(double *freq_vec, int model_id = -1);
+
+    /**
+     *  Set the state frequency vector
+     *  @param freq_vec A state frequency vector, assumed to have the
+     *                  size of num_states
+     */
+    virtual void setStateFrequency(double *freq_vec);
+
+    /**
+     *  Set the state frequency vector and adjust the Q matrix accordingly
+     *  @param freq_vec A state frequency vector, assumed to have the
+     *                  size of num_states
+     */
+    virtual void adaptStateFrequency(double *freq_vec);
 
 	/**
 		rescale the state frequencies
@@ -270,19 +297,6 @@ public:
 		@return frequency type
 	*/
 	virtual StateFreqType getFreqType() { return freq_type; }
-
-
-	/**
-		compute the transition probability matrix.and the derivative 1 and 2
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-		@param trans_matrix (OUT) the transition matrix between all pairs of states.
-			Assume trans_matrix has size of num_states * num_states.
-		@param trans_derv1 (OUT) the 1st derivative matrix between all pairs of states. 
-		@param trans_derv2 (OUT) the 2nd derivative matrix between all pairs of states. 
-	*/
-	virtual void computeTransDerv(double time, double *trans_matrix, 
-		double *trans_derv1, double *trans_derv2, int mixture = 0);
 
 	/**
 		@return the number of dimensions
@@ -352,22 +366,21 @@ public:
 	*/
 	virtual void decomposeRateMatrix();
 
-//	double *getEigenCoeff() const;
+    /**
+     *  For reversible models, multiply the partial likelihood vector with
+     *  the matrix of inverse eigenvectors for the fast pruning algorithm
+     *  @param[in/out] state_lh The partial likelihood vector
+     */
+    virtual void multiplyWithInvEigenvector(double *state_lh);
 
-	virtual double *getEigenvalues() const;
-
-	virtual double *getEigenvectors() const;
-	virtual double *getInverseEigenvectors() const;
+    virtual double *getEigenvalues() const;
+    virtual double *getEigenvectors() const;
+    virtual double *getInverseEigenvectors() const;
     virtual double *getInverseEigenvectorsTransposed() const;
 
-//	void setEigenCoeff(double *eigenCoeff);
-
-	void setEigenvalues(double *eigenvalues);
-
-	void setEigenvectors(double *eigenvectors);
-
-	void setInverseEigenvectors(double *inv_eigenvectors);
-
+    void setEigenvalues(double *eigenvalues);
+    void setEigenvectors(double *eigenvectors);
+    void setInverseEigenvectors(double *inv_eigenvectors);
     void setInverseEigenvectorsTransposed(double *inv_eigenvectors);
 
     static void calculateExponentOfScalarMultiply(const double* source, int size
