@@ -6938,9 +6938,11 @@ IndelDistribution parseIndelDis(string input, string event_name)
     return indel_dis;
 }
 
-void random_resampling(int n, IntVector &sample, int *rstream) {
+void random_resampling(int n, IntVector &sample, int *rstream, double jackknife_prop) {
     sample.resize(n, 0);
-    if (Params::getInstance().jackknife_prop == 0.0) {
+    if (jackknife_prop < 0.0)
+        jackknife_prop = Params::getInstance().jackknife_prop;
+    if (jackknife_prop == 0.0) {
         // boostrap resampling
         for (int i = 0; i < n; i++) {
             int j = random_int(n, rstream);
@@ -6948,13 +6950,13 @@ void random_resampling(int n, IntVector &sample, int *rstream) {
         }
     } else {
         // jackknife resampling
-        int total = floor((1.0 - Params::getInstance().jackknife_prop)*n);
+        int total = floor((1.0 - jackknife_prop)*n);
         if (total <= 0)
             outError("Jackknife sample size is zero");
         // make sure jackknife samples have exacly the same size
         for (int num = 0; num < total; ) {
             for (int i = 0; i < n; i++) if (!sample[i]) {
-                if (random_double(rstream) < Params::getInstance().jackknife_prop)
+                if (random_double(rstream) < jackknife_prop)
                     continue;
                 sample[i] = 1;
                 num++;

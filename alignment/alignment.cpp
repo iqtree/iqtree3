@@ -4269,11 +4269,13 @@ void Alignment::createBootstrapAlignment(IntVector &pattern_freq, const char *sp
     delete [] internal_freq;
 }
 
-void Alignment::createBootstrapAlignment(int *pattern_freq, const char *spec, int *rstream) {
+void Alignment::createBootstrapAlignment(int *pattern_freq, const char *spec, int *rstream, double jackknife_prop) {
     size_t nsite = getNSite();
     memset(pattern_freq, 0, getNPattern()*sizeof(int));
 	IntVector site_vec;
-    if (Params::getInstance().jackknife_prop > 0.0 && spec) {
+    if (jackknife_prop < 0.0)
+        jackknife_prop = Params::getInstance().jackknife_prop;
+    if (jackknife_prop > 0.0 && spec) {
         outError((string)"Unsupported jackknife with " + spec);
     }
 
@@ -4291,9 +4293,9 @@ void Alignment::createBootstrapAlignment(int *pattern_freq, const char *spec, in
 
         size_t nptn = getNPattern();
 
-        if (nsite/8 < nptn || Params::getInstance().jackknife_prop > 0.0) {
+        if (nsite/8 < nptn || jackknife_prop > 0.0) {
             IntVector sample;
-            random_resampling(nsite, sample, rstream);
+            random_resampling(nsite, sample, rstream, jackknife_prop);
             for (size_t site = 0; site < nsite; site++) {
                 for (int rep = 0; rep < sample[site]; rep++) {
                     int ptn_id = getPatternID(site);

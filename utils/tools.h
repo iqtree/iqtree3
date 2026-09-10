@@ -3619,8 +3619,10 @@ void my_random_shuffle (T first, T last, int *rstream = nullptr)
  @param n sample size
  @param[in/out] sample array of size n with frequency of resampling
  @param rstream random number generator stream
+ @param jackknife_prop site removal proportion for jackknife resampling; 0.0 forces
+        bootstrap resampling; a negative value (default) uses the global --jack-prop setting
 */
-void random_resampling(int n, IntVector &sample, int *rstream = nullptr);
+void random_resampling(int n, IntVector &sample, int *rstream = nullptr, double jackknife_prop = -1.0);
 
 #define RESAMPLE_NAME ((Params::getInstance().jackknife_prop == 0.0) ? "bootstrap" : "jackknife")
 #define RESAMPLE_NAME_I ((Params::getInstance().jackknife_prop == 0.0) ? "Bootstrap" : "Jackknife")
