@@ -3491,10 +3491,10 @@ template <class L, class F> double computeDistanceMatrix
         //results in the last few rows being allocated to some worker thread
         //just before the others finish... it won't be running
         //"all by itsef" for as long.
-        int      rowOffset     = nseqs * seq1;
+        size_t   rowOffset     = static_cast<size_t>(nseqs) * static_cast<size_t>(seq1);
         double*  distRow       = dist_mat       + rowOffset;
         double*  varRow        = var_mat        + rowOffset;
-        const L* thisSequence  = sequenceMatrix + seq1 * seqLen;
+        const L* thisSequence  = sequenceMatrix + static_cast<size_t>(seq1) * static_cast<size_t>(seqLen);
         const L* otherSequence = thisSequence   + seqLen;
         double maxDistanceInRow = 0.0;
         for (int seq2 = seq1 + 1; seq2 < nseqs; ++seq2) {
@@ -3678,7 +3678,7 @@ double PhyloTree::computeDist(double *dist_mat, double *var_mat) {
         #else
             AlignmentPairwise* processor = distanceProcessors[0];
         #endif
-        int rowStartPos = seq1 * nseqs;
+        size_t rowStartPos = seq1 * nseqs;
         for (size_t seq2=seq1+1; seq2 < nseqs; ++seq2) {
             size_t sym_pos = rowStartPos + seq2;
             double d2l = var_mat[sym_pos]; // moved here for thread-safe (OpenMP)
