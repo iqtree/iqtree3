@@ -14,7 +14,6 @@ timeutil.h hammingdistance.h
 operatingsystem.cpp operatingsystem.h
 heapsort.h
 mutsel_wrapper.cpp mutsel_wrapper.h
-self_process.h
 )
 
 if (USE_MUTSEL STREQUAL "ON")

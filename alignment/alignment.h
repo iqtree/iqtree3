@@ -552,6 +552,7 @@ public:
      */
     bool isGapOnlySeq(int seq) const;
 
+    bool isSSM() const { return !ptn_rate_mat.empty(); }
     bool isSSF() const { return !ptn_state_freq.empty(); }
 
     virtual bool isSuperAlignment() const { return false; }
@@ -944,15 +945,20 @@ public:
   vector<uint32_t> pomo_sampled_states;
   IntIntMap pomo_sampled_states_index; // indexing, to quickly find if a PoMo-2-state is already present
 
-    /* for site-specific state frequency model with Huaichun, Edward, Andrew */
+    /* for site-specific models */
 
-    /** pattern index to state frequency vector map */
+    /** the size of a rate matrix in ptn_rate_mat */
+    // Minh: introducing a new variable can make it more bug-prone
+    // For the future, use getNumRateEntries() from the Model
+    //int num_rates;
+    virtual int getNumRates() const { return num_states*(num_states-1)/2; }
+    
+    /** pattern ID to rate matrix map */
+    vector<double*> ptn_rate_mat;
+
+    /** pattern ID to state frequency vector map */
     vector<double*> ptn_state_freq;
 
-    /** site to rate matrix. Stored in row-major order [num_sites, 190] used for MUTSEL */
-    vector<double> site_rate_matrices;
-    // Minh/Thomas: TODO rename this to ptn_rate_matrices to avoid confusions
-    
     /**
      * @return true if data type is SEQ_CODON and state is a stop codon
      */

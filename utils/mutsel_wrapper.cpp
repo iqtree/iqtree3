@@ -20,6 +20,7 @@ void rust_mutsel(int32_t *parents,
     std::cout << "Mutsel support not compiled in!" << std::endl;
     exit(1);
 }
+
 void rust_set_rayon_threads(int32_t num_threads)
 {
     return;
@@ -219,8 +220,13 @@ std::string read_binary_site_model_file_internal(std::string &filename, std::vec
 
 void write_site_models_to_alignment(Alignment &alignment, const double *site_freq, const double *rate_matrices, int len)
 {
-    alignment.ptn_state_freq.clear();
-    alignment.site_rate_matrices.clear();
+    ASSERT(alignment.ptn_rate_mat.empty() &&
+           alignment.ptn_state_freq.empty());
+
+    // currently we only support 20 states for mutsel model,
+    // so this function should only be called for protein alignments
+    ASSERT(alignment.num_states == 20);
+    //alignment.num_rates = 190;
 
     size_t nsite = alignment.getNSite();
     if (len != static_cast<int>(nsite))
@@ -239,16 +245,15 @@ void write_site_models_to_alignment(Alignment &alignment, const double *site_fre
     }
 
     bool aln_changed = false;
-    ASSERT(alignment.num_states == 20); // currently we only support 20 states for mutsel model, so this function should only be called for protein alignments
 
     vector<double *> models_freq;
-    vector<DoubleVector> models_rate;
+    vector<double *> models_rate;
     for (size_t site = 0; site < nsite; ++site)
     {
         site_model[site] = models_freq.size();
 
-        const double *freq = site_freq + site * 20;
-        const double *rate_para = rate_matrices + site * 190;
+        const double *state_freq_ptr = site_freq + site * 20;
+        const double *rate_mat_ptr = rate_matrices + site * 190;
 
         bool add = true;
         int first_site = pattern_first_site[alignment.getPatternID(site)];
@@ -258,7 +263,7 @@ void write_site_models_to_alignment(Alignment &alignment, const double *site_fre
             bool matched_freq_and_rate = true;
             for (int i = 0; i < 20; ++i)
             {
-                if (freq[i] != models_freq[first_model][i])
+                if (state_freq_ptr[i] != models_freq[first_model][i])
                 {
                     matched_freq_and_rate = false;
                     break;
@@ -268,7 +273,7 @@ void write_site_models_to_alignment(Alignment &alignment, const double *site_fre
             {
                 for (int i = 0; i < 190; ++i)
                 {
-                    if (rate_para[i] != models_rate[first_model][i])
+                    if (rate_mat_ptr[i] != models_rate[first_model][i])
                     {
                         matched_freq_and_rate = false;
                         break;
@@ -290,9 +295,11 @@ void write_site_models_to_alignment(Alignment &alignment, const double *site_fre
         if (add)
         {
             double *site_freq_entry = new double[20];
-            memcpy(site_freq_entry, freq, sizeof(double) * 20);
+            memcpy(site_freq_entry, state_freq_ptr, sizeof(double) * 20);
             models_freq.push_back(site_freq_entry);
-            models_rate.emplace_back(rate_para, rate_para + 190);
+            double *site_rate_entry = new double[190];
+            memcpy(site_rate_entry, rate_mat_ptr, sizeof(double) * 190);
+            models_rate.push_back(site_rate_entry);
         }
     }
 
@@ -310,28 +317,28 @@ void write_site_models_to_alignment(Alignment &alignment, const double *site_fre
         }
     }
 
-    vector<bool> used_model(models_freq.size(), false);
+    size_t used_models = 0;
+    vector<bool> model_used(models_freq.size(), false);
     for (size_t ptn = 0; ptn < alignment.getNPattern(); ++ptn)
     {
         int first_site = pattern_first_site[ptn];
         int model_id = site_model[first_site];
-        used_model[model_id] = true;
+        used_models++;
+        model_used[model_id] = true;
+        alignment.ptn_rate_mat.push_back(models_rate[model_id]);
         alignment.ptn_state_freq.push_back(models_freq[model_id]);
-        alignment.site_rate_matrices.insert(
-            alignment.site_rate_matrices.end(),
-            models_rate[model_id].begin(),
-            models_rate[model_id].end());
     }
 
     for (size_t model_id = 0; model_id < models_freq.size(); ++model_id)
     {
-        if (!used_model[model_id])
+        if (!model_used[model_id])
         {
             delete[] models_freq[model_id];
+            delete[] models_rate[model_id];
         }
     }
 
-    cout << models_freq.size() << " distinct per-site state frequency vectors detected" << endl;
+    cout << used_models << " distinct per-site models detected" << endl;
 }
 
 void read_site_model_file(const std::string &filename, Alignment &alignment)
@@ -348,8 +355,9 @@ void write_binary_site_model_file(const std::string &filename, Alignment &alignm
 {
     size_t nsites = alignment.getNSite();
     size_t nstates = alignment.num_states;
+    size_t nrates = alignment.getNumRates();
     ASSERT(nstates == 20);
-
+    ASSERT(nrates == 190);
     try
     {
         ofstream out;
@@ -368,13 +376,13 @@ void write_binary_site_model_file(const std::string &filename, Alignment &alignm
         for (size_t i = 0; i < nsites; ++i)
         {
             double *state_freq = alignment.ptn_state_freq[pattern_index[i]];
-            out.write(reinterpret_cast<const char *>(state_freq), 20 * sizeof(double));
+            out.write(reinterpret_cast<const char *>(state_freq), nstates * sizeof(double));
         }
 
         for (size_t i = 0; i < nsites; ++i)
         {
-            double *rate_para_ptr = alignment.site_rate_matrices.data() + pattern_index[i] * 190;
-            out.write(reinterpret_cast<const char *>(rate_para_ptr), 190 * sizeof(double));
+            double *rate_mat = alignment.ptn_rate_mat[pattern_index[i]];
+            out.write(reinterpret_cast<const char *>(rate_mat), nrates * sizeof(double));
         }
 
         cout << "Site mutsel model printed to " << filename << endl;
@@ -388,15 +396,15 @@ void write_binary_site_model_file(const std::string &filename, Alignment &alignm
 DoubleVector computeMutselSiteRates(Alignment &alignment)
 {
     ASSERT(alignment.num_states == 20);
+    ASSERT(alignment.ptn_rate_mat.size() == alignment.getNPattern());
     ASSERT(alignment.ptn_state_freq.size() == alignment.getNPattern());
-    ASSERT(alignment.site_rate_matrices.size() == alignment.getNPattern() * 190);
 
     size_t npattern = alignment.getNPattern();
     DoubleVector pattern_rates(npattern);
     for (size_t ptn = 0; ptn < npattern; ++ptn)
     {
+        double *R = alignment.ptn_rate_mat[ptn];
         double *pi = alignment.ptn_state_freq[ptn];
-        double *R = alignment.site_rate_matrices.data() + ptn * 190;
         double rate = 0.0;
         int idx = 0;
         for (int i = 0; i < 20; ++i)

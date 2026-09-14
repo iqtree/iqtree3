@@ -75,6 +75,7 @@ Alignment::Alignment() {
     non_stop_codon = nullptr;
     seq_type = SEQ_UNKNOWN;
     STATE_UNKNOWN = 126;
+    //num_rates = 0;
     // pars_lower_bound = nullptr; // now a local variable in orderPatternByNumChars()
 }
 
@@ -85,6 +86,11 @@ Alignment::~Alignment() {
     non_stop_codon = nullptr;
     // delete [] pars_lower_bound; // now a local variable in orderPatternByNumChars()
     // pars_lower_bound = nullptr;
+    for (vector<double *>::reverse_iterator rit = ptn_rate_mat.rbegin(); rit != ptn_rate_mat.rend(); ++rit) {
+        delete [] (*rit);
+        (*rit) = nullptr;
+    }
+    ptn_rate_mat.clear();
     for (vector<double *>::reverse_iterator rit = ptn_state_freq.rbegin(); rit != ptn_state_freq.rend(); ++rit) {
         delete [] (*rit);
         (*rit) = nullptr;
@@ -1589,6 +1595,13 @@ void Alignment::regroupSitePattern(const IntVector &site_group) {
         }
     }
     // refill the existing pattern-specific parameters
+    if (isSSM()) {
+        vector<double*> stored_ptn_rate_mat = ptn_rate_mat;
+        ptn_rate_mat.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_rate_mat.push_back(stored_ptn_rate_mat[new_to_old_pattern[ptn]]);
+        }
+    }
     if (isSSF()) {
         vector<double*> stored_ptn_state_freq = ptn_state_freq;
         ptn_state_freq.clear();
@@ -3623,6 +3636,7 @@ Alignment *Alignment::initAlignmentCopy() const {
     // Alignment members
     aln->seq_names = seq_names;
     aln->seq_type = seq_type;
+    //aln->num_rates = num_rates;
     aln->num_states = num_states;
     aln->STATE_UNKNOWN = STATE_UNKNOWN;
     if (aln->seq_type == SEQ_CODON) {
@@ -3665,14 +3679,24 @@ Alignment* Alignment::extractSubAlignment(const IntVector &seq_id,
         size_t true_chars = total_chars - gap_chars;
         if (true_chars >= min_true_chars) {
             bool added = aln->addPattern(pat);
+            if (isSSM() && added) {
+                // a new pattern is added, copy its rate matrix
+                double *rate_mat = nullptr;
+                int num_rates = getNumRates();
+                if (ptn_rate_mat[ptn]) {
+                    rate_mat = new double[num_rates];
+                    memcpy(rate_mat, ptn_rate_mat[ptn], num_rates*sizeof(double));
+                }
+                aln->ptn_rate_mat.push_back(rate_mat);
+            }
             if (isSSF() && added) {
                 // a new pattern is added, copy its state frequency vector
-                double *state_freqs = nullptr;
+                double *state_freq = nullptr;
                 if (ptn_state_freq[ptn]) {
-                    state_freqs = new double[num_states];
-                    memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                    state_freq = new double[num_states];
+                    memcpy(state_freq, ptn_state_freq[ptn], num_states*sizeof(double));
                 }
-                aln->ptn_state_freq.push_back(state_freqs);
+                aln->ptn_state_freq.push_back(state_freq);
             }
         }
         // site is examined, add to progress
@@ -3702,14 +3726,24 @@ Alignment *Alignment::extractPatterns(const IntVector &ptn_id) const {
         int ptn = *it;
         Pattern pat = at(ptn);
         bool added = aln->addPattern(pat);
+        if (isSSM() && added) {
+            // a new pattern is added, copy its rate matrix
+            double *rate_mat = nullptr;
+            int num_rates = getNumRates();
+            if (ptn_rate_mat[ptn]) {
+                rate_mat = new double[num_rates];
+                memcpy(rate_mat, ptn_rate_mat[ptn], num_rates*sizeof(double));
+            }
+            aln->ptn_rate_mat.push_back(rate_mat);
+        }
         if (isSSF() && added) {
             // a new pattern is added, copy its state frequency vector
-            double *state_freqs = nullptr;
+            double *state_freq = nullptr;
             if (ptn_state_freq[ptn]) {
-                state_freqs = new double[num_states];
-                memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                state_freq = new double[num_states];
+                memcpy(state_freq, ptn_state_freq[ptn], num_states*sizeof(double));
             }
-            aln->ptn_state_freq.push_back(state_freqs);
+            aln->ptn_state_freq.push_back(state_freq);
         }
     }
     aln->countConstSites();
@@ -3727,14 +3761,24 @@ Alignment *Alignment::extractPatternFreqs(const IntVector &ptn_freq) const {
             Pattern pat = at(ptn);
             pat.frequency = ptnf;
             bool added = aln->addPattern(pat);
+            if (isSSM() && added) {
+                // a new pattern is added, copy its rate matrix
+                double *rate_mat = nullptr;
+                int num_rates = getNumRates();
+                if (ptn_rate_mat[ptn]) {
+                    rate_mat = new double[num_rates];
+                    memcpy(rate_mat, ptn_rate_mat[ptn], num_rates*sizeof(double));
+                }
+                aln->ptn_rate_mat.push_back(rate_mat);
+            }
             if (isSSF() && added) {
                 // a new pattern is added, copy its state frequency vector
-                double *state_freqs = nullptr;
+                double *state_freq = nullptr;
                 if (ptn_state_freq[ptn]) {
-                    state_freqs = new double[num_states];
-                    memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                    state_freq = new double[num_states];
+                    memcpy(state_freq, ptn_state_freq[ptn], num_states*sizeof(double));
                 }
-                aln->ptn_state_freq.push_back(state_freqs);
+                aln->ptn_state_freq.push_back(state_freq);
             }
         }
     }
@@ -3752,14 +3796,24 @@ Alignment *Alignment::extractSites(const IntVector &site_id) const {
         Pattern pat = at(ptn);
         pat.frequency = 1;
         bool added = aln->addPattern(pat);
+        if (isSSM() && added) {
+            // a new pattern is added, copy its rate matrix
+            double *rate_mat = nullptr;
+            int num_rates = getNumRates();
+            if (ptn_rate_mat[ptn]) {
+                rate_mat = new double[num_rates];
+                memcpy(rate_mat, ptn_rate_mat[ptn], num_rates*sizeof(double));
+            }
+            aln->ptn_rate_mat.push_back(rate_mat);
+        }
         if (isSSF() && added) {
             // a new pattern is added, copy its state frequency vector
-            double *state_freqs = nullptr;
+            double *state_freq = nullptr;
             if (ptn_state_freq[ptn]) {
-                state_freqs = new double[num_states];
-                memcpy(state_freqs, ptn_state_freq[ptn], num_states*sizeof(double));
+                state_freq = new double[num_states];
+                memcpy(state_freq, ptn_state_freq[ptn], num_states*sizeof(double));
             }
-            aln->ptn_state_freq.push_back(state_freqs);
+            aln->ptn_state_freq.push_back(state_freq);
         }
     }
     aln->countConstSites();
@@ -4075,7 +4129,7 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
         pattern_freq->resize(0);
         pattern_freq->resize(aln->getNPattern(), 0);
     }
-    if (aln->isSSF() && spec) {
+    if ((aln->isSSM() || aln->isSSF()) && spec) {
         // resampling also the per-site state frequency vector
         outError("Unsupported bootstrap feature, pls contact the developers");
     }
@@ -4094,23 +4148,24 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
                 Pattern pat = aln->at(ptn);
                 pat.frequency = 1;
                 bool added = addPattern(pat);
+                if (aln->isSSM() && added) {
+                    // a new pattern is added, copy its rate matrix
+                    double *rate_mat = nullptr;
+                    int num_rates = aln->getNumRates();
+                    if (aln->ptn_rate_mat[ptn]) {
+                        rate_mat = new double[num_rates];
+                        memcpy(rate_mat, aln->ptn_rate_mat[ptn], num_rates*sizeof(double));
+                    }
+                    ptn_rate_mat.push_back(rate_mat);
+                }
                 if (aln->isSSF() && added) {
-                    // a new pattern is added, copy state frequency vector
+                    // a new pattern is added, copy its state frequency vector
                     double *state_freq = nullptr;
                     if (aln->ptn_state_freq[ptn]) {
                         state_freq = new double[num_states];
                         memcpy(state_freq, aln->ptn_state_freq[ptn], num_states*sizeof(double));
                     }
                     ptn_state_freq.push_back(state_freq);
-                    if (!aln->site_rate_matrices.empty()) {
-                        /* Minh/Thomas: Better change 190 to num_states*(numstates-1)/2 so that if you want to
-                         extend the model in the future, no change is needed here
-                         Also: This is only for reversible models. For non-rev models
-                         you need to store the full matrix, i.e., num_states*num_states entries
-                         */
-                        const double *rate_matrix = aln->site_rate_matrices.data() + ptn * 190;
-                        site_rate_matrices.insert(site_rate_matrices.end(), rate_matrix, rate_matrix + 190);
-                    }
                 }
                 if (pattern_freq) {
                     ((*pattern_freq)[ptn])++;
@@ -4195,8 +4250,8 @@ void Alignment::createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq
     		out_site += site_vec[part+1];
     	}
     }
-    if (!aln->site_rate_matrices.empty()) {
-        ASSERT(aln->site_rate_matrices.size() == aln->getNPattern() * 190);
+    if (aln->isSSM()) {
+        ASSERT(ptn_rate_mat.size() == getNPattern());
     }
     if (aln->isSSF()) {
         ASSERT(ptn_state_freq.size() == getNPattern());

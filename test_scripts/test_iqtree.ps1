@@ -10,12 +10,16 @@ $WD     = "test_scripts/test_data"
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-"Command`tRealTime(s)`tPeakMemory(MB)" | Out-File -FilePath $LOGFILE -Encoding utf8
+"identifier`tCommand`tRealTime(s)`tPeakMemory(MB)" | Out-File -FilePath $LOGFILE -Encoding utf8
 
 function Measure-IQTree {
     param (
         [string]$CommandLine
     )
+
+    # Identifier = the .iqtree file produced; keys the row in expect_*.txt.
+    $id = "(no --prefix)"
+    if ($CommandLine -match '--prefix\s+\S*[/\\](\S+)') { $id = $Matches[1] + ".iqtree" }
 
     Write-Host "`n===== RUNNING: $CommandLine ====="
 
@@ -58,7 +62,7 @@ function Measure-IQTree {
     Get-Content $tempOut
 
     # Log timing and memory
-    "$CommandLine`t$elapsed`t$([math]::Round($peakMemory, 2))" | Out-File -FilePath $LOGFILE -Append -Encoding utf8
+    "$id`t$CommandLine`t$elapsed`t$([math]::Round($peakMemory, 2))" | Out-File -FilePath $LOGFILE -Append -Encoding utf8
 
     # Cleanup
     Remove-Item $tempOut
@@ -100,6 +104,7 @@ Measure-IQTree "$IQTreeBin -s $WD/turtle.fa -m `"MIX+MF`" --prefix $OutDir/turtl
 Measure-IQTree "$IQTreeBin -s $WD/turtle.fa -p $WD/turtle.nex -o phrynops -m GTR+G --prefix $OutDir/turtle.nex.outgroup -T 1 -seed $SEED"
 Measure-IQTree "$IQTreeBin -s $WD/turtle.fa -lmap 100 -o phrynops -m GTR+G --prefix $OutDir/turtle.lmap.outgroup -T 1 -seed $SEED"
 
+
 ## amino acid test cases
 Write-Host "Running amino acid test cases..."
 
@@ -127,4 +132,7 @@ Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -p $WD/turtle_aa.nex -g $WD/tu
 
 Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -p $WD/turtle_aa.nex -g $WD/turtle.constr.tree2 -B 1000 -alrt 1000 --prefix $OutDir/turtle_aa.nex.constr2 -T 1 -seed $SEED"
 
-Measure-IQTree "$IQTreeBin -s $WD/turtle_aa.fasta -m MUTSEL -ft AUTO --prefix $OutDir/turtle_aa.mutsel -T 1 -seed $SEED"
+# Kept at the END of the suite on purpose: verify_memory/verify_runtime join the
+# threshold table to the log POSITIONALLY, so a command inserted mid-list shifts
+# every later row onto the wrong threshold. These two have no table rows yet, so
+# here they are simply skipped with a warning instead of corrupting the rest.

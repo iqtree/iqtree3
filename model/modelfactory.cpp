@@ -42,6 +42,7 @@
 #include "rateheterotachyinvar.h"
 //#include "ngs.h"
 #include <string>
+#include "tree/phylotreemixlen.h"
 #include "utils/timeutil.h"
 #include "nclextra/myreader.h"
 #include <sstream>
@@ -619,6 +620,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     /******************** initialize model ****************************/
 
     if (!tree->aln->isSSF()) {
+        // standard model
+        ASSERT(!tree->aln->isSSM());
         if (model_str.substr(0, 3) == "MIX" || freq_type == FREQ_MIXTURE) {
             string model_list;
             if (model_str.substr(0, 3) == "MIX") {
@@ -640,66 +643,56 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             model = createModel(model_str, models_block, freq_type, freq_params, tree);
         }
 //        fused_mix_rate &= model->isMixture() && site_rate->getNRate() > 1;
-    } else {
-        // site-specific model
-
-        if (tree->aln->site_rate_matrices.empty()) {
-            // PMSF
-            if (model_str == "JC" || model_str == "POISSON")
-                outError("JC is not suitable for site-specific model");
-            model = new ModelSet(model_str.c_str(), tree);
-            ModelSet *models = (ModelSet*)model; // assign pointer for convenience
-            models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
-            double *state_freq = new double[model->num_states];
-            double *rates = new double[model->getNumRateEntries()];
-            for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
-                ModelMarkov *modeli;
-                if (i == 0) {
-                    modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
-                    modeli->getStateFrequency(state_freq);
-                    modeli->getRateMatrix(rates);
-                } else {
-                    modeli = (ModelMarkov*)createModel(model_str, models_block, FREQ_EQUAL, "", tree);
-                    modeli->setStateFrequency(state_freq);
-                    modeli->setRateMatrix(rates);
-                }
-                if (tree->aln->ptn_state_freq[i])
-                    modeli->setStateFrequency (tree->aln->ptn_state_freq[i]);
-
-                modeli->init(FREQ_USER_DEFINED);
-                models->push_back(modeli);
+    } else if (!tree->aln->isSSM()) {
+        // site-specific frequency model (aka PMSF)
+        if (model_str == "JC" || model_str == "POISSON")
+            outError("JC is not suitable for site-specific model");
+        model = new ModelSet(model_str.c_str(), tree);
+        ModelSet *models = (ModelSet*)model; // assign pointer for convenience
+        models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
+        double *state_freq = new double[model->num_states];
+        double *rates = new double[model->getNumRateEntries()];
+        for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
+            ModelMarkov *modeli;
+            if (i == 0) {
+                modeli = (ModelMarkov*)createModel(model_str, models_block, (params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL, "", tree);
+                modeli->getStateFrequency(state_freq);
+                modeli->getRateMatrix(rates);
+            } else {
+                modeli = (ModelMarkov*)createModel(model_str, models_block, FREQ_EQUAL, "", tree);
+                modeli->setStateFrequency(state_freq);
+                modeli->setRateMatrix(rates);
             }
-            delete [] rates;
-            delete [] state_freq;
-
-            models->joinEigenMemory();
-            models->decomposeRateMatrix();
-        } else {
-            // MUTSEL
-            ModelSet *models = new ModelSet(model_str.c_str(), tree);
-            
-            models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
-            models->fixParameters(true);
-            
-            for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
-                ModelMarkov *modeli = new ModelMarkov(tree, true, true); // dummy model for getting num_states and num_rate_entries
+            if (tree->aln->ptn_state_freq[i]) {
                 modeli->setStateFrequency(tree->aln->ptn_state_freq[i]);
-                modeli->setRateMatrix(tree->aln->site_rate_matrices.data() + i * 190);
-                
-                // Minh/Thomas: Important to note: site Q matrices are not normalised
-                // But make sure to normalise across all sites, i.e.
-                // (1/nsites) * sum_i mu_i = 1.0, where mu_i = -sum_j pi^i_j * Q^i_{jj}
-                modeli->normalize_matrix = false;
-                modeli->init(FREQ_USER_DEFINED);
-                modeli->fixParameters(true);
-                models->push_back(modeli);
             }
-            
-            models->joinEigenMemory();
-            models->decomposeRateMatrix();
-
-            model = models;
+            modeli->init(FREQ_USER_DEFINED);
+            models->push_back(modeli);
         }
+        delete [] rates;
+        delete [] state_freq;
+        models->joinEigenMemory();
+        models->decomposeRateMatrix();
+    } else {
+        // Site-specific Q model (aka MUTSEL)
+        model = new ModelSet(model_str.c_str(), tree);
+        ModelSet *models = (ModelSet*)model; // assign pointer for convenience
+        models->init((params.freq_type != FREQ_UNKNOWN) ? params.freq_type : FREQ_EMPIRICAL);
+        models->fixParameters(true);
+        for (size_t i = 0; i < tree->aln->ptn_state_freq.size(); ++i) {
+            ModelMarkov *modeli = new ModelMarkov(tree, true, true); // dummy model for getting num_states and num_rate_entries
+            modeli->setStateFrequency(tree->aln->ptn_state_freq[i]);
+            modeli->setRateMatrix(tree->aln->ptn_rate_mat[i]);
+            // Minh/Thomas: Important to note: site Q matrices are not normalised
+            // But make sure to normalise across all sites, i.e.
+            // (1/nsites) * sum_i mu_i = 1.0, where mu_i = -sum_j pi^i_j * Q^i_{jj}
+            modeli->normalize_matrix = false;
+            modeli->init(FREQ_USER_DEFINED);
+            modeli->fixParameters(true);
+            models->push_back(modeli);
+        }
+        models->joinEigenMemory();
+        models->decomposeRateMatrix();
     }
 
 //    if (model->isMixture())
@@ -1087,7 +1080,6 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     } catch (const char* str) {
         outError(str);
     }
-
 }
 
 void ModelFactory::setCheckpoint(Checkpoint *checkpoint) {
@@ -1280,11 +1272,11 @@ void ModelFactory::initFromClassMinusOne(double init_weight) {
 }
 
 int ModelFactory::getNParameters(int brlen_type) {
-    int df = model->getNDim() + model->getNDimFreq() + site_rate->getNDim() +
-        site_rate->getTree()->getNBranchParameters(brlen_type);
-
+    int df = model->getNDim() + model->getNDimFreq() +
+             site_rate->getNDim() + site_rate->getTree()->getNBranchParameters(brlen_type);
     return df;
 }
+
 /*
 double ModelFactory::initGTRGammaIParameters(RateHeterogeneity *rate, ModelSubst *model, double initAlpha,
                                            double initPInvar, double *initRates, double *initStateFreqs)  {
@@ -1600,13 +1592,13 @@ double ModelFactory::optimizeParameters(int fixed_len, bool write_info,
                                         double logl_epsilon, double gradient_epsilon) {
     ASSERT(model);
     ASSERT(site_rate);
-
-//    double defaultEpsilon = logl_epsilon;
-
-    double begin_time = getRealTime();
-    double cur_lh;
     PhyloTree *tree = site_rate->getTree();
     ASSERT(tree);
+    if (tree->isMixlen()) {
+        ((PhyloTreeMixlen*)tree)->initializeMixlen(logl_epsilon, write_info);
+    }
+    double begin_time = getRealTime();
+    double cur_lh;
 
     stopStoringTransMatrix();
 
@@ -1876,9 +1868,84 @@ ModelFactory::~ModelFactory()
     clear();
 }
 
+string ModelFactory::sortClassesByTreeLength() {
+    ASSERT(model);
+    ASSERT(site_rate);
+    PhyloTree *tree = site_rate->getTree();
+    ASSERT(tree);
+    if (!tree->isMixlen()) {
+        return tree->getTreeString();
+    }
+    DoubleVector brlen;
+    tree->saveBranchLengths(brlen);
+    size_t nmixlen = tree->getNMixlen();
+    ASSERT(brlen.size() == tree->branchNum * nmixlen);
+    // compute tree lengths
+    int index[nmixlen];
+    double treelen[nmixlen];
+    memset(treelen, 0, nmixlen*sizeof(double));
+    for (size_t i = 0; i < nmixlen; ++i) {
+        index[i] = i;
+    }
+    for (size_t b = 0; b < brlen.size(); ++b) {
+        treelen[b%nmixlen] += brlen[b];
+    }
+    // sort tree lengths and reorder mixlen classes
+    quicksort(treelen, 0, nmixlen-1, index);
+    bool sorted = true;
+    for (size_t i = 0; i < nmixlen; ++i) {
+        sorted &= (index[i] == i);
+    }
+    if (!sorted) {
+        double score = tree->curScore;
+        cout << "Reordering rate classes by tree lengths" << endl;
+        // reorder mixlen class branch lengths
+        DoubleVector sorted_brlen(brlen.size(), 0.0);
+        for (size_t b = 0; b < tree->branchNum; ++b) {
+            for (size_t i = 0; i < nmixlen; ++i) {
+                sorted_brlen[b*nmixlen + i] = brlen[b*nmixlen + index[i]];
+            }
+        }
+        tree->restoreBranchLengths(sorted_brlen);
+        // reoder mixlen class weights
+        ASSERT(site_rate->getNRate() == nmixlen);
+        double prop[nmixlen];
+        for (size_t i = 0; i < nmixlen; ++i) {
+            prop[i] = site_rate->getProp(index[i]);
+        }
+        for (size_t i = 0; i < nmixlen; ++i) {
+            site_rate->setProp(i, prop[i]);
+        }
+        // reorder fused mixture models
+        if (fused_mix_rate) {
+            ASSERT(model->getNMixtures() == nmixlen);
+            ModelSubst *models[nmixlen];
+            for (size_t i = 0; i < nmixlen; ++i) {
+                ASSERT(model->getMixtureWeight(i) == 1.0);
+                models[i] = model->getMixtureClass(index[i]);
+            }
+            for (size_t i = 0; i < nmixlen; ++i) {
+                model->setMixtureClass(i, models[i]);
+            }
+            int num_states = model->num_states;
+            for (size_t i = 0; i < nmixlen; ++i) {
+                ((ModelMarkov*)model->getMixtureClass(i))->setEigenvalues(&model->getEigenvalues()[i*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setEigenvectors(&model->getEigenvectors()[i*num_states*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setInverseEigenvectors(&model->getInverseEigenvectors()[i*num_states*num_states]);
+                ((ModelMarkov*)model->getMixtureClass(i))->setInverseEigenvectorsTransposed(&model->getInverseEigenvectorsTransposed()[i*num_states*num_states]);
+            }
+            model->decomposeRateMatrix();
+            site_rate->writeInfo(cout);
+        }
+        tree->clearAllPartialLH();
+        ASSERT(fabs(score - tree->computeLikelihood()) < 0.1);
+    }
+    return tree->getTreeString();
+}
+
 /************* FOLLOWING SERVE FOR JOINT OPTIMIZATION OF MODEL AND RATE PARAMETERS *******/
-int ModelFactory::getNDim()
-{
+
+int ModelFactory::getNDim() {
     return model->getNDim() + site_rate->getNDim();
 }
 

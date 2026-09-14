@@ -1684,8 +1684,6 @@ public:
     /** TRUE to optimize mixture model nucleotide/amino acide frequency */
     bool optimize_mixmodel_freq;
 
-    /** number of mixture branch lengths, default 1 */
-    int num_mixlen;
     /** TRUE to always optimize rate matrix even if user parameters are specified in e.g. GTR{1,2,3,4,5} */
     bool optimize_rate_matrix;
 

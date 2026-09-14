@@ -471,9 +471,9 @@ jobs:
       - name: Run verify_runtimes.ps1
         shell: pwsh
         run: |
-          ./test_scripts/verify_runtime.ps1 -IQTree2Log time_log_iqtree2.tsv -IQTree3Log time_log_iqtree3.tsv -FallbackColumn windows-x86
+          ./test_scripts/verify_runtime.ps1 -IQTree2Log time_log_iqtree2.tsv -IQTree3Log time_log_iqtree3.tsv -Platform windows-x86
 
       - name: Run verify_memory.ps1
         shell: pwsh
         run: |
-          ./test_scripts/verify_memory.ps1 -IQTree2Log time_log_iqtree2.tsv -IQTree3Log time_log_iqtree3.tsv -FallbackColumn windows-x86
+          ./test_scripts/verify_memory.ps1 -IQTree2Log time_log_iqtree2.tsv -IQTree3Log time_log_iqtree3.tsv -Platform windows-x86

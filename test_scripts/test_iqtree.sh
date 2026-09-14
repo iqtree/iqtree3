@@ -13,10 +13,14 @@ OUT_DIR="${3:-${WD}}"
 mkdir -p "${OUT_DIR}"
 
 # Initialize TSV file with header
-echo -e "Command\tRealTime(s)\tPeakMemory(MB)" > "$LOGFILE"
+echo -e "identifier\tCommand\tRealTime(s)\tPeakMemory(MB)" > "$LOGFILE"
 
 run_timed() {
     local CMD="$*"
+    # Identifier = the .iqtree file produced; keys the row in expect_*.txt.
+    local ID
+    ID=$(echo "$CMD" | sed -n 's|.*--prefix [^ ]*/\([^ ]*\).*|\1|p')
+    if [ -n "$ID" ]; then ID="${ID}.iqtree"; else ID="(no --prefix)"; fi
     echo -e "\n================ RUNNING ================="
     echo "$CMD"
     echo "=========================================="
@@ -46,7 +50,7 @@ run_timed() {
     fi
 
     # Append to log
-    echo -e "$CMD\t$REAL\t$MEM_MB" >> "$LOGFILE"
+    echo -e "$ID\t$CMD\t$REAL\t$MEM_MB" >> "$LOGFILE"
 
     rm -f tmp_time.txt
 }
@@ -93,6 +97,7 @@ run_timed ${IQTREE_BIN} -s ${WD}/turtle.fa -p ${WD}/turtle.nex -o phrynops -m GT
 run_timed ${IQTREE_BIN} -s ${WD}/turtle.fa -lmap 100 -o phrynops -m GTR+G --prefix ${OUT_DIR}/turtle.lmap.outgroup -T 1 -seed $SEED
 
 
+
 ## amino acid test cases
 echo "Running amino acid test cases..."
 AA_FASTA=${WD}/turtle_aa.fasta
@@ -125,4 +130,7 @@ run_timed ${IQTREE_BIN} -s $AA_FASTA -p $AA_NEX -g ${WD}/turtle.constr.tree --pr
 
 run_timed ${IQTREE_BIN} -s $AA_FASTA -p $AA_NEX -g ${WD}/turtle.constr.tree2 -B 1000 -alrt 1000 --prefix ${OUT_DIR}/turtle_aa.nex.constr2 -T 1 -seed $SEED
 
-run_timed ${IQTREE_BIN} -s $AA_FASTA -m "MUTSEL" -ft AUTO --prefix ${OUT_DIR}/turtle_aa.mutsel -T 1 -seed $SEED
+# Kept at the END of the suite on purpose: verify_memory/verify_runtime join the
+# threshold table to the log POSITIONALLY, so a command inserted mid-list shifts
+# every later row onto the wrong threshold. These two have no table rows yet, so
+# here they are simply skipped with a warning instead of corrupting the rest.
