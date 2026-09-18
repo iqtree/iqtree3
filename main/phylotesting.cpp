@@ -5558,6 +5558,7 @@ void PartitionFinder::test_PartitionModel() {
 
     int merge_step = 0;
     double pre_inf_score = inf_score;
+    double pre_inf_score_maic = params->marginal_lh_aic ? inf_score_maic : 0.0;
 
     while (proceed_stepwise_merge) {
         // stepwise merging charsets
@@ -5658,15 +5659,21 @@ void PartitionFinder::test_PartitionModel() {
                 default:             algo_name = ""; break;
             }
             clearProgressLine();
+            // report the criterion that actually drives merging: whether mAIC is applied.
+            string merit_name = params->marginal_lh_aic ? "mAIC" : criterionName(params->model_test_criterion);
+            double merit_score = params->marginal_lh_aic ? inf_score_maic : inf_score;
+            double pre_merit_score = params->marginal_lh_aic ? pre_inf_score_maic : pre_inf_score;
             cout << "PartitionFinder\t" << algo_name
                  << "\tStep " << merge_step
                  << "\t" << gene_sets.size() << " Partitions\t"
-                 << criterionName(params->model_test_criterion)
-                 << " " << inf_score
-                 << "\tdelta" << criterionName(params->model_test_criterion)
-                 << " " << inf_score - pre_inf_score
+                 << merit_name
+                 << " " << merit_score
+                 << "\tdelta" << merit_name
+                 << " " << merit_score - pre_merit_score
                  << endl;
             pre_inf_score = inf_score;
+            if (params->marginal_lh_aic)
+                pre_inf_score_maic = inf_score_maic;
 
             // proceed to the next iteration if gene_sets.size() >= 2
             proceed_stepwise_merge = (gene_sets.size() >= 2);
