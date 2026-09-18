@@ -5545,17 +5545,6 @@ void PartitionFinder::test_PartitionModel() {
 
     bool proceed_stepwise_merge = perform_merge;
 
-    // variables for mAIC merging
-    bool switched_to_caic = false;
-    double lhsum_bu;
-    int dfsum_bu;
-    vector<set<int> > gene_sets_bu;
-    DoubleVector lhvec_bu;
-    IntVector dfvec_bu;
-    DoubleVector lenvec_bu;
-    StrVector model_names_bu;
-    StrVector greedy_model_trees_bu;
-
     int merge_step = 0;
     double pre_inf_score = inf_score;
     double pre_inf_score_maic = params->marginal_lh_aic ? inf_score_maic : 0.0;
