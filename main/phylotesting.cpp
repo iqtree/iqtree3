@@ -7515,7 +7515,7 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
         outWarning("Running MixtureFinder for the given data type can take much time. Please consider restricting the set of the models to test as much as possible");
     
     if (iqtree->aln->seq_type == SEQ_PROTEIN && !params.force_aa_mix_finder)
-        outError("Error! We already have the C10-C60 mixture frequency vectors, which are effective for modeling amino acid data.\nPlease make sure that running MixtureFinder on your amino acid data makes sense.\nIf you still want to run it, please add the --force-aa-mix-finder option to the command line."); 
+        outError("Error! We already have the C10-C60 mixture frequency vectors, which are effective for modeling amino acid data.\nPlease make sure that running MixtureFinder on your amino acid data makes sense.\nIf you still want to run it, please add the --force-aa-mix-finder option to the command line.");
     
 
     // create a new IQTree object for this mixture model
