@@ -53,7 +53,7 @@ void PhyloTree::setLikelihoodKernelSSE() {
         outError("Site-specific model is not yet supported for nonreversible models");
     
     setParsimonyKernelSSE();
-    computeLikelihoodDervMixlenPointer = NULL;
+    computeLikelihoodDervMixlenPointer = nullptr;
 
     if (site_model && safe_numeric) {
         switch (aln->num_states) {
@@ -129,7 +129,7 @@ void PhyloTree::setLikelihoodKernelSSE() {
                     break;
             }
         }
-        computeLikelihoodFromBufferPointer = NULL;
+        computeLikelihoodFromBufferPointer = nullptr;
         return;        
     }
 

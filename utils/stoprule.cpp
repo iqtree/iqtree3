@@ -317,7 +317,7 @@ void StopRule::cmpInvMat (DoubleMatrix &oriMat, DoubleMatrix &invMat, int size) 
 			invMat[ix][jx] = wk[ix];
 	}
 	free((char *)wk);
-	wk = NULL;
+	wk = nullptr;
 } /* luinverse */
 
 void StopRule::readMat (char *fileName, DoubleMatrix &oriMat, int &size) {

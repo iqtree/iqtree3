@@ -33,7 +33,7 @@ void ModelHmmGm::initialize_transitLog() {
 
     // memory allocation of the array
     size_t transit_size = get_safe_upper_limit(ncat * ncat);
-    if (transitLog != NULL)
+    if (transitLog != nullptr)
         aligned_free(transitLog);
     transitLog = aligned_alloc<double>(transit_size);
 

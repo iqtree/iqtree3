@@ -27,7 +27,7 @@ RateMeyerHaeseler::RateMeyerHaeseler(char *file_name, PhyloTree *tree, bool rate
 {
 	name = "+M";
 	full_name = "Meyer & von Haeseler (2003)";
-	dist_mat = NULL;
+	dist_mat = nullptr;
 	setTree(tree);
 	rate_file = file_name;
 	rate_mh = rate_type;
@@ -42,9 +42,9 @@ RateMeyerHaeseler::RateMeyerHaeseler()
 {
 	name = "+M";
 	full_name = "Meyer & von Haeseler (2003)";
-	dist_mat = NULL;
-	phylo_tree = NULL;
-	rate_file = NULL;
+	dist_mat = nullptr;
+	phylo_tree = nullptr;
+	rate_file = nullptr;
 	rate_mh = true;
 }
 
@@ -203,8 +203,7 @@ void RateMeyerHaeseler::initializeRates() {
 }
 
 void RateMeyerHaeseler::prepareRateML(IntVector &ptn_id) {
-	Alignment *aln = new Alignment();
-	aln->extractPatterns(phylo_tree->aln, ptn_id);
+	Alignment *aln = phylo_tree->aln->extractPatterns(ptn_id);
 	ptn_tree = new PhyloTree(aln);
 	stringstream ss;
 	phylo_tree->printTree(ss);
@@ -219,12 +218,12 @@ void RateMeyerHaeseler::prepareRateML(IntVector &ptn_id) {
 }
 
 void RateMeyerHaeseler::completeRateML() {
-	ptn_tree->setModelFactory(NULL);
-	ptn_tree->setModel(NULL);
-	//ptn_tree->setRate(NULL);
+	ptn_tree->setModelFactory(nullptr);
+	ptn_tree->setModel(nullptr);
+	//ptn_tree->setRate(nullptr);
 	delete ptn_tree->aln;
 	delete ptn_tree;
-	ptn_tree = NULL;
+	ptn_tree = nullptr;
 }
 
 double RateMeyerHaeseler::optimizeRate(int pattern) {
@@ -338,7 +337,7 @@ void RateMeyerHaeseler::optimizeRates() {
 	int nstates = phylo_tree->aln->num_states;
 	for (i = 0; i < size(); i++) {
         int freq = phylo_tree->aln->at(i).frequency;
-		if (phylo_tree->aln->at(i).computeAmbiguousChar(nstates) <= nseq-2) {
+		if (phylo_tree->aln->at(i).countAmbiguousChar(nstates) <= nseq-2) {
 			optimizeRate(i);
 			if (at(i) == MIN_SITE_RATE) invar_sites += freq;
 			if (at(i) == MAX_SITE_RATE) {

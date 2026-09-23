@@ -53,6 +53,7 @@ void inferInputParameters(Params &params, Checkpoint *checkpoint, IQTree *&tree,
 *  generate a random tree
 */
 void generateRandomTree(Params &params);
+void generateRandomTree(Params &params, ostream &out);
 
 /**
 *  show all input parameters for AliSim
@@ -146,6 +147,6 @@ void outputTreeWithInternalNames(AliSimulator* alisimulator);
 /**
 *  set internal node name as the node's id
 */
-void updateInternalNodeName(Node *node, Node *dad = NULL);
+void updateInternalNodeName(Node *node, Node *dad = nullptr);
 
 #endif /* alisim_h */

@@ -65,8 +65,8 @@ int WHTest(Params &params, IQTree &tree) {
 	double gamma_shape = tree.getModelFactory()->site_rate->getGammaShape();
 	if (gamma_shape == 0) gamma_shape = 100.0;
 	//WHT_setParams(params.whtest_simulations, gamma_shape, params.out_prefix, tree.dist_matrix);
-	WHT_setParams(params.whtest_simulations, gamma_shape, params.out_prefix, NULL);
-	retval = WHTest_run(0, NULL);
+	WHT_setParams(params.whtest_simulations, gamma_shape, params.out_prefix, nullptr);
+	retval = WHTest_run(0, nullptr);
 	WHT_getResults(&params.whtest_delta, &params.whtest_delta_quantile, &params.whtest_p_value);
 	return retval;
 }

@@ -40,7 +40,7 @@
 #include "model/modelsubst.h"
 #include "alignment/sequence.h"
 
-using namespace std;
+// using namespace std;
 
 /*--------------------------------------------------------------*/
 
@@ -91,7 +91,7 @@ public:
         node = anode;
         length = alength;
         id = -1;
-        split = NULL;
+        split = nullptr;
     }
 
     /**
@@ -104,7 +104,7 @@ public:
         node = anode;
         length = alength;
         id = aid;
-        split = NULL;
+        split = nullptr;
     }
 
     /**
@@ -115,7 +115,7 @@ public:
         node = nei->node;
         length = nei->length;
         id = nei->id;
-        split = NULL;
+        split = nullptr;
         attributes = nei->attributes;
     }
 
@@ -272,7 +272,7 @@ public:
     /**
         sequence
      */
-    Sequence* sequence = NULL;
+    Sequence* sequence = nullptr;
 
     /**
         list of neighbors
@@ -301,7 +301,7 @@ public:
     Node() {
         id = -1;
         height = -1;
-        sequence = NULL;
+        sequence = nullptr;
     };
 
 
@@ -361,7 +361,7 @@ public:
         @param dad the dad of this node
         @return the leaf at the lowest level. Also modify the height, highestNei of this class.
      */
-    Node *calcHeight(Node *dad = NULL);
+    Node *calcHeight(Node *dad = nullptr);
 
 
     /**
@@ -369,7 +369,7 @@ public:
      * @param parner the other node
      * @return the distance
      */
-    int calDist(Node *parner, Node *dad = NULL, int curLen = 0);
+    int calDist(Node *parner, Node *dad = nullptr, int curLen = 0);
 
     /** calculate the longest path in the subtree (version 2: more efficient)
         @param node1 the returned node1 of the one end of the path
@@ -380,7 +380,7 @@ public:
 
     /**
         @param node the target node
-        @return the iterator to the neighbor that has the node. If not found, return NULL
+        @return the iterator to the neighbor that has the node. If not found, return nullptr
      */
     Neighbor *findNeighbor(Node *node);
 

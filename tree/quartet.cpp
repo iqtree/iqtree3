@@ -40,7 +40,7 @@
 #define LM_MAX  10
 #endif
 
-//*** likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS)
+//*** likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS) ***//
 
 // #include <time.h>
 
@@ -491,7 +491,7 @@ void initeps(FILE *ofp, QuartetGroups &LMGroups)
 /* plot one point of likelihood mapping analysis (EPS) */
 void plotlmpointeps(FILE *epsofp, double w1, double w2)
 {
-	fprintf(epsofp,"%.10f tl %.10f tl dot\n", 0.5*w1 + w2, w1*0.8660254038);
+	fprintf(epsofp,"%.10f tl %.10f tl dot\n", (0.5*w1) + w2, w1*0.8660254038);
 } /* plotlmpointeps */
 
 
@@ -666,11 +666,7 @@ void finisheps(FILE *ofp, vector<SeqQuartetInfo> lmap_seq_quartet_info, int leaf
 /*  end of Likelihood mapping routines  */
 /****************************************/
 
-
-/***************************************************************/ 
-
-
-//*** end of likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS)
+//*** end of likelihood mapping stuff (imported from TREE-PUZZLE's lmap.c) (HAS) ***//
 
 
 void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info, QuartetGroups &LMGroups) {
@@ -895,18 +891,11 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
         // obsolete: sort(lmap_quartet_info[qid].seqID, lmap_quartet_info[qid].seqID+4); // why sort them?!? HAS ;^)
 
         // initialize sub-alignment and sub-tree
-        Alignment *quartet_aln;
-        if (aln->isSuperAlignment()) {
-            quartet_aln = new SuperAlignment;
-        } else {
-            quartet_aln = new Alignment;
-        }
         IntVector seq_id;
         seq_id.insert(seq_id.begin(), lmap_quartet_info[qid].seqID, lmap_quartet_info[qid].seqID+4);
         IntVector kept_partitions;
         // only keep partitions with at least 3 sequences
-        quartet_aln->extractSubAlignment(aln, seq_id, 0, 3, &kept_partitions);
-                
+        Alignment *quartet_aln = aln->extractSubAlignment(seq_id, 0, 3, &kept_partitions);
         if (kept_partitions.size() == 0) {
             // nothing kept
             for (int k = 0; k < 3; k++) {
@@ -955,8 +944,8 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
             // loop over 3 quartets to compute likelihood
             for (int k = 0; k < 3; k++) {
                 string quartet_tree_str;
-                quartet_tree_str = "(" + quartet_aln->getSeqName(qc[k*4]) + "," + quartet_aln->getSeqName(qc[k*4+1]) + ",(" + 
-                    quartet_aln->getSeqName(qc[k*4+2]) + "," + quartet_aln->getSeqName(qc[k*4+3]) + "));";
+                quartet_tree_str = "(" + quartet_aln->getSeqName(qc[k*4]) + "," + quartet_aln->getSeqName(qc[(k*4)+1]) + ",(" +
+                    quartet_aln->getSeqName(qc[(k*4)+2]) + "," + quartet_aln->getSeqName(qc[(k*4)+3]) + "));";
                 quartet_tree->readTreeStringSeqName(quartet_tree_str);
                 quartet_tree->initializeAllPartialLh();
                 quartet_tree->wrapperFixNegativeBranch(true);
@@ -964,16 +953,16 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
                 lmap_quartet_info[qid].logl[k] = quartet_tree->optimizeAllBranches(10, 0.1);
             }
             // reset model & rate so that they are not deleted
-            quartet_tree->setModel(NULL);
-            quartet_tree->setModelFactory(NULL);
-            quartet_tree->setRate(NULL);
+            quartet_tree->setModel(nullptr);
+            quartet_tree->setModelFactory(nullptr);
+            quartet_tree->setRate(nullptr);
 
             if (isSuperTree()) {
                 PhyloSuperTree *quartet_super_tree = (PhyloSuperTree*)quartet_tree;
                 for (int i = 0; i < quartet_super_tree->size(); i++) {
-                    quartet_super_tree->at(i)->setModelFactory(NULL);
-                    quartet_super_tree->at(i)->setModel(NULL);
-                    quartet_super_tree->at(i)->setRate(NULL);
+                    quartet_super_tree->at(i)->setModelFactory(nullptr);
+                    quartet_super_tree->at(i)->setModel(nullptr);
+                    quartet_super_tree->at(i)->setRate(nullptr);
                 }
             }
             delete quartet_tree;
@@ -1066,7 +1055,7 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
 	/* 110 distribution */
 	temp1 = 0.5 - lmap_quartet_info[qid].qweight[qworder[0]];
 	temp2 = 0.5 - lmap_quartet_info[qid].qweight[qworder[1]];
-	sqdiff[1] = temp1*temp1 + temp2*temp2 +
+	sqdiff[1] = (temp1*temp1) + (temp2*temp2) +
 		lmap_quartet_info[qid].qweight[qworder[2]]*lmap_quartet_info[qid].qweight[qworder[2]];
 	discreteweight[1] = treebits[qworder[0]] + treebits[qworder[1]];
 
@@ -1172,9 +1161,6 @@ void PhyloTree::computeQuartetLikelihoods(vector<QuartetInfo> &lmap_quartet_info
     }
      */
 } // end PhyloTree::computeQuartetLikelihoods
-
-
-//**************************************
 
 /**
     read groups in following format "(A, B, C, D), (E, F), (G, H), (I);"
@@ -1363,8 +1349,6 @@ void PhyloTree::readLikelihoodMappingGroups(char *filename, QuartetGroups &LMGro
 
 } // end PhyloTree::readLikelihoodMappingGroups
 
-//**************************************
-
 void PhyloTree::doLikelihoodMapping() {
     // TODO For Heiko: Please add code here
     // vector<QuartetInfo> lmap_quartet_info;
@@ -1376,7 +1360,7 @@ void PhyloTree::doLikelihoodMapping() {
     ofstream out;
     string filename;
     
-    if(params->lmap_cluster_file != NULL) {
+    if(params->lmap_cluster_file != nullptr) {
 	// cout << "YYY: test reading" << params->lmap_cluster_file << endl;
         readLikelihoodMappingGroups(params->lmap_cluster_file, LMGroups);
     } else {

@@ -81,6 +81,11 @@ set(GCC_MIN_VERSION "9") # minimum GCC version that is tested in CI
 project(iqtree)
 add_definitions(-DIQ_TREE)
 
+# Require position independent code for IQ-TREE to be used as a library 
+if (BUILD_LIB)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # Find Eigen3 library
 if (NOT EIGEN3_INCLUDE_DIR)
     find_package(Eigen3)
@@ -115,8 +120,8 @@ find_package(Backtrace)
 
 # The version number.
 set (iqtree_VERSION_MAJOR 3)
-set (iqtree_VERSION_MINOR 0)
-set (iqtree_VERSION_PATCH ".1")
+set (iqtree_VERSION_MINOR 1)
+set (iqtree_VERSION_PATCH ".3")
 
 option(BUILD_SHARED_LIBS "Build Shared Libraries" OFF)
 
@@ -134,7 +139,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message("Build mode   : Release")
 endif()
 
-if (BUILD_LIB STREQUAL "ON")
+if (BUILD_LIB)
     message("Build lib    : ON")
 else()
     message("Build lib    : OFF")
@@ -149,7 +154,7 @@ endif()
 
 include_directories("${PROJECT_SOURCE_DIR}")
 include_directories("${PROJECT_SOURCE_DIR}/yaml-cpp/include")
-include_directories(after system "/usr/local/include")
+include_directories(AFTER SYSTEM "/usr/local/include")
 
 ##################################################################
 # onnxruntime
@@ -222,6 +227,13 @@ if (APPLE)
         set (__ARM_NEON "TRUE")
         set (NEON 1)
     endif()
+    execute_process(
+      COMMAND sw_vers -productVersion
+      OUTPUT_VARIABLE MACOS_VERSION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REGEX MATCH "^([0-9]+)" MACOS_MAJOR_VERSION "${MACOS_VERSION}")
+    message("macOS version: ${MACOS_VERSION} (major: ${MACOS_MAJOR_VERSION})")
 elseif (UNIX AND NOT APPLE)  # Unix and Linux
     execute_process(
       COMMAND uname -m
@@ -239,9 +251,17 @@ endif()
 ##################################################################
 # Include the CMAPLE library
 ##################################################################
+
 if (NOT WIN32)
     # temporarily disable cmaple for Windows, next to fix for next release
     option(USE_CMAPLE "Integrate CMAPLE" ON)
+endif()
+
+option(USE_CMAPLE_AA "Integrate CMAPLE-AA" OFF)
+
+if (BUILD_LIB)
+    set(USE_CMAPLE "OFF")
+    set(USE_CMAPLE_AA "OFF")
 endif()
 
 if (USE_CMAPLE STREQUAL "ON")
@@ -256,13 +276,24 @@ else()
 	set(TARGET_CMAPLE "")
 endif()
 
-option(USE_CMAPLE_AA "Integrate CMAPLE-AA" OFF)
 
 if (USE_CMAPLE_AA STREQUAL "ON")
     message("Integrate CMAPLE_AA: ON")
     #add_definitions(-DUSE_CMAPLE)
 else()
     message("Integrate CMAPLE_AA: OFF")
+endif()
+
+##################################################################
+# build IQTREE library
+##################################################################
+option(BUILD_LIB "Build IQTREE library" OFF)
+
+if (BUILD_LIB)
+    message("Build IQTREE library: ON")
+    add_definitions(-DBUILD_LIB)
+else()
+    message("Build IQTREE library: OFF")
 endif()
 
 ##################################################################
@@ -386,6 +417,18 @@ else()
 endif()
 message("Compiler version: ${CMAKE_CXX_COMPILER_VERSION}")
 
+if (CLANG AND UNIX AND NOT APPLE AND NOT __ARM_NEON)
+    find_program(LLD_EXECUTABLE NAMES ld.lld lld)
+    if (LLD_EXECUTABLE)
+        message("Linker        : lld (${LLD_EXECUTABLE})")
+        set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+        set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=lld")
+    else()
+        message(FATAL_ERROR "lld not found on PATH. Required for clang LTO builds on Linux. Install with: apt install lld   (or: yum install lld). Alternatively, disable LTO in iqtree3/cmaple/CMakeLists.txt.")
+    endif()
+endif()
+
 set(EXE_SUFFIX "")
 
 if (MSVC)
@@ -424,6 +467,10 @@ endif()
 if (__ARM_NEON AND APPLE)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Dthread_local=")
 endif()
+
+# for list of libraries to combine with for building IQTREE3 static library
+SET(STATIC_LIBS "${PROJECT_BINARY_DIR}/libiqtree3.a")
+
 
 ##################################################################
 # detect 32 or 64 bit binary
@@ -499,18 +546,45 @@ if (NOT IQTREE_FLAGS MATCHES "single")
         endif()
     endif()
 
-    if(CLANG AND APPLE)
+    # Path of the bundled LLVM libomp.a for different platforms.
+    set(BUNDLED_OMP_LIB "")
+
+    if(APPLE)
     	if(OSX_NATIVE_ARCHITECTURE STREQUAL "arm64")
-    		link_directories(${PROJECT_SOURCE_DIR}/libmac_m1)
+            if(MACOS_MAJOR_VERSION GREATER_EQUAL 26)
+                message("Using libmac26_m1 for macOS ${MACOS_VERSION}")
+                link_directories(${PROJECT_SOURCE_DIR}/libmac26_m1)
+                LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac26_m1/libomp.a" "${PROJECT_SOURCE_DIR}/libmac_m1/libz.a")
+                set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/libmac26_m1/libomp.a")
+            else()
+                link_directories(${PROJECT_SOURCE_DIR}/libmac_m1)
+                LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac_m1/libomp.a" "${PROJECT_SOURCE_DIR}/libmac_m1/libz.a")
+                set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/libmac_m1/libomp.a")
+            endif()
     	else()
-    		link_directories(${PROJECT_SOURCE_DIR}/libmac)
-    	endif()
+    		if(MACOS_MAJOR_VERSION GREATER_EQUAL 26)
+                message("Using libmac26 for macOS ${MACOS_VERSION}")
+                link_directories(${PROJECT_SOURCE_DIR}/libmac26)
+                LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac26/libomp.a" "${PROJECT_SOURCE_DIR}/libmac/libz.a")
+                set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/libmac26/libomp.a")
+            else()
+            	link_directories(${PROJECT_SOURCE_DIR}/libmac)
+            	LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/libmac/libomp.a" "${PROJECT_SOURCE_DIR}/libmac/libz.a")
+                set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/libmac/libomp.a")
+            endif()
+      endif()
     elseif (UNIX AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
-    	if (__ARM_NEON)
-    		link_directories(${PROJECT_SOURCE_DIR}/liblinux_arm)
-    	else()
-    		link_directories(${PROJECT_SOURCE_DIR}/lib)
-    	endif()
+      if (__ARM_NEON)
+        link_directories(${PROJECT_SOURCE_DIR}/liblinux_arm)
+        LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/liblinux_arm/libomp.a" "${PROJECT_SOURCE_DIR}/liblinux_arm/libz.a")
+        set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/liblinux_arm/libomp.a")
+      elseif(BUILD_LIB)
+        find_package(OpenMP)
+      else()
+        link_directories(${PROJECT_SOURCE_DIR}/lib)
+        LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/lib/libomp.a" "${PROJECT_SOURCE_DIR}/lib/libz.a")
+        set(BUNDLED_OMP_LIB "${PROJECT_SOURCE_DIR}/lib/libomp.a")
+      endif()
     elseif (WIN32)
         link_directories(${PROJECT_SOURCE_DIR}/lib)
     endif()
@@ -527,7 +601,15 @@ if (NOT IQTREE_FLAGS MATCHES "single")
         endif()
     elseif (GCC)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -pthread")
+        # To improve the performance, use the bundled LLVM libomp.a if it is available for the platform
+        if (BUNDLED_OMP_LIB AND EXISTS "${BUNDLED_OMP_LIB}" AND NOT BUILD_LIB)
+            message("GCC: linking bundled LLVM libomp instead of libgomp (${BUNDLED_OMP_LIB})")
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fopenmp>)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+            set(GCC_USE_BUNDLED_OMP "TRUE")
+        else()
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -pthread")
+        endif()
     elseif (CLANG)
         if (CLANG_UNDER_VS)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_WARNINGS /DCLANG_UNDER_VS=1")
@@ -794,8 +876,6 @@ if (USE_CMAPLE STREQUAL "ON")
 	add_subdirectory(cmaple)
 endif()
 
-add_subdirectory(main)
-
 # YAML library
 option(YAML_CPP_BUILD_TESTS "Enable testing" OFF)
 option(YAML_CPP_BUILD_TOOLS "Enable parse tools" OFF)
@@ -819,24 +899,25 @@ endif()
 
 add_library(kernelsse tree/phylokernelsse.cpp)
 
-if (NOT IQTREE_FLAGS MATCHES "novx")
-add_library(kernelavx tree/phylotreeavx.cpp)
-add_library(kernelfma tree/phylokernelfma.cpp)
+if (NOT BINARY32 AND NOT IQTREE_FLAGS MATCHES "novx")
+    add_library(kernelavx tree/phylotreeavx.cpp)
+    add_library(kernelfma tree/phylokernelfma.cpp)
     if (IQTREE_FLAGS MATCHES "KNL")
         add_library(kernelavx512 tree/phylokernelavx512.cpp)
     endif()
 endif()
 
+add_subdirectory(main)
+
 ##################################################################
 # build lib file or main executable
 ##################################################################
-option(BUILD_LIB "Build IQ-TREE2 library" OFF)
-
-if (BUILD_LIB STREQUAL "ON")
+if (BUILD_LIB)
     add_library(iqtree3
         obsolete/parsmultistate.cpp
         obsolete/parsmultistate.h
     )
+    
 else()
     add_executable(iqtree3
         obsolete/parsmultistate.cpp
@@ -861,6 +942,7 @@ endif(Backtrace_FOUND)
 
 if (USE_BOOSTER)
     target_link_libraries(iqtree3 booster)
+    LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/booster/libbooster.a")
     if (USE_CMAPLE_AA STREQUAL "ON")
     	target_link_libraries(iqtree3-aa booster)
     endif()
@@ -917,9 +999,18 @@ if (NOT IQTREE_FLAGS MATCHES "single")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LIBPATH:${PROJECT_SOURCE_DIR}/lib")
         set(THREAD_LIB "pthreadVC2")
     elseif(CLANG AND WIN32)
-        target_link_libraries(iqtree3 ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
-        if (USE_CMAPLE_AA STREQUAL "ON")
-            target_link_libraries(iqtree3-aa ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
+        if (BINARY32)
+            target_link_libraries(iqtree3 ${PROJECT_SOURCE_DIR}/lib32/libiomp5md.dll)
+            LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/lib32/libiomp5md.dll")
+            if (USE_CMAPLE_AA STREQUAL "ON")
+            	target_link_libraries(iqtree3-aa ${PROJECT_SOURCE_DIR}/lib32/libiomp5md.dll)
+            endif()
+        else()
+            target_link_libraries(iqtree3 ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
+            LIST(APPEND STATIC_LIBS "${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll")
+            if (USE_CMAPLE_AA STREQUAL "ON")
+            	target_link_libraries(iqtree3-aa ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
+            endif()
         endif()
     endif()
 endif()
@@ -927,6 +1018,23 @@ endif()
 # basic linking librararies
 target_link_libraries(iqtree3 pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
     gsl alignment tree simulator terrace yaml-cpp phyloYAML main ${TARGET_CMAPLE} ${PLATFORM_LIB} ${STD_LIB} ${THREAD_LIB} ${ATOMIC_LIB})
+
+# Link the bundled LLVM libomp.a even for GCC builds
+# dl is needed by libomp on Linux for dlsym
+if (GCC_USE_BUNDLED_OMP)
+    target_link_libraries(iqtree3 ${BUNDLED_OMP_LIB})
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(iqtree3 dl)
+    endif()
+    if (USE_CMAPLE_AA STREQUAL "ON")
+        target_link_libraries(iqtree3-aa ${BUNDLED_OMP_LIB})
+        if (UNIX AND NOT APPLE)
+            target_link_libraries(iqtree3-aa dl)
+        endif()
+    endif()
+endif()
+
+LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/pll/libpll.a" "${PROJECT_BINARY_DIR}/ncl/libncl.a" "${PROJECT_BINARY_DIR}/nclextra/libnclextra.a" "${PROJECT_BINARY_DIR}/utils/libutils.a" "${PROJECT_BINARY_DIR}/pda/libpda.a" "${PROJECT_BINARY_DIR}/lbfgsb/liblbfgsb.a" "${PROJECT_BINARY_DIR}/whtest/libwhtest.a" "${PROJECT_BINARY_DIR}/sprng/libsprng.a" "${PROJECT_BINARY_DIR}/vectorclass/libvectorclass.a" "${PROJECT_BINARY_DIR}/model/libmodel.a" "${PROJECT_BINARY_DIR}/gsl/libgsl.a" "${PROJECT_BINARY_DIR}/alignment/libalignment.a" "${PROJECT_BINARY_DIR}/tree/libtree.a" "${PROJECT_BINARY_DIR}/simulator/libsimulator.a" "${PROJECT_BINARY_DIR}/terrace/libterrace.a" "${PROJECT_BINARY_DIR}/yaml-cpp/libyaml-cpp.a" "${PROJECT_BINARY_DIR}/phylo-yaml/libphyloYAML.a" "${PROJECT_BINARY_DIR}/main/libmain.a")
 
 if (USE_CMAPLE_AA STREQUAL "ON")
 	target_link_libraries(iqtree3-aa pll ncl nclextra utils pda lbfgsb whtest sprng vectorclass model
@@ -950,6 +1058,7 @@ endif()
 
 if (USE_TERRAPHAST)
    target_link_libraries(iqtree3 terracetphast)
+   LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/terracetphast/libterracetphast.a" "${PROJECT_BINARY_DIR}/terraphast/libterraphast.a")
    if (USE_CMAPLE_AA STREQUAL "ON")
 		target_link_libraries(iqtree3-aa terracetphast)
    endif()
@@ -957,6 +1066,7 @@ endif()
 
 if (USE_LSD2)
     target_link_libraries(iqtree3 lsd2)
+    LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/lsd2/liblsd2.a")
     if (USE_CMAPLE_AA STREQUAL "ON")
     	target_link_libraries(iqtree3-aa lsd2)
     endif()
@@ -964,6 +1074,7 @@ endif()
 
 if (NOT IQTREE_FLAGS MATCHES "nosse")
     target_link_libraries(iqtree3 kernelsse)
+    LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/libkernelsse.a")
     if (USE_CMAPLE_AA STREQUAL "ON")
     	target_link_libraries(iqtree3-aa kernelsse)
     endif()
@@ -982,11 +1093,13 @@ endif()
 # SSE, AVX etc. libraries
 if (NOT BINARY32 AND NOT IQTREE_FLAGS MATCHES "novx")
     target_link_libraries(iqtree3 pllavx kernelavx kernelfma)
+    LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/pll/libpllavx.a" "${PROJECT_BINARY_DIR}/libkernelavx.a" "${PROJECT_BINARY_DIR}/libkernelfma.a")
     if (USE_CMAPLE_AA STREQUAL "ON")
     	target_link_libraries(iqtree3-aa pllavx kernelavx kernelfma)
     endif()
     if (IQTREE_FLAGS MATCHES "KNL")
         target_link_libraries(iqtree3 kernelavx512)
+        LIST(APPEND STATIC_LIBS "${PROJECT_BINARY_DIR}/libkernelavx512.a")
         if (USE_CMAPLE_AA STREQUAL "ON")
         	target_link_libraries(iqtree3-aa kernelavx512)
         endif()
@@ -1021,7 +1134,7 @@ else()
     set (BINARY_DIR "${PROJECT_BINARY_DIR}")
 endif()
 
-if (WIN32)
+if (NOT BUILD_LIB AND WIN32)
     if (MSVC)
         if (CLANG_UNDER_VS)
             ADD_CUSTOM_COMMAND(TARGET iqtree3 POST_BUILD COMMAND copy "iqtree3${EXE_SUFFIX}.exe" "iqtree3${EXE_SUFFIX}-click.exe")
@@ -1039,6 +1152,36 @@ if (WIN32)
         if (USE_CMAPLE_AA STREQUAL "ON")
         	ADD_CUSTOM_COMMAND(TARGET iqtree3-aa POST_BUILD COMMAND copy "iqtree3-aa${EXE_SUFFIX}.exe" "iqtree3-aa${EXE_SUFFIX}-click.exe")
         endif()
+    endif()
+endif()
+
+##############################################################
+# CREATE A STATIC LIBRARY
+##############################################################
+
+if (BUILD_LIB)
+    if(APPLE)
+        add_custom_command(
+            TARGET iqtree3 POST_BUILD
+            COMMAND libtool -static -o libiqtree.a ${STATIC_LIBS}
+            COMMAND rm libiqtree3.a
+            VERBATIM)
+    elseif(UNIX)
+        add_custom_command(
+            TARGET iqtree3 POST_BUILD
+            COMMAND mkdir all_libs
+            COMMAND ln -s ${STATIC_LIBS} all_libs
+            COMMAND ${PROJECT_SOURCE_DIR}/test_scripts/unify-static-libs.sh libiqtree.a all_libs
+            COMMAND rm -rf all_libs
+            COMMAND rm libiqtree3.a
+            VERBATIM)
+    elseif(WIN32)
+        add_custom_command(
+            TARGET iqtree3 POST_BUILD
+            COMMAND ${PROJECT_SOURCE_DIR}/test_scripts/unify-static-libs.bat ${STATIC_LIBS}
+            COMMAND ${CMAKE_COMMAND} -E rm -f libiqtree3.a
+            COMMAND ${PROJECT_SOURCE_DIR}/test_scripts/make-dll-lib.bat ${PROJECT_SOURCE_DIR}/test_scripts/bridge.cpp
+            VERBATIM)
     endif()
 endif()
 

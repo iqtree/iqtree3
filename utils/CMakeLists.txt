@@ -44,3 +44,11 @@ endif(ZLIB_FOUND)
 if(CLANG AND WIN32)
   target_link_libraries(decentTree ${PROJECT_SOURCE_DIR}/lib/libiomp5md.dll)
 endif()
+
+# Applied the same OpenMP linking strategy used for iqtree3.
+if (GCC_USE_BUNDLED_OMP)
+  target_link_libraries(decentTree ${BUNDLED_OMP_LIB})
+  if (UNIX AND NOT APPLE)
+    target_link_libraries(decentTree dl)
+  endif()
+endif()

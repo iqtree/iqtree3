@@ -57,30 +57,32 @@ public:
     void readFromParams(Params &params);
     
     /**
-     initialize seq_names, taxon_index, buildPattern
+    * initialize seq_names, taxon_index, buildPattern
+    * @ param sequence_names vector of sequence names
+    * @param keep_order true to keep sequence order to original aln, false to use sequence_names order
      */
-    virtual void init(StrVector *sequence_names = NULL);
+    virtual void init(StrVector *sequence_names = nullptr, bool keep_order = false);
     
     /** return that this is a super-alignment structure */
-	virtual bool isSuperAlignment() { return true; }
+    virtual bool isSuperAlignment() const { return true; }
 
     /** read partition model file */
-    void readPartition(Params &params);
-    
-    /** read RAxML-style partition file */
-    void readPartitionRaxml(Params &params);
-    
-    /** read partition model file in NEXUS format into variable info */
-    void readPartitionNexus(Params &params);
+    // OBSOLETE
+    //void readPartition(Params &params);
 
-    /** read partition as files in a directory */
-    void readPartitionDir(string partition_dir, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read RAxML-style partition model file */
+    void readPartitionRaxml(const Params &params);
 
-    /** read partition as a comma-separated list of files */
-    void readPartitionList(string file_list, char *sequence_type, InputType &intype, string model, bool remove_empty_seq);
+    /** read NEXUS-format partition model file */
+    void readPartitionNexus(const Params &params);
+
+    /** read partitions as files in a directory or a comma-separated list */
+    void readPartitionFiles(const string &partition_files,
+                            const char *sequence_type, InputType &intype,
+                            const string &model, bool remove_empty_seq);
 
     void printPartition(const char *filename, const char *aln_file);
-    void printPartition(ostream &out, const char *aln_file = NULL, bool append = false);
+    void printPartition(ostream &out, const char *aln_file = nullptr, bool append = false);
 
     void printPartitionRaxml(const char *filename);
     
@@ -134,24 +136,28 @@ public:
      @param out_stat output stream to print pairwise statistics
      */
     virtual void doSymTest(size_t vecid, vector<SymTestResult> &sym, vector<SymTestResult> &marsym,
-                           vector<SymTestResult> &intsym, int *rstream = NULL, vector<SymTestStat> *stats = NULL);
+                           vector<SymTestResult> &intsym, int *rstream = nullptr, vector<SymTestStat> *stats = nullptr);
 
     /**
-            extract sub-alignment of a sub-set of sequences
-            @param aln original input alignment
-            @param seq_id ID of sequences to extract from
-            @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
-            @param min_taxa only keep alignment that has >= min_taxa sequences
-            @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+     *  Extract given sequences into a new alignment.
+     *  Metadata are copied.
+     *  Site order is preserved
+     *  @param seq_id ID of sequences to extract
+     *  @param min_true_chars Minimum number of non-gap chars to keep a site
+     *  @param min_taxa Minimum number of sequences to keep a partition
+     *  @param[out] kept_partitions Zero id only if a simple alignment is kept,
+     *                              ids of kept partitions for a superalignment
+     *  @return The new alignment or nullptr if no sequences extracted
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL);
+    virtual SuperAlignment *extractSubAlignment(const IntVector &seq_id,
+        int min_true_chars, int min_taxa = 0, IntVector *kept_partitions = nullptr) const;
 
     /**
         extract a subset of partitions to form a new SuperAlignment object
         @param part_id vector of partition IDs
         @return new alignment containing only part_id partitions
      */
-    SuperAlignment *extractPartitions(IntVector &part_id);
+    SuperAlignment *extractPartitions(const IntVector &part_id) const;
 
     /**
      remove a subset of partitions
@@ -171,11 +177,10 @@ public:
 
 
     /*
-        check if some state is absent, which may cause numerical issues
+        check if some states are absent, which may cause numerical issues
         @param msg additional message into the warning
-        @return number of absent states in the alignment
     */
-    virtual int checkAbsentStates(string msg);
+    virtual void checkAbsentStates(string msg);
 
 	/**
 		Quit if some sequences contain only gaps or missing data
@@ -185,28 +190,28 @@ public:
 	/**
 		create a non-parametric bootstrap alignment by resampling sites within partitions
 		@param aln input alignment
-		@param pattern_freq (OUT) if not NULL, will store the resampled pattern frequencies
+		@param pattern_freq (OUT) if not nullptr, will store the resampled pattern frequencies
         @param spec bootstrap specification of the form "l1:b1,l2:b2,...,lk:bk"
             	to randomly draw b1 sites from the first l1 sites, etc. Note that l1+l2+...+lk
             	must equal m, where m is the alignment length. Otherwise, an error will occur.
-            	If spec == NULL, a standard procedure is applied, i.e., randomly draw m sites.
+            	If spec == nullptr, a standard procedure is applied, i.e., randomly draw m sites.
 	*/
-	virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = NULL, const char *spec = NULL);
+	virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = nullptr, const char *spec = nullptr);
 
 	/**
 		resampling pattern frequency by a non-parametric bootstrap 
 		@param pattern_freq (OUT) resampled pattern frequencies
         @param spec bootstrap specification, see above
 	*/
-	virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = NULL);
+	virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = nullptr);
 
 	/**
 		resampling pattern frequency by a non-parametric bootstrap
 		@param pattern_freq (OUT) resampled pattern frequencies
         @param spec bootstrap specification, see above
-        @param rstream random generator stream, NULL to use the global randstream
+        @param rstream random generator stream, nullptr to use the global randstream
 	*/
-	virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = NULL, int *rstream = NULL);
+	virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = nullptr, int *rstream = nullptr);
 
 	/**
 	 * shuffle alignment by randomizing the order of sites over all sub-alignments
@@ -236,8 +241,8 @@ public:
 	 * @param append TRUE to append to this file, false to write new file
 	 */
     virtual void printAlignment(InputType format, ostream &out, const char* file_name
-                                , bool append = false, const char *aln_site_list = NULL
-                                , int exclude_sites = 0, const char *ref_seq_name = NULL);
+                                , bool append = false, const char *aln_site_list = nullptr
+                                , int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
     /**
      * print the super-alignment to a stream
@@ -277,9 +282,9 @@ public:
 	virtual void buildPattern();
 
     /**
-            count the fraction of constant sites in the alignment, update the variable frac_const_sites
+     *  Count constant sites in the alignment, update frac_const_sites
      */
-    virtual void countConstSite();
+    virtual void countConstSites();
 
     /**
      * 	@return number of states, if it is a partition model, return max num_states across all partitions
@@ -305,18 +310,21 @@ public:
 	/** maximum number of states across all partitions */
 	int max_num_states;
 
-	/**
-	 * concatenate subset of alignments
-	 * @param ids IDs of sub-alignments
-	 * @return concatenated alignment
-	 */
-    Alignment *concatenateAlignments(set<int> &ids);
+    /**
+     *  Concatenate given partitions into a new alignment.
+     *  The partitions must have the same seq_type
+     *  @param part_id ID of partitions to concatenate
+     *  @return Concatenated alignment
+     */
+    Alignment *concatenateAlignments(const set<int> &part_id) const;
 
-	/**
-	 * concatenate all alignments
-	 * @return concatenated alignment
-	 */
-    Alignment *concatenateAlignments();
+    /**
+     *  Concatenate all partitions.
+     *  If there are partitions of different seq_type, the ones with
+     *  similar seq_type are concatenated and added to a new superalignment
+     *  @return Concatenated alignment or superalignment
+     */
+    Alignment *concatenateAlignments() const;
 
 
 };

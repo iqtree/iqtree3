@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "utils/tools.h"
-using namespace std;
+// using namespace std;
 
 /*--------------------------------------------------------------*/
 class GenomeNode;
@@ -36,7 +36,7 @@ public:
         pos = 0;
         length = 0;
         is_append = false;
-        next = NULL;
+        next = nullptr;
     }
     
     /**
@@ -47,7 +47,7 @@ public:
         pos = n_pos;
         length = n_length;
         is_append = n_is_append;
-        next = NULL;
+        next = nullptr;
     }
     
     /**
@@ -139,6 +139,6 @@ public:
     /**
         update relations
      */
-    void updateRelation(GenomeNode* n_parent, GenomeNode* n_left_child, GenomeNode* n_right_child);
+    // void updateRelation(GenomeNode* n_parent, GenomeNode* n_left_child, GenomeNode* n_right_child);
 };
 #endif

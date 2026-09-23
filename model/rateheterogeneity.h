@@ -26,7 +26,7 @@
 #include "utils/tools.h"
 #include "utils/checkpoint.h"
 
-using namespace std;
+// using namespace std;
 
 class PhyloTree;
 
@@ -51,7 +51,7 @@ public:
 	/**
 		constructor
 	*/
-	RateHeterogeneity(PhyloTree *tree = NULL);
+    RateHeterogeneity(PhyloTree *tree = nullptr);
 
 	/**
 		destructor

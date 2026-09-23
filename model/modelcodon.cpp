@@ -232,13 +232,13 @@ ModelCodon::ModelCodon(const char *model_name, string model_params, StateFreqTyp
     codon_freq_style = CF_TARGET_CODON;
     codon_kappa_style = CK_ONE_KAPPA;
 	ntfreq = new double[12];
-	empirical_rates = NULL;
+	empirical_rates = nullptr;
 	int nrates = getNumRateEntries();
     delete [] rates;
     rates = new double[nrates];
     empirical_rates = new double [nrates];
 
-    rate_attr = NULL;
+    rate_attr = nullptr;
     computeRateAttributes();
 
    	init(model_name, model_params, freq, freq_params);
@@ -254,15 +254,15 @@ ModelCodon::ModelCodon(const char *model_name, string model_params, StateFreqTyp
 ModelCodon::~ModelCodon() {
 	if (rate_attr) {
 		delete [] rate_attr;
-		rate_attr = NULL;
+		rate_attr = nullptr;
 	}
 	if (empirical_rates) {
 		delete [] empirical_rates;
-		empirical_rates = NULL;
+		empirical_rates = nullptr;
 	}
 	if (ntfreq) {
 		delete [] ntfreq;
-		ntfreq = NULL;
+		ntfreq = nullptr;
 	}
 }
 
@@ -1182,6 +1182,41 @@ double ModelCodon::optimizeParameters(double gradient_epsilon) {
 	return score;
 }
 
+void ModelCodon::printMrBayesModelText(ofstream& out, string partition, string charset) {
+    // NST should be 1 if fix_kappa is true (no ts/tv ratio), else it should be 2
+    // GTR codon is not available in IQTREE
+    int nst = fix_kappa ? 1 : 2;
+    int code = phylo_tree->aln->getGeneticCodeId();
+    string mr_bayes_code = getMrBayesGeneticCode(code);
+    bool code_not_supported = mr_bayes_code.empty();
+    RateHeterogeneity* rate = phylo_tree->getRate();
+
+    string model_name = fix_kappa ? "JC" : "HKY";
+
+    // If this model is a Empirical / Semi-Empirical Model
+    if (num_params == 0 || name.find('_') != string::npos) {
+        nst = 6;
+        model_name = "GTR";
+    }
+
+    out << "using MrBayes model " << model_name << "]" << endl;
+
+    if (rate->isFreeRate() || rate->getGammaShape() > 0.0 || rate->getPInvar() > 0.0) {
+        out << "  [Rate modifiers (+I, +G, +R) ignored, not supported by MrBayes codon models]" << endl;
+        outWarning("MrBayes Codon Models do not support any Heterogenity Rate Modifiers! (+I, +G, +R) They have been ignored!");
+    }
+
+    if (code_not_supported) {
+        outWarning("MrBayes Does Not Support Codon Code " + convertIntToString(code) + "! Defaulting to Universal (Code 1).");
+        mr_bayes_code = "universal";
+    }
+
+    out << "  [IQTree genetic code " << code << ", using MrBayes genetic code " << mr_bayes_code << "]" << endl;
+    if (code_not_supported)
+        out << "  [Genetic code " << code << " is not supported by MrBayes, defaulting to universal (code 1)]" << endl;
+
+    out << "  lset applyto=(" << partition << ") nucmodel=codon omegavar=equal nst=" << nst << " code=" << mr_bayes_code << ";" << endl;
+}
 
 void ModelCodon::writeInfo(ostream &out) {
     if (name.find('_') == string::npos)

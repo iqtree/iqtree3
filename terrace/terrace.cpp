@@ -261,15 +261,15 @@ void Terrace::linkTree(int part, NodeVector &part_taxa, bool back_branch_map, bo
         if (node->isLeaf()) // two-taxa parent tree
             dad = (TerraceNode*)node->neighbors[0]->node;
     }
-    TerraceNeighbor *nei = NULL;
-    TerraceNeighbor *dad_nei = NULL;
+    TerraceNeighbor *nei = nullptr;
+    TerraceNeighbor *dad_nei = nullptr;
     if (dad) {
         nei = (TerraceNeighbor*)node->findNeighbor(dad);
         dad_nei = (TerraceNeighbor*)dad->findNeighbor(node);
         if (nei->link_neighbors.empty()) nei->link_neighbors.resize(part_num);
         if (dad_nei->link_neighbors.empty()) dad_nei->link_neighbors.resize(part_num);
-        nei->link_neighbors[part] = NULL;
-        dad_nei->link_neighbors[part] = NULL;
+        nei->link_neighbors[part] = nullptr;
+        dad_nei->link_neighbors[part] = nullptr;
     }
     if (node->isLeaf()) {
         ASSERT(dad);
@@ -322,7 +322,7 @@ void Terrace::linkTree(int part, NodeVector &part_taxa, bool back_branch_map, bo
         // Check, if the final dad has empty_branches and map them to branch, which is available.
         // Note, that if there are some empty branches/taxa, there will be exactly one branch available for mapping.
         if(!node->empty_br_node_nei.empty()){
-            FOR_NEIGHBOR_DECLARE(node, NULL, it) {
+            FOR_NEIGHBOR_DECLARE(node, nullptr, it) {
                 if(((TerraceNeighbor*)(*it))->link_neighbors[part]){
                     TerraceNeighbor* node_nei_part = (TerraceNeighbor*)((TerraceNeighbor*)(*it))->link_neighbors[part];
                     TerraceNeighbor* dad_nei_part = (TerraceNeighbor*)((TerraceNeighbor*)(*it)->node->findNeighbor(node))->link_neighbors[part];
@@ -358,8 +358,8 @@ void Terrace::linkBranch(int part, TerraceNeighbor *nei, TerraceNeighbor *dad_ne
     
     TerraceNode *node = (TerraceNode*)dad_nei->node;
     TerraceNode *dad = (TerraceNode*)nei->node;
-    nei->link_neighbors[part] = NULL;
-    dad_nei->link_neighbors[part] = NULL;
+    nei->link_neighbors[part] = nullptr;
+    dad_nei->link_neighbors[part] = nullptr;
     vector<TerraceNeighbor*> part_vec;
     vector<TerraceNeighbor*> child_part_vec;
     
@@ -512,7 +512,7 @@ void Terrace::linkBranch(int part, TerraceNeighbor *nei, TerraceNeighbor *dad_ne
     //cout<<"CASE 2: TWO CHILDREN HAVE IMAGEs AND THEY ARE DIFFERENT"<<"\n"<<"\n";
     TerraceNode *node_part = (TerraceNode*) child_part_vec[0]->node;
     TerraceNode *dad_part = nullptr;
-    FOR_NEIGHBOR(node_part, NULL, it) {
+    FOR_NEIGHBOR(node_part, nullptr, it) {
         bool appear = false;
         for (vector<TerraceNeighbor*>::iterator it2 = part_vec.begin(); it2 != part_vec.end(); it2++){
             if ((*it2) == (*it)) {
@@ -559,7 +559,7 @@ void Terrace::update_map(int part, NodeVector &part_taxa, bool back_branch_map, 
         // Check, if the final dad has empty_branches and map them to branch, which is available.
         // Note, that if there are some empty branches/taxa, there will be exactly one branch available for mapping.
         if(!node->empty_br_node_nei.empty()){
-            FOR_NEIGHBOR_DECLARE(node, NULL, it) {
+            FOR_NEIGHBOR_DECLARE(node, nullptr, it) {
                 if(((TerraceNeighbor*)(*it))->link_neighbors[part]){
                     TerraceNeighbor* node_nei_part = (TerraceNeighbor*)((TerraceNeighbor*)(*it))->link_neighbors[part];
                     TerraceNeighbor* dad_nei_part = (TerraceNeighbor*)((TerraceNeighbor*)(*it)->node->findNeighbor(node))->link_neighbors[part];
@@ -1053,7 +1053,7 @@ void Terrace::extendNewTaxon(string node_name, TerraceNode *node_1_branch, Terra
     
     TerraceNeighbor *center_node_nei;
     // INFO: since you are introducing new branches, make sure the link_neighbor vector is initialised for them
-    FOR_NEIGHBOR_IT(center_node, NULL, it){
+    FOR_NEIGHBOR_IT(center_node, nullptr, it){
         center_node_nei=(TerraceNeighbor*)(*it)->node->findNeighbor(center_node);
         center_node_nei->link_neighbors.resize(part_num,nullptr);
         ((TerraceNeighbor*)(*it))->link_neighbors.resize(part_num,nullptr);
@@ -1070,7 +1070,7 @@ void Terrace::extendNewTaxon(string node_name, TerraceNode *node_1_branch, Terra
                 nei_part_1 = (TerraceNeighbor*)induced_part_tree_branch_1[i]->findNeighbor(induced_part_tree_branch_2[i]);
                 nei_part_2 = (TerraceNeighbor*)induced_part_tree_branch_2[i]->findNeighbor(induced_part_tree_branch_1[i]);
                 
-                FOR_NEIGHBOR_IT(center_node, NULL, it){
+                FOR_NEIGHBOR_IT(center_node, nullptr, it){
                     
                     center_node_nei=(TerraceNeighbor*)(*it)->node->findNeighbor(center_node);
 

@@ -72,16 +72,17 @@ std::ostream& operator<< (std::ostream& stream, const SymTestResult& res);
 
 #ifdef USE_HASH_MAP
 struct hashPattern {
-    size_t operator()(const vector<StateType> &sp) const {
+    size_t operator()(const Pattern &pat) const {
         size_t sum = 0;
-        for (Pattern::const_iterator it = sp.begin(); it != sp.end(); it++)
-            sum = (*it) + (sum << 6) + (sum << 16) - sum;
+        for (Pattern::const_iterator i = pat.begin(); i != pat.end(); ++i) {
+            sum = (*i) + (sum << 6) + (sum << 16) - sum;
+        }
         return sum;
     }
 };
-typedef unordered_map<vector<StateType>, int, hashPattern> PatternIntMap;
+typedef unordered_map<Pattern, int, hashPattern> PatternIntMap;
 #else
-typedef map<vector<StateType>, int> PatternIntMap;
+typedef map<Pattern, int> PatternIntMap;
 #endif
 
 
@@ -97,6 +98,7 @@ Multiple Sequence Alignment. Stored by a vector of site-patterns
 class Alignment : public vector<Pattern>, public CharSet, public StateSpace {
     friend class SuperAlignment;
     friend class SuperAlignmentUnlinked;
+    friend class AliSimulator;
 
 public:
 
@@ -108,7 +110,7 @@ public:
     /**
             constructor
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param intype (OUT) input format of the file
      */
     Alignment(char *filename, char *sequence_type, InputType &intype, string model);
@@ -116,10 +118,18 @@ public:
     /**
      constructor
      @param data_block nexus DATA block
-     @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+     @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
      */
     Alignment(NxsDataBlock *data_block, char *sequence_type, string model);
 
+    /**
+     constructor
+     @param names names of sequences
+     @param seqs sequences
+     @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+     */
+    Alignment(StrVector& names, StrVector& seqs, char *sequence_type, string model);
+    
     /**
             destructor
      */
@@ -132,45 +142,42 @@ public:
 
     /** get the SeqType for a given string */
     static SeqType getSeqType(const char *sequence_type);
-    
+
     /** get the SeqTypeString for a given SeqType */
-    string getSeqTypeStr(SeqType sequence_type);
+    static string getSeqTypeStr(SeqType sequence_type);
 
-      /**
-               add a pattern into the alignment
-               @param pat the pattern
-               @param site the site index of the pattern from the alignment
-               @param freq frequency of pattern
-               @return TRUE if this pattern hadn't already been seen.
-        */
-    
-    bool addPatternLazy(Pattern &pat, int site, int freq, bool& gaps_only);
-
-    
     /**
-            add a pattern into the alignment
-            @param pat the pattern
-            @param site the site index of the pattern from the alignment
-            @param freq frequency of pattern
-            @return TRUE if pattern contains only gaps or unknown char. 
+     *  @param spec Specification of positions, e.g. "1-100,101-200\2"
+     *  @param[out] site_id Extracted site ID
+     *  @param convert_to_codon_or_aa Convert nt ID from spec to codon ID
+     *  @param max_id Allow only ID below this value, default: skip checking
      */
-    bool addPattern(Pattern &pat, int site, int freq = 1);
+    static void extractSiteID(const string &spec, IntVector &site_id,
+                              bool convert_to_codon_or_aa = false, int max_id = -1);
 
-    
     /**
-        Update a bunch of patterns that have been added via addPatternLazy
-     (by calling
+     *  Add the pattern to the pattern vector and add as many sites as
+     *  pat.frequency by appending them to site_pattern
+     *  @param pat The pattern to add. It's added as is, without any changes
+     *  @param[out] gaps_only TRUE if pattern contains only gaps
+     *  @return TRUE if this pattern hasn't already been added
      */
+    bool addPattern(const Pattern &pat, bool *gaps_only = nullptr);
 
-    void updatePatterns(size_t oldPatternCount);
-    
+    /**
+     *  Apply computeConst() to each pattern starting from startPtn index
+     */
+    void updateConstPatterns(size_t startPtn = 0);
 
-    
-	/**
-		determine if the pattern is constant. update the is_const variable.
-	*/
-	virtual void computeConst(Pattern &pat);
+    /**
+     *  Determine the pattern constancy type, update its flag member
+     */
+    virtual void computeConst(Pattern &pat) const;
 
+    /**
+     *  Count constant sites in the alignment, update frac_const_sites
+     */
+    virtual void countConstSites();
 
     void printSiteInfoHeader(ostream& out, const char* filename, bool partition = false);
     /**
@@ -190,7 +197,7 @@ public:
      * add const patterns into the alignment
      * @param freq_const_pattern comma-separated list of const pattern frequencies
      */
-    void addConstPatterns(char *freq_const_patterns);
+    void addConstPatterns(const char *freq_const_patterns);
 
     /**
             read the alignment in NEXUS format
@@ -204,7 +211,7 @@ public:
     /**
             do-read the alignment in PHYLIP format (interleaved)
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadPhylip(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -212,7 +219,7 @@ public:
     /**
             read the alignment in PHYLIP format (interleaved)
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readPhylip(char *filename, char *sequence_type);
@@ -220,7 +227,7 @@ public:
     /**
             do-read the alignment in sequential PHYLIP format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadPhylipSequential(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -228,15 +235,24 @@ public:
     /**
             read the alignment in sequential PHYLIP format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readPhylipSequential(char *filename, char *sequence_type);
+
+    /**
+            read the alignment from vector of strings
+            @param seq_names a set of names
+            @param sequences a set of sequences
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @return 1 on success, 0 on failure
+     */
+    int readStrVec(StrVector &names, StrVector &sequences, char *sequence_type);
     
     /**
             do-read the alignment in FASTA format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadFasta(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -244,7 +260,7 @@ public:
     /**
             read the alignment in FASTA format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readFasta(char *filename, char *sequence_type);
@@ -264,7 +280,7 @@ public:
     /**
             do-read the alignment in CLUSTAL format.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadClustal(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -272,7 +288,7 @@ public:
     /**
             read the alignment in CLUSTAL format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readClustal(char *filename, char *sequence_type);
@@ -280,7 +296,7 @@ public:
     /**
             do-read the alignment in MSF format.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void doReadMSF(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -288,7 +304,7 @@ public:
     /**
             read the alignment in MSF format
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @return 1 on success, 0 on failure
      */
     int readMSF(char *filename, char *sequence_type);
@@ -302,7 +318,7 @@ public:
     /**
             extract sequences, nseq, nsite from an input file.
             @param filename file name
-            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or NULL
+            @param sequence_type type of the sequence, either "BIN", "DNA", "AA", or nullptr
             @param sequences, nseq, nsite
      */
     void extractSequences(char *filename, char *sequence_type, StrVector &sequences, int &nseq, int &nsite);
@@ -311,7 +327,7 @@ public:
     vector<Pattern> ordered_pattern;
     
     /** lower bound of sum parsimony scores for remaining pattern in ordered_pattern */
-    UINT *pars_lower_bound;
+    // UINT *pars_lower_bound; // moved to local variable in orderPatternByNumChars()
 
     /** order pattern by number of character states and return in ptn_order
         @param pat_type either PAT_INFORMATIVE or 0
@@ -319,26 +335,26 @@ public:
     virtual void orderPatternByNumChars(int pat_type);
 
     /**
-     * un-group site-patterns, i.e. making #sites = #patterns and pattern frequency = 1 for all patterns
+     *  Ungroup site-patterns so that #sites = #patterns and
+     *  pattern frequency = 1 for all patterns
      */
     void ungroupSitePattern();
 
     /**
-     * re-group site-patterns so that sites within each pattern fall into the same group
-     * @param groups number of groups
-     * @param site_group group ID (0, 1, ...ngroups-1; must be continuous) of all sites
+     *  Regroup site-patterns so that sites within each pattern fall into
+     *  the same group
+     *  @param site_group Group ID for all sites
      */
-    void regroupSitePattern(int groups, const IntVector &site_group);
-
+    void regroupSitePattern(const IntVector &site_group);
 
     /****************************************************************************
-            output alignment
+            output alignment 
      ****************************************************************************/
     SeqType detectSequenceType(StrVector &sequences);
 
     void computeUnknownState();
 
-    void buildStateMap(char *map, SeqType seq_type);
+    void buildStateMap(char *map) const;
 
     virtual StateType convertState(char state, SeqType seq_type);
 
@@ -379,21 +395,21 @@ public:
     int buildRetainingSites(const char *aln_site_list, IntVector &kept_sites,
             int exclude_sites, const char *ref_seq_name);
 
-    void printAlignment(InputType format, const char *filename, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL);
+    void printAlignment(InputType format, const char *filename, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
     virtual void printAlignment(InputType format, ostream &out, const char* file_name
-                                , bool append = false, const char *aln_site_list = NULL
-                                , int exclude_sites = 0, const char *ref_seq_name = NULL);
+                                , bool append = false, const char *aln_site_list = nullptr
+                                , int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
-    void printPhylip(ostream &out, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL, bool print_taxid = false);
+    void printPhylip(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr, bool print_taxid = false);
 
-    void printFasta(ostream &out, bool append = false, const char *aln_site_list = NULL,
-    		int exclude_sites = 0, const char *ref_seq_name = NULL);
+    void printFasta(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+    		int exclude_sites = 0, const char *ref_seq_name = nullptr);
 
-    void printNexus(ostream &out, bool append = false, const char *aln_site_list = NULL,
-                    int exclude_sites = 0, const char *ref_seq_name = NULL, bool print_taxid = false);
+    void printNexus(ostream &out, bool append = false, const char *aln_site_list = nullptr,
+                    int exclude_sites = 0, const char *ref_seq_name = nullptr, bool print_taxid = false);
     /**
             Print the number of gaps per site
             @param filename output file name
@@ -405,36 +421,25 @@ public:
      ****************************************************************************/
 
     /**
-            @return number of sequences
+     *  @return The number of sites (alignment columns)
      */
-    inline size_t getNSeq() const {
-        return seq_names.size();
-    }
-
-    /**
-            @return number of sites (alignment columns)
-     */
-    inline size_t getNSite() {
-        // if expected_num_sites is specified -> resizing site_pattern
-        if (expected_num_sites > -1)
-            site_pattern.resize(expected_num_sites);
-        
+    inline size_t getNSite() const {
         return site_pattern.size();
     }
 
     /**
-             @return number of patterns
+     *  @return The number of patterns (unique site types)
      */
-    inline size_t getNPattern() {
+    inline size_t getNPattern() const {
         return size();
     }
 
-    inline int getPatternID(int site) {
-        return site_pattern[site];
+    inline int getPatternID(int site) const {
+        return site_pattern.at(site);
     }
 
-    inline Pattern getPattern(int site) {
-        return at(site_pattern[site]);
+    inline Pattern getPattern(int site) const {
+        return at(getPatternID(site));
     }
 
     /**
@@ -455,39 +460,48 @@ public:
     virtual void getPatternFreq(int *freq);
 
     /**
-            @param i sequence index
-            @return sequence name
+     *  @return The number of sequences
      */
-    string &getSeqName(int i);
-    
-    /**
-            @param seq_name sequence name
-     */
-    void addSeqName(string seq_name);
+    inline size_t getNSeq() const {
+        return seq_names.size();
+    }
 
     /**
-     *  Get a list of all sequence names
-     *  @return vector containing the sequence names
+     *  @param seq Sequence index
+     *  @return Sequence name
      */
-    vector<string>& getSeqNames();
+    inline const string &getSeqName(int seq) const {
+        return seq_names.at(seq);
+    }
 
     /**
-            @param seq_name sequence name
-            @return corresponding ID, -1 if not found
+     *  @return Vector containing all sequence names
      */
-    int getSeqID(string &seq_name);
+    inline const StrVector &getSeqNames() const {
+        return seq_names;
+    }
 
     /**
-            @return length of the longest sequence name
+     *  @param seq_name Sequence name to add
      */
-    int getMaxSeqNameLength();
+    void addSeqName(const string &seq_name);
+
+    /**
+     *  @param seq_name Sequence name
+     *  @return Sequence index, -1 if not found
+     */
+    int getSeqID(const string &seq_name) const;
+
+    /**
+     *  @return Length of the longest sequence name
+     */
+    int getMaxSeqNameLength() const;
 
     /*
-        check if some state is absent, which may cause numerical issues
+        check if some states are absent, which may cause numerical issues
         @param msg additional message into the warning
-        @return number of absent states in the alignment
     */
-    virtual int checkAbsentStates(string msg);
+    virtual void checkAbsentStates(string msg);
 
     /**
             check proper and undupplicated sequence names
@@ -517,150 +531,169 @@ public:
      */
     void adjustHash(StateType v, size_t& hash) const;
     void adjustHash(bool      v, size_t& hash) const;
-    
-    /**
-            Quit if some sequences contain only gaps or missing data
-     */
-	virtual void checkGappySeq(bool force_error = true);
-
-	/**
-	 * return a new alignment if some sequence is totally gappy, or this if all sequence are okey
-	 */
-	Alignment *removeGappySeq();
 
     /**
-            @return TRUE if seq_id contains only gaps or missing characters
-            @param seq_id sequence ID
+     *  Quit if some sequences contain only gaps or missing data
      */
-    bool isGapOnlySeq(size_t seq_id);
+    virtual void checkGappySeq(bool force_error = true) const;
 
-    bool isSSF() { return !ptn_state_freq.empty(); }
+    /**
+     *  Extract sequences that are not gap-only into a new alignment.
+     *  Metadata are copied.
+     *  Site order is preserved
+     * @param showMsg show extracting information in log file
+     *  @return this if no gap-only sequences found or the new alignment
+     */
+    Alignment *removeGappySeq(bool showMsg = true);
 
-    bool isSSR() { return !ptn_rate_scaler.empty(); }
+    /**
+     *  @param seq Sequence index
+     *  @return TRUE if the sequence contains only gaps or missing characters
+     */
+    bool isGapOnlySeq(int seq) const;
 
-    virtual bool isSuperAlignment() { return false; }
+    bool isSSF() const { return !ptn_state_freq.empty(); }
+    bool isSSR() const { return !ptn_rate_scaler.empty(); }
+
+    virtual bool isSuperAlignment() const { return false; }
 
     /****************************************************************************
             alignment general processing
      ****************************************************************************/
 
     /**
-            extract sub-alignment of a sub-set of sequences
-            @param aln original input alignment
-            @param seq_id ID of sequences to extract from
-            @param min_true_cher the minimum number of non-gap characters, true_char<min_true_char -> delete the sequence
-            @param min_taxa only keep alignment that has >= min_taxa sequences
-            @param[out] kept_partitions (for SuperAlignment) indices of kept partitions
+     *  Extract given sequences into a new alignment.
+     *  Metadata are copied.
+     *  Site order is preserved
+     *  @param seq_id ID of sequences to extract
+     *  @param min_true_chars Minimum number of non-gap chars to keep a site
+     *  @param min_taxa (for SuperAlignment only)
+     *  @param[out] kept_partitions Zero id only if a simple alignment is kept,
+     *                              ids of kept partitions for a superalignment
+     *  @param showMsg show extracting information in log file
+     *  @return The new alignment or nullptr if no sequences extracted
      */
-    virtual void extractSubAlignment(Alignment *aln, IntVector &seq_id, int min_true_char, int min_taxa = 0, IntVector *kept_partitions = NULL);
+    virtual Alignment *extractSubAlignment(const IntVector &seq_id,
+        int min_true_chars, int min_taxa = 0, IntVector *kept_partitions = nullptr, bool showMsg = true) const;
 
     /**
-            extract a sub-set of patterns
-            @param aln original input alignment
-            @param ptn_id ID of patterns to extract from
+     *  Extract given patterns with original frequencies into a new alignment.
+     *  Metadata are copied.
+     *  Site order is not preserved
+     *  @param ptn_id ID of patterns to extract (may repeat)
      */
-    void extractPatterns(Alignment *aln, IntVector &ptn_id);
+    Alignment *extractPatterns(const IntVector &ptn_id) const;
 
     /**
-            extract a sub-set of patterns
-            @param aln original input alignment
-            @param ptn_freq pattern frequency to extract from
+     *  Extract all patterns with given frequencies into a new alignment.
+     *  Metadata are copied.
+     *  Site order is not preserved
+     *  @param ptn_freq Pattern frequencies indexed as the current patterns
      */
-    void extractPatternFreqs(Alignment *aln, IntVector &ptn_freq);
+    Alignment *extractPatternFreqs(const IntVector &ptn_freq) const;
+
+    /**
+     *  Extract given sites into a new alignment.
+     *  Metadata are copied.
+     *  Site order is given by site_id
+     *  @param site_id ID of sites to extract (may repeat)
+     */
+    Alignment *extractSites(const IntVector &site_id) const;
+
+    /**
+     *  Extract given sites into a new alignment.
+     *  Metadata are copied.
+     *  Site order is given by spec
+     *  @param spec Specification of positions, e.g. "1-100,101-200\2"
+     */
+    Alignment *extractSites(const string &spec) const;
 
     /**
             create a non-parametric bootstrap alignment from an input alignment
             @param aln input alignment
-            @param pattern_freq (OUT) resampled pattern frequencies if not NULL
+            @param pattern_freq (OUT) resampled pattern frequencies if not nullptr
             @param spec bootstrap specification of the form "l1:b1,l2:b2,...,lk:bk"
             	to randomly draw b1 sites from the first l1 sites, etc. Note that l1+l2+...+lk
             	must equal m, where m is the alignment length. Otherwise, an error will occur.
-            	If spec == NULL, a standard procedure is applied, i.e., randomly draw m sites.
+            	If spec == nullptr, a standard procedure is applied, i.e., randomly draw m sites.
      */
-    virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = NULL, const char *spec = NULL);
+    virtual void createBootstrapAlignment(Alignment *aln, IntVector* pattern_freq = nullptr, const char *spec = nullptr);
 
     /**
             resampling pattern frequency by a non-parametric bootstrap 
             @param pattern_freq (OUT) resampled pattern frequencies
             @param spec bootstrap specification, see above
      */
-    virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = NULL);
+    virtual void createBootstrapAlignment(IntVector &pattern_freq, const char *spec = nullptr);
 
     /**
             resampling pattern frequency by a non-parametric bootstrap
             @param pattern_freq (OUT) resampled pattern frequencies
             @param spec bootstrap specification, see above
-            @param rstream random generator stream, NULL to use the global randstream
+            @param rstream random generator stream, nullptr to use the global randstream
      */
-    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = NULL, int *rstream = NULL);
+    virtual void createBootstrapAlignment(int *pattern_freq, const char *spec = nullptr, int *rstream = nullptr);
 
 	/**
 			Diep: This is for UFBoot2-Corr
 			Initialize "this" alignment as a bootstrap alignment
 			@param aln: the reference to the original alignment
 			@new_pattern_freqs: the frequencies of patterns to be present in bootstrap aln
+            OBSOLETE
 	 */
-	void buildFromPatternFreq(Alignment & aln, IntVector new_pattern_freqs);
+	//void buildFromPatternFreq(Alignment & aln, IntVector new_pattern_freqs);
 
     /**
-            create a gap masked alignment from an input alignment. Gap patterns of masked_aln 
-                    will be superimposed into aln to create the current alignment object.
-            @param aln input alignment
-            @param masked_aln gappy alignment of the same size with aln
+     *  Copy the current alignment into a new alignment.
+     *  Metadata are copied
      */
-    void createGapMaskedAlignment(Alignment *masked_aln, Alignment *aln);
+    Alignment *copyAlignment() const;
 
     /**
-	 * shuffle alignment by randomizing the order of sites
-	 */
-	virtual void shuffleAlignment();
-
-	/**
-            concatenate an alignment into the current alignment object
-            @param aln an alignment of the same number of sequences and sequence names    
+     *  Create a gap masked copy of the current alignment. Gap patterns of
+     *  masked_aln are superimposed onto the alignment to create the copy.
+     *  Metadata are copied
+     *  @param masked_aln Gappy alignment of the same size
      */
-    void concatenateAlignment(Alignment *aln);
+    Alignment *createGapMaskedAlignment(const Alignment *masked_aln) const;
 
     /**
-            copy the input alignment into the current alignment object
-            @param aln input alignment
+     *  Concatenate the other alignment to the current alignment
+     *  @param other Alignment with the same set of sequence names
      */
-    void copyAlignment(Alignment *aln);
+    void concatenateAlignment(const Alignment *other);
 
     /**
-            extract a sub-set of sites
-            @param aln original input alignment
-            @param ptn_id ID of sites to extract from (starting from 0)
+     *  Shuffle the current alignment by randomizing the order of sites
      */
-    void extractSites(Alignment *aln, IntVector &site_id);
+    virtual void shuffleAlignment();
 
     /**
-            extract a sub-set of sites
-            @param aln original input alignment
-            @param spec specification of positions, e.g. "1-100,101-200\2"
-            @return the modified site spec if nt2aa is true, otherwise same as spec
+     *  Get a codon StateType from 3 input DNA sites.
+     *  If AA_to_state is provided, return an AA StateType instead
      */
-    void extractSites(Alignment *aln, const char* spec, bool nt2aa = false);
+    StateType getCodonStateTypeFromSites(
+        StateType state, StateType state2, StateType state3,
+        const char *AA_to_state, const string &seq_name, int site,
+        int &num_error, ostringstream *err_str = nullptr) const;
 
     /**
-        convert a DNA alignment into codon or AA alignment
-    */
-    void convertToCodonOrAA(Alignment *aln, char *gene_code_id, bool nt2aa = false);
-    
-    /**
-        get Codon StateType from input sites
-    */
-    StateType getCodonStateTypeFromSites(char state, char state2, char state3, string sequence_name, int site_index, ostringstream &err_str, int &num_error);
-
-    /**
-     convert this codon alignment to AA
+     *  Convert this DNA alignment into a new codon or AA alignment.
+     *  Metadata are copied
      */
-    Alignment *convertCodonToAA();
+    Alignment *convertToCodonOrAA(const char *gene_code_id, bool nt2aa = false) const;
 
     /**
-     convert this codon alignment to DNA
+     *  Convert this codon alignment into a new AA alignment.
+     *  Metadata are copied
      */
-    Alignment *convertCodonToDNA();
+    Alignment *convertCodonToAA() const;
+
+    /**
+     *  Convert this codon alignment into a new DNA alignment.
+     *  Metadata are copied
+     */
+    Alignment *convertCodonToDNA() const;
 
     /**
      @param quartet ID of four taxa
@@ -770,7 +803,7 @@ public:
      */
     virtual void computeStateFreq(double *state_freq, size_t num_unknown_states = 0);
 
-    int convertPomoState(int state);
+    int convertPomoState(int state) const;
 
     /** 
      * Compute the absolute frequencies of the different states.
@@ -824,12 +857,7 @@ public:
         @param out_stat output stream to print pairwise statistics
      */
     virtual void doSymTest(size_t vecid, vector<SymTestResult> &sym, vector<SymTestResult> &marsym,
-                           vector<SymTestResult> &intsym, int *rstream = NULL, vector<SymTestStat> *stats = NULL);
-
-    /**
-            count the fraction of constant sites in the alignment, update the variable frac_const_sites
-     */
-    virtual void countConstSite();
+                           vector<SymTestResult> &intsym, int *rstream = nullptr, vector<SymTestStat> *stats = nullptr);
 
     /**
      * generate uninformative patterns
@@ -889,13 +917,13 @@ public:
 
 	/**
 	 * For codon sequences: index of 61 non-stop codons to 64 codons
-	 * For other sequences: NULL
+	 * For other sequences: nullptr
 	 */
 	char *codon_table;
 
 	/**
 	 * For codon_sequences: 64 amino-acid letters for genetic code of AAA,AAC,AAG,AAT,...,TTT
-	 * For other sequences: NULL
+	 * For other sequences: nullptr
 	 */
 	char *genetic_code;
 
@@ -917,7 +945,7 @@ public:
   vector<uint32_t> pomo_sampled_states;
   IntIntMap pomo_sampled_states_index; // indexing, to quickly find if a PoMo-2-state is already present
 
-    /* for site-specific models with Huaichun, Edward, Andrew */
+    /* for site-specific state frequency model with Huaichun, Edward, Andrew */
 
     /** pattern index to state frequency vector map */
     vector<double*> ptn_state_freq;
@@ -981,9 +1009,9 @@ public:
             @param state the state index
             @param state_app (OUT) state appearance
      */
-    void getAppearance(StateType state, double *state_app);
+    void getAppearance(StateType state, double *state_app) const;
 
-    void getAppearance(StateType state, StateBitset &state_app);
+    void getAppearance(StateType state, StateBitset &state_app) const;
 
     /**
      *  Read site-specific state frequency vectors or rate (tree) scalers
@@ -1021,7 +1049,7 @@ public:
      * the characters (i.e. for R we choose either A or G.
      * @return modified (new) alignment
      */
-    Alignment* replaceAmbiguousChars();
+    Alignment *replaceAmbiguousChars() const;
 
     // added by TD
     /**
@@ -1030,37 +1058,36 @@ public:
      * the neural network.
      * @return modified (new) alignment
      */
-    Alignment* removeAndFillUpGappySites();
+    Alignment *removeAndFillUpGappySites() const;
 
     /**
-     * special initialization for codon sequences, e.g., setting #states, genetic_code
-     * @param sequence_type user-defined sequence type
+     *  Init codon metadata, e.g. num_states, genetic_code
+     *  @param gene_code_id NCBI genetic code table id
      */
-    void initCodon(char *gene_code_id);
-
-    /**
-     * set the expected_num_sites (for alisim)
-     * @param the expected_num_sites
-     */
-    void setExpectedNumSites(int new_expected_num_sites);
+    void initCodon(const char *gene_code_id);
 
     /**
         Extract Maple file from an alignment file
      */
     void extractMapleFile(const std::string& aln_name, const InputType& format);
 
+    /**
+     * Get the numerical id of the genetic code
+     * @return id the genetic code id, or 0 if not a codon type
+     */
+    int getGeneticCodeId();
+
 protected:
+    /**
+     *  Create an empty new alignment with copied metadata
+     */
+    Alignment *initAlignmentCopy() const;
+
     /** sequence names */
     vector<string> seq_names;
 
-    /** expected num_sites */
-    int expected_num_sites = -1;
-
     /** site to pattern index map */
     IntVector site_pattern;
-
-    /** pattern index to first pattern site map */
-    IntVector pattern_first_site;
 
     /** hash map from pattern to index in the vector of patterns (the alignment) */
     PatternIntMap pattern_index;
@@ -1089,8 +1116,6 @@ private:
 };
 
 
-void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt2aa = false, int max_id=0, bool test_num_sites=false);
-
 /**
  create a new Alignment object with possibility of comma-separated file names
  @param aln_file alignment file name, can be a comma-separated list of file names
@@ -1099,6 +1124,5 @@ void extractSiteID(Alignment *aln, const char* spec, IntVector &site_id, bool nt
  @param model_name model name
  */
 Alignment *createAlignment(string aln_file, const char *sequence_type, InputType intype, string model_name);
-
 
 #endif

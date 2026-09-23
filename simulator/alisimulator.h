@@ -124,7 +124,7 @@ protected:
     *  reset tree (by reset some variables of nodes)
     *
     */
-    void resetTree(int &max_depth, bool store_seq_at_cache, Node *node = NULL, Node *dad = NULL);
+    void resetTree(int &max_depth, bool store_seq_at_cache, Node *node = nullptr, Node *dad = nullptr);
     
     /**
     *  validate sequence length of codon
@@ -361,17 +361,17 @@ protected:
     /**
         merge chunks into a single sequence for all nodes in tree
     */
-    void mergeChunksAllNodes(Node* node = NULL, Node* dad = NULL);
+    void mergeChunksAllNodes(Node* node = nullptr, Node* dad = nullptr);
     
     /**
         build a contious ids for leaves in the tree (in some cases, the ids of leaves are not continuous)
     */
-    void buildContinousIdsForLeave(Node* node = NULL, Node* dad = NULL);
+    void buildContinousIdsForLeave(Node* node = nullptr, Node* dad = nullptr);
     
     /**
         build a contious ids for internal nodes in the tree (in some cases, the ids of leaves are not continuous)
     */
-    void buildContinousIdsForInternals(Node* node = NULL, Node* dad = NULL);
+    void buildContinousIdsForInternals(Node* node = nullptr, Node* dad = nullptr);
     
     /**
         build a contious ids for all nodes in the tree (in some cases, the ids of leaves are not continuous)
@@ -458,12 +458,12 @@ public:
     const int RATE_ONE_INDEX = 0;
     double* sub_rates;
     double* Jmatrix;
-    double* mixture_accumulated_weight = NULL;
+    double* mixture_accumulated_weight = nullptr;
     int mixture_max_weight_pos = 0;
     int seq_length_indels = 0; // final seq_length due to indels
     map<string, Node*> map_seqname_node; // mapping sequence name to Node (using when temporarily write sequences at tips to tmp_data file when simulating Indels)
-    Insertion* latest_insertion = NULL;
-    Insertion* first_insertion = NULL;
+    Insertion* latest_insertion = nullptr;
+    Insertion* first_insertion = nullptr;
     
     // variables to output sequences with multiple threads
     uint64_t starting_pos = 0;
@@ -480,10 +480,10 @@ public:
     
     // variables using for posterior mean rates/state frequencies
     bool applyPosRateHeterogeneity = false;
-    double* ptn_state_freq = NULL;
-    double* ptn_accumulated_state_freq = NULL;
-    double* ptn_model_dis = NULL;
-    double* ptn_accumulated_rate_dis = NULL;
+    double* ptn_state_freq = nullptr;
+    double* ptn_accumulated_state_freq = nullptr;
+    double* ptn_model_dis = nullptr;
+    double* ptn_accumulated_rate_dis = nullptr;
     DoubleVector pattern_rates;
     IntVector site_to_patternID;
     

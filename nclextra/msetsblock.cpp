@@ -308,7 +308,7 @@ void MSetsBlock::SkippingCommand(NxsString commandName) {
 CharSet *MSetsBlock::findCharSet(string name) {
 	for (vector<CharSet*>::iterator it = charsets.begin(); it != charsets.end(); it++)
 		if ((*it)->name == name) return (*it);
-	return NULL;
+	return nullptr;
 }
 
 int MSetsBlock::findArea(string &name) {

@@ -297,9 +297,9 @@ public:
 
     /**
      compute the mixture-based log-likelihood for mAIC, mAICc, mBIC calculation.
-     @param warning the warning message when mixture-based log-likelihood calculation is skipped.
+     @param remove_empty_seq whether remove empty sequences when partition model estimation
      */
-    virtual double computeMixLh(string &warning) {return 0.0;}
+    virtual double computeMarginalLh(bool remove_empty_seq) {return 0.0;}
 
 protected:
 

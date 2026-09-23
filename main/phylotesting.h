@@ -31,6 +31,7 @@ const int MF_IGNORED            = 2;
 const int MF_RUNNING            = 4;
 const int MF_WAITING            = 8;
 const int MF_DONE               = 16;
+const int MF_CANNOT_BE_IGNORED  = 32; // those models added by -madd cannot be filtered out
 
 enum MixtureAction {MA_NONE, MA_FIND_RATE, MA_NUMBER_CLASS, MA_FIND_CLASS, MA_ADD_CLASS};
 
@@ -46,7 +47,7 @@ public:
         logl = 0.0;
         df = 0;
         tree_len = 0.0;
-        aln = NULL;
+        aln = nullptr;
         AIC_score = DBL_MAX;
         AICc_score = DBL_MAX;
         BIC_score = DBL_MAX;
@@ -403,6 +404,9 @@ struct ModelPair {
     string set_name;
     /* best model name */
     string model_name;
+    /* distance between two partition pairs */
+    //double distance;
+    //double score_bic;
 };
 
 class ModelPairSet : public multimap<double, ModelPair> {
@@ -476,10 +480,32 @@ private:
     bool test_merge;
     SuperAlignment *super_aln;
 
+    // variables for merging by mAIC
+    double lh_marginal;
+    double inf_score_maic;
+    ModelPairSet sorted_pairs;
+    SuperAlignment *cur_super_aln;
+    //vector<set<int> > cur_gene_sets;
 
     // retreive the answers from checkpoint
     // and remove those jobs from the array jobIDs
     void retreiveAnsFrChkpt(vector<pair<int,double> >& jobs, int job_type);
+
+    /**
+     * compute marginal LnL and AIC for merge scheme
+     * gene_sets : vector all merged subsets, each containing the ID of original partitions
+     * model_names : model names of corresponding merged subsets
+     * df : degree of freedom for partition model
+     * merge : whether merge partitions with input gene sets
+     * @return : mAIC score
+     */
+    double getmAICforMergeScheme(vector<set<int> > gene_sets, StrVector model_names, int df, bool merge);
+
+    /**
+     * get compatible partition pairs that improve mAIC
+     * @return : a set of compatible better pairs
+     */
+    ModelPairSet getBetterPairsmAIC();
 
     /**
      * compute and process the best model for partitions (without MPI)
@@ -492,6 +518,12 @@ private:
      * nthreads : the number of threads available for these jobs
      */
     void getBestModelforMergesNoMPI(int nthreads, vector<pair<int,double> >& jobs);
+
+    /** process a single merge job */
+    void processMergeJob(int j, vector<pair<int,double> >& jobs, int m_p);
+
+    /** process a single partition model-selection job */
+    void processPartitionJob(int j, vector<pair<int,double> >& jobs, int m_p);
 
     /**
      * compute the best model
@@ -564,7 +596,8 @@ public:
     int64_t total_num_model;
     int64_t num_model;
     vector<SubsetPair> closest_pairs;
-    vector<set<int> > gene_sets;
+    vector<set<int> > gene_sets; // vector all merged subsets, each containing the ID of original partitions
+    StrVector model_names;
     PhyloSuperTree* in_tree;
     size_t  ssize;
     Params *params;
@@ -809,6 +842,13 @@ int detectSeqType(const char *model_name, SeqType &seq_type);
 string convertSeqTypeToSeqTypeName(SeqType seq_type);
 
 string detectSeqTypeName(string model_name);
+
+/**
+ * get string name from a SeqType object
+ * @param seq_type input sequence type
+ * @return name
+ */
+string getSeqTypeName(SeqType seq_type);
 
 /****************************************************/
 /*    Q MATRICES NESTING CHECK                      */

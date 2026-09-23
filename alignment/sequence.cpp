@@ -7,7 +7,7 @@ Sequence::Sequence() {
     num_threads_reach_barrier = 0;
     num_gaps = 0;
     depth = 0;
-    insertion_pos = NULL;
-    parent = NULL;
+    insertion_pos = nullptr;
+    parent = nullptr;
 }
 

@@ -64,10 +64,10 @@ public:
 
 	/**
 		build the list of all leaves into field leaves.
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 	*/
-	void buildLeaves(Node *node = NULL, Node *dad = NULL);
+	void buildLeaves(Node *node = nullptr, Node *dad = nullptr);
 
 	/**
 		print all leaves into screen

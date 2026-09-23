@@ -1,17 +1,17 @@
 add_library(main
-main.cpp
-phyloanalysis.cpp
-phyloanalysis.h
-phylotesting.cpp
-phylotesting.h
-treetesting.cpp
-treetesting.h
-timetree.cpp
-timetree.h
-alisim.cpp
-alisim.h
-terraceanalysis.cpp
-terraceanalysis.h
+    main.cpp
+    phyloanalysis.cpp
+    phyloanalysis.h
+    phylotesting.cpp
+    phylotesting.h
+    treetesting.cpp
+    treetesting.h
+    timetree.cpp
+    timetree.h
+    alisim.cpp
+    alisim.h
+    terraceanalysis.cpp
+    terraceanalysis.h
 )
 
 if (USE_BOOSTER)

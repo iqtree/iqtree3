@@ -79,12 +79,12 @@ public:
     /**
         save object into the checkpoint
     */
-    virtual void saveCheckpoint();
+    virtual void saveCheckpoint() override;
 
     /**
         restore object from the checkpoint
     */
-    virtual void restoreCheckpoint();
+    virtual void restoreCheckpoint() override;
 
     /**
      * return randomly one of the current best trees
@@ -171,12 +171,12 @@ public:
      *  @param scores vector of tree scores
      *  @param treeFormat the NEWICK format used for tree string (WT_TAXON_ID, WT_BR_LEN, ..)
      */
-    void getAllTrees(vector<string> &trees, vector<double> &scores, int treeFormat = -1);
+    // void getAllTrees(vector<string> &trees, vector<double> &scores, int treeFormat = -1);
 
     /**
      * destructor
      */
-    virtual ~CandidateSet();
+    virtual ~CandidateSet() override;
 
     /**
      * 	Check if tree topology \a topo already exists
@@ -192,7 +192,7 @@ public:
      * 	@param tree
      * 		Newick string of the tree topology
      */
-    bool treeExist(string tree);
+    // bool treeExist(string tree);
 
     /**
      * 	Return a unique topology (sorted by taxon names, rooted at taxon with alphabetically smallest name)
@@ -226,7 +226,7 @@ public:
      * @return
      * 		Score of the topology
      */
-    double getTopologyScore(string topology);
+    // double getTopologyScore(string topology);
 
     /**
      *  Empty the candidate set
@@ -254,7 +254,7 @@ public:
     */
     int countStableSplits(double thresHold);
 
-    void reportStableSplits();
+    // void reportStableSplits();
 
     /**
      *  Update the set of stable split when a new tree is inserted
@@ -275,11 +275,11 @@ public:
      * @param topology
      * @return
      */
-    iterator getCandidateTree(string topology);
+    // iterator getCandidateTree(string topology);
 
     /**
      * Remove candidate trees with topology equal to the specified topology
-     * @param topology
+     * @param topology topology
      */
     void removeCandidateTree(string topology);
 
@@ -291,21 +291,21 @@ public:
     /* Getter and Setter function */
 	void setAln(Alignment* aln);
 
-	const StringDoubleHashMap& getTopologies() const {
+	/* const StringDoubleHashMap& getTopologies() const {
 		return topologies;
-	}
+	}*/
 
     /**
      * Return a CandidateSet containing \a numTrees candidate trees
-     * @param numTrees
-     * @return
+     * @param numTrees number of trees
+     * @return a CandidateSet
      */
     CandidateSet getBestCandidateTrees(int numTrees = 0);
 
     /**
      *  Return a set of trees whose score are equal \a score
      */
-    CandidateSet getCandidateTrees(double score);
+    // CandidateSet getCandidateTrees(double score);
 
 
 	SplitIntMap& getCandSplits() {
@@ -327,18 +327,18 @@ public:
 	 *
 	 *  @param tree collect splits from this tree
 	 */
-	void addCandidateSplits(string treeString);
+	// void addCandidateSplits(string treeString);
 
 	/**
 	 *  Remove splits that appear from \a treeString.
 	 *  If an existing split has weight > 1, their weight will be
 	 *  reduced by 1.
 	 */
-	void removeCandidateSplits(string treeString);
+	// void removeCandidateSplits(string treeString);
 
-    int getNumStableSplits() const {
+    /* int getNumStableSplits() const {
         return numStableSplits;
-    }
+    }*/
 
     /**
      *  Print candidate trees and their likelihood
@@ -352,9 +352,9 @@ public:
      */
     void recomputeLoglOfAllTrees(IQTree &treeObject);
 
-    int getMaxSize() const {
+    /* int getMaxSize() const {
         return maxSize;
-    }
+    }*/
 
     void setMaxSize(int maxSize) {
         this->maxSize = maxSize;

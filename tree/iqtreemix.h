@@ -45,31 +45,31 @@ public:
     /**
      destructor
      */
-    virtual ~IQTreeMix();
+    virtual ~IQTreeMix() override;
 
     /**
      initialization
      */
     // void init(Alignment* aln, Params* params, Checkpoint* chkpt);
     
-    virtual void initializeModel(Params &params, string model_name, ModelsBlock *models_block);
+    virtual void initializeModel(Params &params, string model_name, ModelsBlock *models_block) override;
 
     /**
      * @return number of elements per site lhl entry, used in conjunction with computePatternLhCat
      */
-    virtual int getNumLhCat(SiteLoglType wsl);
+    virtual int getNumLhCat(SiteLoglType wsl) override;
 
     // compute the overall likelihood value by combining all the existing likelihood values of the trees
-    double computeLikelihood_combine(double *pattern_lh = NULL, bool save_log_value = true);
+    double computeLikelihood_combine(double *pattern_lh = nullptr, bool save_log_value = true);
 
     // compute the log-likelihood values for every site and tree
     // updated array: _ptn_like_cat
     // update_which_tree: only that tree has been updated
     void computeSiteTreeLogLike(int update_which_tree);
 
-    virtual double computeLikelihood(double *pattern_lh = NULL, bool save_log_value = true);
+    virtual double computeLikelihood(double *pattern_lh = nullptr, bool save_log_value = true) override;
 
-    virtual double computePatternLhCat(SiteLoglType wsl);
+    virtual double computePatternLhCat(SiteLoglType wsl) override;
 
     /**
      compute pattern likelihoods only if the accumulated scaling factor is non-zero.
@@ -77,36 +77,36 @@ public:
      @param pattern_lh (OUT) pattern log-likelihoods,
      assuming pattern_lh has the size of the number of patterns
      @param cur_logl current log-likelihood (for sanity check)
-     @param pattern_lh_cat (OUT) if not NULL, store all pattern-likelihood per category
+     @param pattern_lh_cat (OUT) if not nullptr, store all pattern-likelihood per category
      */
-    virtual void computePatternLikelihood(double *pattern_lh = NULL, double *cur_logl = NULL,
-                                          double *pattern_lh_cat = NULL, SiteLoglType wsl = WSL_RATECAT);
+    virtual void computePatternLikelihood(double *pattern_lh = nullptr, double *cur_logl = nullptr,
+                                          double *pattern_lh_cat = nullptr, SiteLoglType wsl = WSL_RATECAT) override;
 
-    virtual void initializeAllPartialLh();
+    virtual void initializeAllPartialLh() override;
 
-    virtual void deleteAllPartialLh();
+    virtual void deleteAllPartialLh() override;
 
-    virtual void clearAllPartialLH(bool make_null = false);
+    virtual void clearAllPartialLH(bool make_null = false) override;
 
     /**
             compute pattern posterior probabilities per rate/mixture category
             @param pattern_prob_cat (OUT) all pattern-probabilities per category
             @param wsl either WSL_RATECAT, WSL_MIXTURE or WSL_MIXTURE_RATECAT
      */
-    virtual void computePatternProbabilityCategory(double *pattern_prob_cat, SiteLoglType wsl);
+    virtual void computePatternProbabilityCategory(double *pattern_prob_cat, SiteLoglType wsl) override;
 
     /**
      optimize all branch lengths of one tree
-     @param iterations number of iterations to loop through all branches
+     @param my_iterations number of iterations to loop through all branches
      */
     void optimizeAllBranchesOneTree(int whichtree, int my_iterations = 100, double tolerance = TOL_LIKELIHOOD, int maxNRStep = 100);
     
     /**
      optimize all branch lengths of all trees
-     @param iterations number of iterations to loop through all branches
+     @param my_iterations number of iterations to loop through all branches
      @return the likelihood of the tree
      */
-    virtual double optimizeAllBranches(int my_iterations = 100, double tolerance = TOL_LIKELIHOOD, int maxNRStep = 100);
+    virtual double optimizeAllBranches(int my_iterations = 100, double tolerance = TOL_LIKELIHOOD, int maxNRStep = 100) override;
 
     /**
      compute the updated tree weights according to the likelihood values along each site
@@ -119,42 +119,42 @@ public:
     double optimizeBranchLensByBFGS(double gradient_epsilon);
 
     // save branch lengths of all trees
-    // node and dad are always NULL
-    void getBranchLengths(vector<DoubleVector> &len, Node *node = NULL, Node *dad = NULL);
+    // node and dad are always nullptr
+    void getBranchLengths(vector<DoubleVector> &len, Node *node = nullptr, Node *dad = nullptr);
 
     // restore branch lengths of all trees
-    // node and dad are always NULL
-    void setBranchLengths(vector<DoubleVector> &len, Node *node = NULL, Node *dad = NULL);
+    // node and dad are always nullptr
+    void setBranchLengths(vector<DoubleVector> &len, Node *node = nullptr, Node *dad = nullptr);
     
-    virtual void showTree();
+    // virtual void showTree();
     
     /** set the root by name
      @param my_root root node name
      @param multi_taxa TRUE if my_root is a comma-separated list of nodes
      */
-    virtual void setRootNode(const char *my_root, bool multi_taxa = false);
+    virtual void setRootNode(const char *my_root, bool multi_taxa = false) override;
     
     /**
      @return true if this is a mixture of trees, default: false
      */
-    virtual bool isTreeMix() { return true; }
+    virtual bool isTreeMix() override { return true; }
 
     /**
      set checkpoint object
-     @param checkpoint
+     @param checkpoint a checkpoint
      */
-    virtual void setCheckpoint(Checkpoint *checkpoint);
+    virtual void setCheckpoint(Checkpoint *checkpoint) override;
 
-    virtual void startCheckpoint();
+    virtual void startCheckpoint() override;
 
-    void saveCheckpoint();
+    void saveCheckpoint() override;
     
-    void restoreCheckpoint();
+    void restoreCheckpoint() override;
     
     void setMinBranchLen(Params& params);
 
     /** set pointer of params variable */
-    virtual void setParams(Params* params);
+    virtual void setParams(Params* params) override;
 
     /*
      * Generate the branch IDs
@@ -165,31 +165,31 @@ public:
     /**
      * Generate the initial tree (usually used for model parameter estimation)
      */
-    void computeInitialTree(LikelihoodKernel kernel, istream* in = NULL);
+    void computeInitialTree(LikelihoodKernel kernel, istream* in = nullptr) override;
 
     /**
      * setup all necessary parameters
      */
-    virtual void initSettings(Params& params);
+    virtual void initSettings(Params& params) override;
 
     /**
      * compute the memory size required for storing partial likelihood vectors
      * @return memory size required in bytes
      */
-    virtual uint64_t getMemoryRequired(size_t ncategory = 1, bool full_mem = false);
+    virtual uint64_t getMemoryRequired(size_t ncategory = 1, bool full_mem = false) override;
 
     /**
      * compute the memory size for top partitions required for storing partial likelihood vectors
      * @return memory size required in bytes
      */
-    virtual uint64_t getMemoryRequiredThreaded(size_t ncategory = 1, bool full_mem = false);
+    virtual uint64_t getMemoryRequiredThreaded(size_t ncategory = 1, bool full_mem = false) override;
 
-    virtual void setNumThreads(int num_threads);
+    virtual void setNumThreads(int num_threads) override;
 
     /**
      test the best number of threads
      */
-    virtual int testNumThreads();
+    virtual int testNumThreads() override;
 
     /**
      Initialize the tree weights using parsimony scores
@@ -200,55 +200,55 @@ public:
      4. The tree weights are estimated according to the proportion of the sites assigned to each tree.
      */
     void initializeTreeWeights();
-    void initializeTreeWeights2();
+    // void initializeTreeWeights2();
 
-    virtual string optimizeModelParameters(bool printInfo, double logl_epsilon);
+    virtual string optimizeModelParameters(bool printInfo, double logl_epsilon) override;
 
     /**
      print tree to .treefile
-     @param params program parameters, field root is taken
+     @param suffix suffix of the output file
      */
-    virtual void printResultTree(string suffix = "");
+    virtual void printResultTree(string suffix = "") override;
 
     /**
      * Return the tree string contining taxon names and branch lengths
-     * @return
+     * @return a tree string
      */
-    virtual string getTreeString();
+    virtual string getTreeString() override;
 
     /**
      @return the weighted sum of the tree lengths
-     @param node the starting node, NULL to start from the root
+     @param node the starting node, nullptr to start from the root
      @param dad dad of the node, used to direct the search
      */
-    virtual double treeLength(Node *node = NULL, Node *dad = NULL);
+    virtual double treeLength(Node *node = nullptr, Node *dad = nullptr) override;
 
     /**
      @return the weighted sum of the lengths of all internal branches
-     @param node the starting node, NULL to start from the root
+     @param node the starting node, nullptr to start from the root
      @param dad dad of the node, used to direct the search
      */
-    virtual double treeLengthInternal(double epsilon, Node *node = NULL, Node *dad = NULL);
+    virtual double treeLengthInternal(double epsilon, Node *node = nullptr, Node *dad = nullptr) override;
 
     virtual int getNParameters();
 
-    virtual void drawTree(ostream &out, int brtype = WT_BR_SCALE + WT_INT_NODE, double zero_epsilon = 2e-6);
+    virtual void drawTree(ostream &out, int brtype = WT_BR_SCALE + WT_INT_NODE, double zero_epsilon = 2e-6) override;
 
     /**
      print the tree to the output file in newick format
      @param out the output file.
-     @param node the starting node, NULL to start from the root
+     @param node the starting node, nullptr to start from the root
      @param dad dad of the node, used to direct the search
      @param brtype type of branch to print
      @return ID of the taxon with smallest ID
      */
-    // virtual int printTree(ostream &out, int brtype, Node *node, Node *dad = NULL);
+    // virtual int printTree(ostream &out, int brtype, Node *node, Node *dad = nullptr);
     /**
             print the tree to the output file in newick format
             @param out the output stream.
             @param brtype type of branch to print
      */
-    virtual void printTree(ostream & out, int brtype = WT_BR_LEN);
+    virtual void printTree(ostream & out, int brtype = WT_BR_LEN) override;
 
     /**
      *  Return best tree string from the candidate set
@@ -258,16 +258,15 @@ public:
      *  @return
      *      A string vector of trees
      */
-    virtual vector<string> getBestTrees(int numTrees = 0);
+    virtual vector<string> getBestTrees(int numTrees = 0) override;
     
     /**
      Read the tree saved with Taxon IDs and branch lengths.
      @param tree_string tree string to read from
-     @param updatePLL if true, tree is read into PLL
      */
-    virtual void readTreeString(const string &tree_string);
+    virtual void readTreeString(const string &tree_string) override;
 
-    virtual ModelFactory *getModelFactory() {
+    virtual ModelFactory *getModelFactory() override {
         return at(0)->getModelFactory();
     }
 
@@ -275,23 +274,23 @@ public:
      get rate heterogeneity
      @return associated rate heterogeneity class
      */
-    virtual RateHeterogeneity *getRate() {
+    virtual RateHeterogeneity *getRate() override {
         return at(0)->getRate();
     }
 
-    virtual ModelSubst *getModel() {
+    virtual ModelSubst *getModel() override {
         return at(0)->getModel();
     }
 
     /**
      get the name of the model
      */
-    virtual string getModelName();
+    virtual string getModelName() override;
 
     /**
      get the name of the model
      */
-    virtual string getModelNameParams(bool show_fixed_params = false);
+    virtual string getModelNameParams(bool show_fixed_params = false) override;
 
     // compute parsimony scores for each tree along the patterns
     // results are stored in the array patn_parsimony
@@ -460,7 +459,7 @@ protected:
     // for BFGS optimzation on tree weights
     // -------------------------------------
 
-    double targetFunk(double x[]);
+    double targetFunk(double x[]) override;
 
     // read the tree weights and write into "variables"
     void setVariables(double *variables);
@@ -472,7 +471,7 @@ protected:
     void setBounds(double *lower_bound, double *upper_bound, bool* bound_check);
     
     // get the dimension of the variables (for tree weights)
-    int getNDim();
+    int getNDim() override;
     
     // optimization on which variable
     // 1 - tree weights

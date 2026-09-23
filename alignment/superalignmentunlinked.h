@@ -34,7 +34,7 @@ public:
     /**
      initialize seq_names, taxon_index, buildPattern
      */
-    virtual void init(StrVector *sequence_names = NULL);
+    virtual void init(StrVector *sequence_names = nullptr);
     
     /**
      * build all patterns of super alignent from partitions and taxa_index
@@ -44,9 +44,9 @@ public:
     virtual void buildPattern();
 
     /**
-     determine if the pattern is constant. update the is_const variable.
+     *  Determine the pattern constancy type, update its flag member
      */
-    virtual void computeConst(Pattern &pat);
+    virtual void computeConst(Pattern &pat) const;
 
     /* build seq_states containing set of states per sequence
      * @param add_unobs_const TRUE to add all unobserved constant states (for +ASC model)

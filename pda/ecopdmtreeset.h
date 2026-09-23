@@ -23,10 +23,10 @@ public:
 		@param max_count max number of trees to load
 	*/
 	EcoPDmtreeset(const char *userTreeFile, bool &is_rooted, int burnin, int max_count,
-		const char *tree_weight_file = NULL);
+		const char *tree_weight_file = nullptr);
 
 	void initEcoSD(const char *userTreeFile, bool &is_rooted, int burnin, int max_count,
-		const char *tree_weight_file = NULL, IntVector *weights = NULL, bool compressed = false);
+		const char *tree_weight_file = nullptr, IntVector *weights = nullptr, bool compressed = false);
 
 
 	virtual ~EcoPDmtreeset();

@@ -853,10 +853,21 @@ public:
             bio2009.create(distanceMatrixFilePath.c_str(), newickTreeFilePath.c_str());
             return true;
     }
+    virtual bool constructTree2
+        ( std::istream &distanceMatrix
+         , std::ostream & newickTree) {
+            return false;
+    }
     virtual bool constructTreeInMemory
         ( const std::vector<std::string> &sequenceNames
          , double *distanceMatrix
          , const std::string & newickTreeFilePath) {
+            return false;
+    }
+    virtual bool constructTreeInMemory2
+        ( const std::vector<std::string> &sequenceNames
+         , double *distanceMatrix
+         , std::ostream & newickTree) {
             return false;
     }
     virtual void setZippedOutput(bool zipIt) {

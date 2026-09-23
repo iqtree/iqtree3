@@ -18,8 +18,8 @@ AliSimulator::AliSimulator(Params *input_params, int expected_number_sites, doub
     num_sites_per_state = tree->aln->seq_type == SEQ_CODON?3:1;
     STATE_UNKNOWN = tree->aln->STATE_UNKNOWN;
     max_num_states = tree->aln->getMaxNumStates();
-    latest_insertion = NULL;
-    first_insertion = NULL;
+    latest_insertion = nullptr;
+    first_insertion = nullptr;
     
     // estimating the appropriate length_ratio in cases models with +ASC
     estimateLengthRatio();
@@ -52,8 +52,8 @@ AliSimulator::AliSimulator(Params *input_params, IQTree *iq_tree, int expected_n
     num_sites_per_state = tree->aln->seq_type == SEQ_CODON?3:1;
     STATE_UNKNOWN = tree->aln->STATE_UNKNOWN;
     max_num_states = tree->aln->getMaxNumStates();
-    latest_insertion = NULL;
-    first_insertion = NULL;
+    latest_insertion = nullptr;
+    first_insertion = nullptr;
     
     // estimating the appropriate length_ratio in cases models with +ASC
     estimateLengthRatio();
@@ -117,10 +117,7 @@ void AliSimulator::initializeIQTreeFromTreeFile()
         // further initialize super_tree/alignments
         // recording start_time
         auto start = getRealTime();
-        
-        int i;
-        
-        for (i = 0; i < ((PhyloSuperTree*) tree)->size(); i++)
+        for (int i = 0; i < ((PhyloSuperTree*) tree)->size(); ++i)
         {
             // -Q (params->partition_type == BRLEN_OPTIMIZE) -> tree_line_index = i; otherwise (-p, -q), tree_line_index = 0 (only a tree)
             int tree_line_index = 0;
@@ -140,12 +137,19 @@ void AliSimulator::initializeIQTreeFromTreeFile()
             current_tree->readTree(params->user_file, is_rooted, tree_line_index);
             
             // update the alignment for the current partition
+            int expected_num_states_current_tree = current_tree->aln->getNSite();
+            ASSERT(expected_num_states_current_tree == 0);
             initializeAlignment(current_tree, current_tree->aln->model_name);
-            
-            // extract num_sites from partition
+            // get expected_num_states_current_tree from position_spec
+            string info_spec = current_tree->aln->position_spec;
             IntVector siteIDs;
-            extractSiteID(current_tree->aln, current_tree->aln->position_spec.c_str(), siteIDs, false, -1, true);
-            current_tree->aln->setExpectedNumSites(siteIDs.size());
+            Alignment::extractSiteID(info_spec, siteIDs, current_tree->aln->genetic_code);
+            expected_num_states_current_tree = siteIDs.size();
+            // fill the alignment with fake sites according to position_spec
+            Pattern pat;
+            pat.resize(current_tree->aln->getNSeq(), current_tree->aln->STATE_UNKNOWN);
+            pat.frequency = expected_num_states_current_tree;
+            current_tree->aln->addPattern(pat);
             
             // initialize the model for the current partition
             initializeModel(current_tree, current_tree->aln->model_name);
@@ -179,11 +183,11 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                     ((PhyloSuperTree*) tree)->part_info[i].part_rate = current_tree_length * inverse_super_tree_length;
                 
                 // update sum of rate*n_sites and num_sites (for rate normalization)
-                sum += ((PhyloSuperTree*) tree)->part_info[i].part_rate * current_tree->aln->getNSite();
+                sum += ((PhyloSuperTree*) tree)->part_info[i].part_rate * expected_num_states_current_tree;
                 if (current_tree->aln->seq_type == SEQ_CODON && ((PhyloSuperTree*) tree)->rescale_codon_brlen)
-                    num_sites += 3 * current_tree->aln->getNSite();
+                    num_sites += 3 * expected_num_states_current_tree;
                 else
-                    num_sites += current_tree->aln->getNSite();
+                    num_sites += expected_num_states_current_tree;
             }
             
             // add missing taxa from the current partition tree to the super tree if topology-unlink partition is used
@@ -238,7 +242,6 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                 }
             }
         }
-        
         // show the reloading tree time
         auto end = getRealTime();
         cout<<" - Time spent on Loading trees: "<<end-start<<endl;
@@ -388,10 +391,9 @@ void AliSimulator::initializeAlignment(IQTree *tree, string model_fullname)
             }
         }
     }
-    
-    if (tree->aln->seq_type == SEQ_UNKNOWN)
+    if (tree->aln->seq_type == SEQ_UNKNOWN) {
         outError("Could not detect SequenceType from Model Name. Please check your Model Name or specify the SequenceType by --seqtype <SEQ_TYPE_STR> where <SEQ_TYPE_STR> is BIN, DNA, AA, NT2AA, CODON, or MORPH.");
-    
+    }
     switch (tree->aln->seq_type) {
     case SEQ_BINARY:
         tree->aln->num_states = 2;
@@ -403,27 +405,27 @@ void AliSimulator::initializeAlignment(IQTree *tree, string model_fullname)
         tree->aln->num_states = 20;
         break;
     case SEQ_MORPH:
-            // only set num_state if it has not yet set (noting that num_states of Morph could be set in partition file)
-            if (tree->aln->num_states == 0)
-                tree->aln->num_states = params->alisim_num_states_morph;
-            
-            // throw error if users dont specify the number of states when simulating morph data
-            if (tree->aln->num_states <= 0)
-                outError("Please specify the number of states for morphological data by --seqtype MORPH{<NUM_STATES>}");
+        // only set num_state if it has not yet set (noting that num_states of Morph could be set in partition file)
+        if (tree->aln->num_states == 0) {
+            tree->aln->num_states = params->alisim_num_states_morph;
+        }
+        // throw error if users dont specify the number of states when simulating morph data
+        if (tree->aln->num_states <= 0) {
+            outError("Please specify the number of states for morphological data by --seqtype MORPH{<NUM_STATES>}");
+        }
+        break;
+    case SEQ_CODON:
+        tree->aln->initCodon(&tree->aln->sequence_type[5]);
         break;
     case SEQ_POMO:
         throw "Sorry! SEQ_POMO is currently not supported";
         break;
     default:
-        break;
+        throw "Invalid sequence type";
     }
-    
+    tree->aln->computeUnknownState();
     // add all leaf nodes' name into the alignment
     addLeafNamesToAlignment(tree->aln, tree->root, tree->root);
-    
-    // init Codon (if neccessary)
-    if (tree->aln->seq_type == SEQ_CODON)
-        tree->aln->initCodon(&tree->aln->sequence_type[5]);
 }
 
 /**
@@ -446,7 +448,6 @@ void AliSimulator::addLeafNamesToAlignment(Alignment *aln, Node *node, Node *dad
 void AliSimulator::initializeModel(IQTree *tree, string model_name)
 {
     tree->aln->model_name = model_name;
-    tree->aln->computeUnknownState();
     ModelsBlock *models_block = readModelsDefinition(*params);
     tree->params = params;
     tree->IQTree::initializeModel(*params, tree->aln->model_name, models_block);
@@ -790,8 +791,8 @@ void AliSimulator::simulateSeqsForTree(map<string,string> input_msa, std::vector
 
 void AliSimulator::executeEM(int thread_id, int &sequence_length, int default_segment_length, ModelSubst *model, map<string,string> input_msa, std::vector<bool>* const site_locked_vec, string output_filepath, std::ios_base::openmode open_mode, bool write_sequences_to_tmp_data, bool store_seq_at_cache, int max_depth, vector<string> &state_mapping)
 {
-    ostream *single_output = NULL;
-    ostream *out = NULL;
+    ostream *single_output = nullptr;
+    ostream *out = nullptr;
     vector<vector<short int>> sequence_cache;
     int actual_segment_length = sequence_length;
     
@@ -1007,7 +1008,7 @@ void AliSimulator::mergeOutputFiles(ostream *&single_output, int thread_id, stri
 void AliSimulator::executeIM(int thread_id, int &sequence_length, int default_segment_length, ModelSubst *model, map<string,string> input_msa, std::vector<bool>* const site_locked_vec, string output_filepath, std::ios_base::openmode open_mode, bool write_sequences_to_tmp_data, bool store_seq_at_cache, int max_depth, vector<string> &state_mapping)
 {
     int actual_segment_length = sequence_length;
-    ostream *out = NULL;
+    ostream *out = nullptr;
     vector<vector<short int>> sequence_cache;
     
     // Bug fix: in some cases the ids of leaves are not continuous -> in IM algorithm with multiple threads, we use the leaf id to jump to the current position to output the simulated sequences -> we need to build a vector of continuous ids
@@ -1265,7 +1266,7 @@ void AliSimulator::initVariables(int sequence_length, string output_filepath, ve
 
         // clone site_locked_vec
         std::vector<bool> site_needs_updating = *site_locked_vec;
-        updateRootSeq4PredefinedMut(site_needs_updating, tree->root, NULL);
+        updateRootSeq4PredefinedMut(site_needs_updating, tree->root, nullptr);
     }
 
     // check whether we could temporarily write sequences at tips to tmp_data file => a special case: with Indels without FunDi/ASC/Partitions
@@ -1717,6 +1718,8 @@ void AliSimulator::mergeAndWriteSeqIndelFunDi(int thread_id, ostream &out, int s
             // make sure only one thread is selected to write the output
             #ifdef _OPENMP
             if ((*it)->node->sequence->num_threads_done_simulation == omp_get_num_threads())
+            #else
+            if ((*it)->node->sequence->num_threads_done_simulation == 1)
             #endif
                 this_thread_write_output = true;
         }
@@ -2665,7 +2668,7 @@ void AliSimulator::generateRandomSequenceFromStateFreqs(int sequence_length, vec
     
     // randomly generate each site in the sequence follows the base frequencies defined by the user
     for (int i = 0; i < sequence_length; i++)
-        sequence[i] =  getRandomItemWithAccumulatedProbMatrixMaxProbFirst(state_freqs, 0, max_num_states, max_prob_pos, NULL);
+        sequence[i] =  getRandomItemWithAccumulatedProbMatrixMaxProbFirst(state_freqs, 0, max_num_states, max_prob_pos, nullptr);
 }
 
 /**
@@ -3552,7 +3555,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
         insertion->phylo_nodes[i]->sequence->sequence_chunks[0] = genome_tree->exportNewGenome(insertion->phylo_nodes[i]->sequence->sequence_chunks[0], seq_length, tree->aln->STATE_UNKNOWN);
     
         // delete the insertion_pos of this node as we updated its sequence.
-        insertion->phylo_nodes[i]->sequence->insertion_pos = NULL;
+        insertion->phylo_nodes[i]->sequence->insertion_pos = nullptr;
     }
     
     // keep track of previous insertion
@@ -3613,7 +3616,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
                 insertion->phylo_nodes[i]->sequence->sequence_chunks[0] = genome_tree->exportNewGenome(insertion->phylo_nodes[i]->sequence->sequence_chunks[0], seq_length, tree->aln->STATE_UNKNOWN);
             
                 // delete the insertion_pos of this node as we updated its sequence.
-                insertion->phylo_nodes[i]->sequence->insertion_pos = NULL;
+                insertion->phylo_nodes[i]->sequence->insertion_pos = nullptr;
             }
         }
         
@@ -3626,7 +3629,7 @@ void AliSimulator::updateNewGenomeIndels(int seq_length)
 }
 
 /**
-*  reset tree (by setting the parents of all node to NULL) -> only using when simulating MSAs with openMP
+*  reset tree (by setting the parents of all node to nullptr) -> only using when simulating MSAs with openMP
 *
 */
 void AliSimulator::resetTree(int &max_depth, bool store_seq_at_cache, Node *node, Node *dad)

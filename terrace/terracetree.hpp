@@ -59,7 +59,7 @@ public:
      @param node_name node name
      @return a new node
      */
-    virtual Node* newNode(int node_id = -1, const char* node_name = NULL);
+    virtual Node* newNode(int node_id = -1, const char* node_name = nullptr);
     
     /**
      allocate a new node. Override this if you have an inherited Node class.

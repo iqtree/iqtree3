@@ -52,9 +52,24 @@ public:
 
     void writeInfo(ostream &out) override;
 
+    void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1) override;
+
+    void computeTransDerv(double time, double *trans_matrix,
+                          double *trans_derv1, double *trans_derv2, int mixture = 0) override;
+
+    double computeTrans(double time, int state1, int state2) override { return 0; }
+
+    double computeTrans(double time, int state1, int state2, double &derv1, double &derv2) override { return 0; }
+
+    double computeTrans(double time, int model_id, int state1, int state2) override;
+
+    double computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) override;
+
+    int getPtnModelID(int ptn) override;
+
     void getRateMatrix(double *rate_mat) override;
 
-    void getStateFrequency(double *state_freqs, int mixture = 0) override;
+    void getStateFrequency(double *state_freq, int mixture = 0) override;
 
     void getQMatrix(double *q_mat, int mixture = 0) override;
 
@@ -73,21 +88,6 @@ public:
     double optimizeParameters(double gradient_epsilon) override;
 
     double targetFunk(double x[]) override;
-
-    void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1) override;
-
-    void computeTransDerv(double time, double *trans_matrix,
-                          double *trans_derv1, double *trans_derv2, int mixture = 0) override;
-
-    double computeTrans(double time, int state1, int state2) override { return 0; }
-
-    double computeTrans(double time, int state1, int state2, double &derv1, double &derv2) override { return 0; }
-
-    double computeTrans(double time, int model_id, int state1, int state2) override;
-
-    double computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) override;
-
-    int getPtnModelID(int ptn) override;
 
     uint64_t getMemoryRequired() override;
 

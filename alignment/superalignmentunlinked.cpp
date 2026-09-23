@@ -23,7 +23,7 @@
 
 /** constructor initialize from a supertree */
 SuperAlignmentUnlinked::SuperAlignmentUnlinked(Params &params)
-: SuperAlignment()
+: SuperAlignmentUnlinked()
 {
     readFromParams(params);
     init();
@@ -31,10 +31,7 @@ SuperAlignmentUnlinked::SuperAlignmentUnlinked(Params &params)
 
 /** constructor initialize empty alignment */
 SuperAlignmentUnlinked::SuperAlignmentUnlinked()
-: SuperAlignment()
-{
-    unlinked_taxa = true;
-}
+: SuperAlignment(), unlinked_taxa(true) {}
 
 void SuperAlignmentUnlinked::init(StrVector *sequence_names) {
     // start original code
@@ -86,13 +83,9 @@ void SuperAlignmentUnlinked::buildPattern() {
         SuperAlignment::buildPattern();
         return;
     }
+    ASSERT(empty());
     int part, npart = partitions.size();
-    seq_type = SEQ_BINARY;
-    num_states = 2; // binary type because the super alignment presents the presence/absence of taxa in the partitions
-    STATE_UNKNOWN = 2;
     site_pattern.resize(npart, -1);
-    clear();
-    pattern_index.clear();
     /*
     VerboseMode save_mode = verbose_mode;
     verbose_mode = min(verbose_mode, VB_MIN); // to avoid printing gappy sites in addPattern
@@ -114,28 +107,28 @@ void SuperAlignmentUnlinked::buildPattern() {
     ASSERT(start_seq == nseq);
     verbose_mode = save_mode;
     */
-    resize(1, Pattern(getNSeq(), npart));
+    // add a fake pattern, as its contents are not used anywhere
+    Pattern pat;
+    pat.resize(getNSeq(), STATE_UNKNOWN);
+    pat.frequency = npart;
+    push_back(pat);
     computeConst(at(0));
     for (part = 0; part < npart; part++) {
         site_pattern[part] = 0;
     }
-    
-    countConstSite();
+    countConstSites();
 //    buildSeqStates();
 }
 
-void SuperAlignmentUnlinked::computeConst(Pattern &pat) {
+void SuperAlignmentUnlinked::computeConst(Pattern &pat) const {
     if (!unlinked_taxa) {
-        SuperAlignment::computeConst(pat);
-        return;
+        return SuperAlignment::computeConst(pat);
     }
     bool is_const = (partitions.size() == 1);
     bool is_invariant = (partitions.size() == 1);
     bool is_informative = (partitions.size() > 1);
     pat.const_char = (is_const) ? 1 : (STATE_UNKNOWN+1);
-    
     pat.num_chars = (is_const) ? 1 : 2; // number of states with >= 1 appearance
-
     pat.flag = 0;
     if (is_const) pat.flag |= PAT_CONST;
     if (is_invariant) pat.flag |= PAT_INVARIANT;

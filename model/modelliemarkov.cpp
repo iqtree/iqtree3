@@ -266,13 +266,13 @@ const static int BDF[] =
  */
 const static double *TRANSFORM_A[]  = {D,    tE1,  tE2};
 const static double *TRANSFORM_A2[] = {mD,    E1,   E2};
-const static double *TRANSFORM_B[]  = {NULL, mE2,  mE1};
-const static double *TRANSFORM_C[]  = {NULL,  E2,  mE1};
-const static double *TRANSFORM_D1[] = {NULL,  E1,  mE2};
-const static double *TRANSFORM_F1[] = {mE1,  NULL, NULL};
-const static double *TRANSFORM_F2[] = {mE2,  NULL, NULL};
-const static double *TRANSFORM_G1[] = {NULL,  mD,  NULL};
-const static double *TRANSFORM_G2[] = {NULL, NULL,  mD};
+const static double *TRANSFORM_B[]  = {nullptr, mE2,  mE1};
+const static double *TRANSFORM_C[]  = {nullptr,  E2,  mE1};
+const static double *TRANSFORM_D1[] = {nullptr,  E1,  mE2};
+const static double *TRANSFORM_F1[] = {mE1,  nullptr, nullptr};
+const static double *TRANSFORM_F2[] = {mE2,  nullptr, nullptr};
+const static double *TRANSFORM_G1[] = {nullptr,  mD,  nullptr};
+const static double *TRANSFORM_G2[] = {nullptr, nullptr,  mD};
 
 const static double **BASIS_TRANSFORM[] = {
   TRANSFORM_A,  TRANSFORM_A2, TRANSFORM_B, 
@@ -1159,11 +1159,11 @@ void ModelLieMarkov::setBasis() {
       memcpy(unpermuted_rates, LM_BASIS_MATRICES[basisIndex], NUM_RATES* sizeof(double));
       for (int tauIndex=0; tauIndex<3; tauIndex++) {
         const double* transformationMatrix = BASIS_TRANSFORM[basisIndex][tauIndex];
-	    if (tau[tauIndex]!=0 && transformationMatrix != NULL) {
+	    if (tau[tauIndex]!=0 && transformationMatrix != nullptr) {
           for (int rate=0; rate<NUM_RATES; rate++) {
 	        unpermuted_rates[rate] = unpermuted_rates[rate]+tau[tauIndex]*transformationMatrix[rate];
 	      } // for rate
-	    } // if tau && !=NULL
+	    } // if tau && !=nullptr
       } // for tauIndex
 
       double* permuted_rates = new double[NUM_RATES];

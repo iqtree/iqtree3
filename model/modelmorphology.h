@@ -83,6 +83,15 @@ public:
     virtual void readRates(istream &in) noexcept(false);
 
     virtual ~ModelMorphology();
+
+    /**
+     * Print the model information in a format that can be accepted by MrBayes, using lset and prset.<br>
+     * By default, it simply prints a warning to the log and to the stream, stating that this model is not supported by MrBayes.
+     * @param out the ofstream to print the result to
+     * @param partition the partition to apply lset and prset to
+     * @param charset the current partition's charset.
+     */
+    virtual void printMrBayesModelText(ofstream& out, string partition, string charset);
 };
 
 #endif /* MODELMORPHOLOGY_H_ */

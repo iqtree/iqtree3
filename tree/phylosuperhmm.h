@@ -28,28 +28,28 @@ public:
     /**
      destructor
      */
-    ~PhyloSuperHmm();
+    ~PhyloSuperHmm() override;
     
     /**
      @return true if this is a mixture of trees, default: false
      */
-    virtual bool isTreeMix() { return true; }
+    virtual bool isTreeMix() override { return true; }
     
     /**
      set minimum branch length
      */
     void setMinBranchLen(Params& params);
     
-    void initSettings(Params &params);
+    void initSettings(Params &params) override;
     
     // void initializeModel(Params &params, string model_name, ModelsBlock *models_block);
     
     /**
      * Generate the initial tree (usually used for model parameter estimation)
      */
-    void computeInitialTree(LikelihoodKernel kernel, istream* in);
+    void computeInitialTree(LikelihoodKernel kernel, istream* in) override;
     
-    void setRootNode(const char *my_root, bool multi_taxa);
+    void setRootNode(const char *my_root, bool multi_taxa) override;
     
     // show the assignment of the categories along sites with max likelihood
     // cat_assign_method:

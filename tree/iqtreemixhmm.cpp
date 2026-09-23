@@ -15,7 +15,7 @@ IQTreeMixHmm::IQTreeMixHmm() : IQTreeMix(), PhyloHmm() {
     objAlgo[0] = "HMM";
     objAlgo[1] = "MAST";
     isTMixOptimEngine = false;
-    siteTypes = NULL;
+    siteTypes = nullptr;
 }
 
 IQTreeMixHmm::IQTreeMixHmm(Params &params, Alignment *aln) : IQTreeMix(params, aln), PhyloHmm(getAlnNSite(), ntree) {
@@ -26,7 +26,7 @@ IQTreeMixHmm::IQTreeMixHmm(Params &params, Alignment *aln) : IQTreeMix(params, a
     objAlgo[0] = "HMM";
     objAlgo[1] = "MAST";
     isTMixOptimEngine = false;
-    siteTypes = NULL;
+    siteTypes = nullptr;
     setSiteTypes();
 }
 
@@ -181,7 +181,7 @@ void IQTreeMixHmm::computeLogLikelihoodSiteTree(int updateTree) {
     for (int j = 0; j < ntree; j++) {
         int k = nsite;
         int l = j;
-        double* ptn_lh_arr = _ptn_like_cat + nptn * j;
+        const double* ptn_lh_arr = _ptn_like_cat + (nptn * j);
         for (int i = 0; i < nsite; i++) {
             k--;
             int ptn = aln->getPatternID(k);
@@ -701,7 +701,7 @@ void IQTreeMixHmm::showParameters(ostream& out) {
 
 // compute the log-likelihoods for a single tree t
 void IQTreeMixHmm::computeLogLikelihoodSingleTree(int t) {
-    double* pattern_lh_tree = _ptn_like_cat + nptn * t;
+    double* pattern_lh_tree = _ptn_like_cat + (nptn * t);
     // save the site rate's tree
     PhyloTree* ptree = at(t)->getRate()->getTree();
     // set the tree t as the site rate's tree
@@ -729,7 +729,7 @@ void IQTreeMixHmm::setAllBranchLengths() {
 }
 
 // show the branch lengths of all trees
-void IQTreeMixHmm::showAllBranchLengths() {
+/* void IQTreeMixHmm::showAllBranchLengths() {
     getAllBranchLengths();
     for (size_t i=0; i<ntree; i++) {
         cout << "The branch lengths of tree " << i+1 << endl;
@@ -741,7 +741,7 @@ void IQTreeMixHmm::showAllBranchLengths() {
         cout << endl;
     }
 
-}
+}*/
 
 //--------------------------------------
 // optimization of branch lengths

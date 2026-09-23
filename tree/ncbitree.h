@@ -34,7 +34,7 @@ class NCBITree : public MTree
 public:
     NCBITree();
 	
-    ~NCBITree();
+    ~NCBITree() override;
 
 
 /********************************************************
@@ -45,7 +45,7 @@ public:
 		read the tree in nodes.dmp file from NCBI taxonomy
 		@param infile the input file file.
 		@param root_id taxon ID of the root
-		@param taxon_level e.g. "species", "genus"; NULL to take all taxa (incl. subspecies)
+		@param taxon_level e.g. "species", "genus"; nullptr to take all taxa (incl. subspecies)
 	*/
 	Node* readNCBITree(const char *infile, int root_id, const char* taxon_level, const char *ignore_level); 
 	Node* readNCBITree(istream &in, int root_id, const char* taxon_level, const char *ignore_level);
@@ -87,10 +87,10 @@ protected:
 
 	/**
 		release the nemory.
-		@param node the starting node, NULL to start from the root
+		@param node the starting node, nullptr to start from the root
 		@param dad dad of the node, used to direct the search
 	*/
-	int freeNode(Node *node = NULL, Node *dad = NULL);
+	int freeNode(Node *node = nullptr, Node *dad = nullptr);
 
 };
 

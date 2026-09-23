@@ -41,7 +41,7 @@ SuperNode::SuperNode(int aid, const char *aname) : PhyloNode(aid, aname) {
 }
 
 void SuperNode::init() {
-	//partial_lh = NULL;
+	//partial_lh = nullptr;
 }
 
 

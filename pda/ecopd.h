@@ -70,7 +70,7 @@ public:
 	/*
 	 * some left_overs from mtree class, function which is not there anymore..
 	 */
-	void getBranchOrdered(NodeVector &nodes, NodeVector &nodes2,Node *node = NULL, Node *dad = NULL);
+	void getBranchOrdered(NodeVector &nodes, NodeVector &nodes2,Node *node = nullptr, Node *dad = nullptr);
 
 	/*
 	 * Find the id of the species on tree by name

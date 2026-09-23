@@ -24,12 +24,12 @@ ModelSet::ModelSet(const string model_name, ModelsBlock *models_block,
     name = full_name = model_name;
     full_name += "+site-specific state frequency or rate model (unpublished)";
     // init the wrapper model to use its eigen
-    ModelMarkov::init(FREQ_EMPIRICAL); // +F is used here to calculate +I under SSF
+    ModelMarkov::init(FREQ_EMPIRICAL); // +F is used here as default under SSF
     ModelMarkov::fixParameters(true);  // yet otherwise the wrapper model parameters remain unused
     // init submodels
     ASSERT(freq != FREQ_MIXTURE);
     if (isSSF()) { // default freqs for unspecified sites under SSF
-        freq = FREQ_EQUAL;
+        freq = FREQ_EMPIRICAL;
         freq_params = "";
     }
     double *state_freqs = new double[num_states];
@@ -54,7 +54,7 @@ ModelSet::ModelSet(const string model_name, ModelsBlock *models_block,
         if (isSSF()) {
             if (phylo_tree->aln->ptn_state_freq[ptn]) {
                 submodel->setStateFrequency(phylo_tree->aln->ptn_state_freq[ptn]);
-            } // else: unspecified site, continue with the default equal freqs
+            } // else: unspecified site, continue with the default freqs
             submodel->init(FREQ_USER_DEFINED);
         }
         push_back(submodel);
@@ -173,15 +173,96 @@ void ModelSet::writeInfo(ostream &out) {
     }
 }
 
+void ModelSet::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
+    // TODO not working with vectorization
+    ASSERT(0);
+    for (iterator it = begin(); it != end(); ++it) {
+        (*it)->computeTransMatrix(time, trans_matrix, mixture, selected_row);
+        trans_matrix += (num_states * num_states);
+    }
+}
+
+void ModelSet::computeTransDerv(double time, double *trans_matrix, double *trans_derv1, double *trans_derv2, int mixture) {
+    // TODO not working with vectorization
+    ASSERT(0);
+    for (iterator it = begin(); it != end(); ++it) {
+        (*it)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2, mixture);
+        trans_matrix += (num_states * num_states);
+        trans_derv1 += (num_states * num_states);
+        trans_derv2 += (num_states * num_states);
+    }
+}
+
+int ModelSet::getPtnModelID(int ptn) {
+    ASSERT(ptn >= 0 && ptn < size());
+    return ptn;
+}
+
+double ModelSet::computeTrans(double time, int model_id, int state1, int state2) {
+    if (phylo_tree->vector_size == 1) {
+        return at(model_id)->computeTrans(time, state1, state2);
+    }
+    // temporary fix problem with vectorized eigenvectors
+    int vsize = phylo_tree->vector_size;
+    int nstates = num_states;
+    int nstates2 = num_states*num_states;
+    int nstates_vsize = num_states*vsize;
+    int model_vec_id = model_id % vsize;
+    int start_ptn = model_id - model_vec_id;
+    double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
+    double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
+    double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
+    double trans_prob = 0.0;
+    for (int i = 0; i < nstates_vsize; i += vsize) {
+        double val = eval[i];
+        double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
+        trans_prob += trans;
+    }
+    return trans_prob;
+}
+
+double ModelSet::computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) {
+    if (phylo_tree->vector_size == 1) {
+        return at(model_id)->computeTrans(time, state1, state2, derv1, derv2);
+    }
+    // temporary fix problem with vectorized eigenvectors
+    int vsize = phylo_tree->vector_size;
+    int nstates = num_states;
+    int nstates2 = num_states*num_states;
+    int nstates_vsize = num_states*vsize;
+    int model_vec_id = model_id % vsize;
+    int start_ptn = model_id - model_vec_id;
+    double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
+    double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
+    double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
+    double trans_prob = 0.0;
+    derv1 = derv2 = 0.0;
+    for (int i = 0; i < nstates_vsize; i += vsize) {
+        double val = eval[i];
+        double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
+        double trans2 = trans * val;
+        trans_prob += trans;
+        derv1 += trans2;
+        derv2 += trans2 * val;
+    }
+    return trans_prob;
+}
+
 void ModelSet::getRateMatrix(double *rate_mat) {
     front()->getRateMatrix(rate_mat);
 }
 
-void ModelSet::getStateFrequency(double *state_freqs, int mixture) {
-    if (isSSF()) { // get the +F freqs under SSF
-        ModelMarkov::getStateFrequency(state_freqs);
+void ModelSet::getStateFrequency(double *state_freq, int mixture) {
+    if (isSSF()) {
+        ASSERT(mixture >= -1);
+        if (mixture >= 0) {
+            at(mixture)->getStateFrequency(state_freq);
+            return;
+        }
+        // default: return the +F freqs across all patterns
+        ModelMarkov::getStateFrequency(state_freq);
     } else {
-        front()->getStateFrequency(state_freqs);
+        front()->getStateFrequency(state_freq);
     }
 }
 
@@ -284,81 +365,6 @@ double ModelSet::targetFunk(double x[]) {
         }
     }
     return -phylo_tree->computeLikelihood();
-}
-
-void ModelSet::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
-    // TODO not working with vectorization
-    ASSERT(0);
-    for (iterator it = begin(); it != end(); ++it) {
-        (*it)->computeTransMatrix(time, trans_matrix, mixture, selected_row);
-        trans_matrix += (num_states * num_states);
-    }
-}
-
-void ModelSet::computeTransDerv(double time, double *trans_matrix, double *trans_derv1, double *trans_derv2, int mixture) {
-    // TODO not working with vectorization
-    ASSERT(0);
-    for (iterator it = begin(); it != end(); ++it) {
-        (*it)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2, mixture);
-        trans_matrix += (num_states * num_states);
-        trans_derv1 += (num_states * num_states);
-        trans_derv2 += (num_states * num_states);
-    }
-}
-
-int ModelSet::getPtnModelID(int ptn) {
-    ASSERT(ptn >= 0 && ptn < size());
-    return ptn;
-}
-
-double ModelSet::computeTrans(double time, int model_id, int state1, int state2) {
-    if (phylo_tree->vector_size == 1) {
-        return at(model_id)->computeTrans(time, state1, state2);
-    }
-    // temporary fix problem with vectorized eigenvectors
-    int vsize = phylo_tree->vector_size;
-    int nstates = num_states;
-    int nstates2 = num_states*num_states;
-    int nstates_vsize = num_states*vsize;
-    int model_vec_id = model_id % vsize;
-    int start_ptn = model_id - model_vec_id;
-    double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
-    double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
-    double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
-    double trans_prob = 0.0;
-    for (int i = 0; i < nstates_vsize; i += vsize) {
-        double val = eval[i];
-        double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
-        trans_prob += trans;
-    }
-    return trans_prob;
-}
-
-double ModelSet::computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) {
-    if (phylo_tree->vector_size == 1) {
-        return at(model_id)->computeTrans(time, state1, state2, derv1, derv2);
-    }
-    // temporary fix problem with vectorized eigenvectors
-    int vsize = phylo_tree->vector_size;
-    int nstates = num_states;
-    int nstates2 = num_states*num_states;
-    int nstates_vsize = num_states*vsize;
-    int model_vec_id = model_id % vsize;
-    int start_ptn = model_id - model_vec_id;
-    double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
-    double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
-    double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
-    double trans_prob = 0.0;
-    derv1 = derv2 = 0.0;
-    for (int i = 0; i < nstates_vsize; i += vsize) {
-        double val = eval[i];
-        double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
-        double trans2 = trans * val;
-        trans_prob += trans;
-        derv1 += trans2;
-        derv2 += trans2 * val;
-    }
-    return trans_prob;
 }
 
 uint64_t ModelSet::getMemoryRequired() {

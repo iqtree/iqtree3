@@ -10,14 +10,14 @@
 ModelHmm::ModelHmm(int numcat) {
     ncat = numcat;
     sq_ncat = ncat * ncat;
-    transitLog = NULL;
+    transitLog = nullptr;
 }
 
 /**
  destructor
  */
 ModelHmm::~ModelHmm() {
-    if (transitLog != NULL)
+    if (transitLog != nullptr)
         aligned_free(transitLog);
 }
 
@@ -25,7 +25,7 @@ ModelHmm::~ModelHmm() {
 void ModelHmm::initialize_transitLog() {
     // memory allocation of the array
     size_t transit_size = get_safe_upper_limit(ncat * ncat);
-    if (transitLog != NULL)
+    if (transitLog != nullptr)
         aligned_free(transitLog);
     transitLog = aligned_alloc<double>(transit_size);
     tranSameCat = INITIAL_PROB_SAME_CAT;
