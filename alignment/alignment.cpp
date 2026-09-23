@@ -4524,6 +4524,7 @@ Alignment::~Alignment()
     pars_lower_bound = nullptr;
     for (auto rit = ptn_state_freq.rbegin(); rit != ptn_state_freq.rend(); ++rit) {
         delete [] (*rit);
+        (*rit) = nullptr;
     }
     ptn_state_freq.clear();
     ptn_rate_scaler.clear();
@@ -5940,11 +5941,11 @@ bool Alignment::readSiteParamFile(const char* site_param_file, const string &par
 	ifstream in;
 	in.exceptions(ios::failbit | ios::badbit);
 	in.open(site_param_file);
+	// remove the failbit
 	in.exceptions(ios::badbit);
 	int prev_site = -1;
 	while (true) {
 		string site_spec;
-		// remove the failbit
 		in >> site_spec;
 		if (in.eof()) break;
 		// handle the line site ids
@@ -5981,7 +5982,7 @@ bool Alignment::readSiteParamFile(const char* site_param_file, const string &par
 			site_param_entry = state_freqs;
 		} else {
 			double rate;
-			double *rate_scaler = new double;
+			double *rate_scaler = new double[1];
 			in >> rate;
 			if (rate < 0.0 || rate > 100.0) throw "Rates must be non-negative and not higher than 100";
 			rate = max(rate, MIN_SITE_RATE); // regularize rate (if it is too close to 0)
@@ -6023,9 +6024,9 @@ bool Alignment::readSiteParamFile(const char* site_param_file, const string &par
 	// set the failbit again
 	in.exceptions(ios::failbit | ios::badbit);
 	in.close();
-	} catch (const char* str) {
+	} catch (const char *str) {
 		outError(str);
-	} catch (string str) {
+	} catch (const string &str) {
 		outError(str);
 	} catch(ios::failure) {
 		outError(ERR_READ_INPUT);
@@ -6040,8 +6041,7 @@ bool Alignment::readSiteParamFile(const char* site_param_file, const string &par
 				site_model[site] = models.size();
 			}
 		}
-		double *default_param_entry;
-		if (param_type == "freq") default_param_entry = NULL; else *default_param_entry = -1.0;
+		double *default_param_entry = nullptr;
 		models.push_back(default_param_entry);
 	}
 	// if needed, subdivide patterns so that sites in each new pattern have same freqs and rates
@@ -6052,11 +6052,17 @@ bool Alignment::readSiteParamFile(const char* site_param_file, const string &par
 	// fill the selected pattern-specific parameter with the contents of the models
 	for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
 		int first_site = pattern_first_site[ptn];
+		double *param_entry = models[site_model[first_site]];
 		if (param_type == "freq") {
-			ptn_state_freq.push_back(models[site_model[first_site]]);
+			double *state_freq = param_entry;
+			ptn_state_freq.push_back(state_freq);
 		} else {
-			ptn_rate_scaler.push_back(*(models[site_model[first_site]]));
+			double rate = (param_entry) ? *param_entry : -1.0;
+			ptn_rate_scaler.push_back(rate);
 		}
+	}
+	for (size_t i = 0; (param_type == "rate") && (i < models.size()); ++i) {
+		delete [] models[i];
 	}
 	msg = (param_type == "freq") ? "state frequency vectors" : "rate scalers";
 	cout << models.size() << " distinct per-site " << msg << " detected" << endl;
@@ -6068,30 +6074,34 @@ double Alignment::normalizePtnRateScaler()
 	// the goal is to end up with mean rate == 1.0,
 	// some rates may become > MAX_SITE_RATE, but
 	// all rates must stay >= MIN_SITE_RATE
-	ASSERT(ptn_rate_scaler.size());
-	int ptnf;
-	double rate;
 	size_t nptn = getNPattern();
+	ASSERT(ptn_rate_scaler.size() == nptn);
 	// calculate the mean rate value
+	// default rates (-1.0) are treated as if they equal that mean rate
 	size_t cnt = 0;
 	double sum = 0.0;
 	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		ptnf = at(ptn).frequency;
-		rate = ptn_rate_scaler[ptn];
+		size_t ptnf = at(ptn).frequency;
+		double rate = ptn_rate_scaler[ptn];
 		if (rate != -1.0) {
 			cnt += ptnf;
 			sum += rate * ptnf;
 		}
 	}
-	double mean = sum / cnt;
-	if (fabs(mean - 1.0) <= 1e-4) return 1.0;
+	double mean = 1.0;
+	if (cnt > 0) {
+		mean = sum / cnt;
+		if (fabs(mean - 1.0) <= 1e-4) {
+			mean = 1.0;
+		}
+	}
 	// normalization: divide rates by their mean value
 	bool regularize = false;
 	size_t cnt_fast = 0;
 	double sum_slow = 0.0, sum_fast = 0.0;
 	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		ptnf = at(ptn).frequency;
-		rate = ptn_rate_scaler[ptn];
+		size_t ptnf = at(ptn).frequency;
+		double rate = ptn_rate_scaler[ptn];
 		rate = (rate != -1.0) ? (rate / mean) : 1.0;
 		ptn_rate_scaler[ptn] = rate;
 		// data for regularization
@@ -6099,7 +6109,7 @@ double Alignment::normalizePtnRateScaler()
 			cnt_fast += ptnf;
 			sum_fast += rate * ptnf;
 		} else if (rate < MIN_SITE_RATE) {
-			regularize = true;
+			regularize |= true;
 			sum_slow += MIN_SITE_RATE * ptnf;
 		} else {
 			sum_slow += rate * ptnf;
@@ -6109,7 +6119,7 @@ double Alignment::normalizePtnRateScaler()
 	// regularization: bound min rates and scale down the above-one parts of the fast rates
 	double coef = (getNSite() - cnt_fast - sum_slow) / (sum_fast - cnt_fast);
 	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		rate = ptn_rate_scaler[ptn];
+		double rate = ptn_rate_scaler[ptn];
 		if (rate < MIN_SITE_RATE) rate = MIN_SITE_RATE;
 		if (rate > 1.0) rate = rate * coef + 1.0 - coef;
 		ptn_rate_scaler[ptn] = rate;

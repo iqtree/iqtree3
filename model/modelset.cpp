@@ -288,14 +288,12 @@ double ModelSet::targetFunk(double x[])
 	bool changed = getVariables(x);
 	if (changed) {
 		decomposeRateMatrix();
-		ASSERT(phylo_tree);
 		phylo_tree->clearAllPartialLH();
 	}
 	// avoid numerical issue if state_freq is too small
 	double *state_freqs = (isSSF()) ? this->state_freq : front()->state_freq;
 	for (int x = 0; x < num_states; x++) {
-		if (state_freqs[x] < 0 || (state_freqs[x] >= 0 &&
-				state_freqs[x] < Params::getInstance().min_state_freq)) {
+		if (state_freqs[x] < Params::getInstance().min_state_freq) {
 			return 1.0e+30;
 		}
 	}
@@ -337,16 +335,18 @@ double ModelSet::computeTrans(double time, int model_id, int state1, int state2)
 	}
 	// temporary fix problem with vectorized eigenvectors
 	int vsize = phylo_tree->vector_size;
-	int states_vsize = num_states*vsize;
+	int nstates = num_states;
+	int nstates2 = num_states*num_states;
+	int nstates_vsize = num_states*vsize;
 	int model_vec_id = model_id % vsize;
 	int start_ptn = model_id - model_vec_id;
-	double *evec = &eigenvectors[start_ptn*num_states*num_states + model_vec_id + state1*num_states*vsize];
-	double *inv_evec = &inv_eigenvectors[start_ptn*num_states*num_states + model_vec_id + state2*vsize];
-	double *eval = &eigenvalues[start_ptn*num_states + model_vec_id];
+	double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
+	double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
+	double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
 	double trans_prob = 0.0;
-	for (int i = 0; i < states_vsize; i+=vsize) {
+	for (int i = 0; i < nstates_vsize; i += vsize) {
 		double val = eval[i];
-		double trans = evec[i] * inv_evec[i*num_states] * exp(time * val);
+		double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
 		trans_prob += trans;
 	}
 	return trans_prob;
@@ -359,17 +359,19 @@ double ModelSet::computeTrans(double time, int model_id, int state1, int state2,
 	}
 	// temporary fix problem with vectorized eigenvectors
 	int vsize = phylo_tree->vector_size;
-	int states_vsize = num_states*vsize;
+	int nstates = num_states;
+	int nstates2 = num_states*num_states;
+	int nstates_vsize = num_states*vsize;
 	int model_vec_id = model_id % vsize;
 	int start_ptn = model_id - model_vec_id;
-	double *evec = &eigenvectors[start_ptn*num_states*num_states + model_vec_id + state1*num_states*vsize];
-	double *inv_evec = &inv_eigenvectors[start_ptn*num_states*num_states + model_vec_id + state2*vsize];
-	double *eval = &eigenvalues[start_ptn*num_states + model_vec_id];
+	double *eval = &eigenvalues[start_ptn*nstates + model_vec_id];
+	double *evec = &eigenvectors[start_ptn*nstates2 + model_vec_id + state1*nstates_vsize];
+	double *inv_evec = &inv_eigenvectors[start_ptn*nstates2 + model_vec_id + state2*vsize];
 	double trans_prob = 0.0;
 	derv1 = derv2 = 0.0;
-	for (int i = 0; i < states_vsize; i+=vsize) {
+	for (int i = 0; i < nstates_vsize; i += vsize) {
 		double val = eval[i];
-		double trans = evec[i] * inv_evec[i*num_states] * exp(time * val);
+		double trans = evec[i] * inv_evec[i*nstates] * exp(time * val);
 		double trans2 = trans * val;
 		trans_prob += trans;
 		derv1 += trans2;
@@ -390,99 +392,107 @@ uint64_t ModelSet::getMemoryRequired()
 void ModelSet::decomposeRateMatrix()
 {
 	if (empty()) return;
-	// decompose for each submodel
+	size_t nstates = num_states;
+	// decompose for each submodel, values go to the wrapper model eigen
 	for (iterator it = begin(); it != end(); it++) {
 		(*it)->decomposeRateMatrix();
 	}
 	// set site-specific rates (if any)
-	if (isSSR()) { // multiply eigenvalues of each submodel by the submodel rate scaler
+	if (isSSR()) {
+		// multiply eigenvalues of each submodel with the submodel rate scaler
 		for (size_t ptn = 0; ptn < size(); ptn++) {
-			ASSERT(phylo_tree->aln->ptn_rate_scaler[ptn]);
+			ASSERT(phylo_tree->aln->ptn_rate_scaler[ptn] > 0.0);
 			double rate_scaler = phylo_tree->aln->ptn_rate_scaler[ptn];
-			double *eval_ptr = &eigenvalues[ptn*num_states];
-			for (size_t x = 0; x < num_states; x++) {
+			double *eval_ptr = &eigenvalues[ptn*nstates];
+			for (size_t x = 0; x < nstates; x++) {
 				eval_ptr[x] *= rate_scaler;
 			}
-    		}
+		}
 	}
 	if (phylo_tree->vector_size == 1) {
 		return;
 	}
 	// else rearrange eigen to obey vector_size
+	// e.g. if vector_size == 2, then rearrange eigenvalues:
+	// from: m1_1 ... m1_20    m2_1 ... m2_20    m3_1 ... m3_20    m4_1 ... m4_20
+	// to:   m1_1 m2_1 ... m1_20 m2_20    m3_1 m4_1 ... m3_20 m4_20
 	size_t vsize = phylo_tree->vector_size;
-	size_t states2 = num_states*num_states;
-	// copy dummy values
-	size_t max_size = get_safe_upper_limit(size());
-	for (size_t m = size(); m < max_size; m++) {
-		memcpy(&eigenvalues[m*num_states], &eigenvalues[(m-1)*num_states], sizeof(double)*num_states);
-		memcpy(&eigenvectors[m*states2], &eigenvectors[(m-1)*states2], sizeof(double)*states2);
-		memcpy(&inv_eigenvectors[m*states2], &inv_eigenvectors[(m-1)*states2], sizeof(double)*states2);
-		memcpy(&inv_eigenvectors_transposed[m*states2], &inv_eigenvectors_transposed[(m-1)*states2], sizeof(double)*states2);
+	size_t nstates2 = num_states*num_states;
+	size_t nmodels = get_safe_upper_limit(size());
+	// copy the last submodel eigen to the dummy positions
+	for (size_t m = size(); m < nmodels; m++) {
+		memcpy(&eigenvalues[m*nstates], &eigenvalues[(m-1)*nstates], sizeof(double)*nstates);
+		memcpy(&eigenvectors[m*nstates2], &eigenvectors[(m-1)*nstates2], sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors[m*nstates2], &inv_eigenvectors[(m-1)*nstates2], sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors_transposed[m*nstates2], &inv_eigenvectors_transposed[(m-1)*nstates2], sizeof(double)*nstates2);
 	}
-	// make rearranged eigen for each submodel
-	double new_eval[num_states*vsize];
-	double new_evec[states2*vsize];
-	double new_inv_evec[states2*vsize];
-	for (size_t ptn = 0; ptn < size(); ptn += vsize) {
-		double *eval_ptr = &eigenvalues[ptn*num_states];
-		double *evec_ptr = &eigenvectors[ptn*states2];
-		double *inv_evec_ptr = &inv_eigenvectors[ptn*states2];
+	// make rearranged eigen for each submodel block
+	double new_eval[nstates*vsize];
+	double new_evec[nstates2*vsize];
+	double new_inv_evec[nstates2*vsize];
+	for (size_t ptn = 0; ptn < nmodels; ptn += vsize) {
+		// handle a block with vsize submodels
+		double *eval_ptr = &eigenvalues[ptn*nstates];
+		double *evec_ptr = &eigenvectors[ptn*nstates2];
+		double *inv_evec_ptr = &inv_eigenvectors[ptn*nstates2];
 		for (size_t i = 0; i < vsize; i++) {
-			for (size_t x = 0; x < num_states; x++) {
+			// handle a submodel
+			for (size_t x = 0; x < nstates; x++) {
 				new_eval[x*vsize+i] = eval_ptr[x];
 			}
-			for (size_t x = 0; x < states2; x++) {
+			for (size_t x = 0; x < nstates2; x++) {
 				new_evec[x*vsize+i] = evec_ptr[x];
 				new_inv_evec[x*vsize+i] = inv_evec_ptr[x];
 			}
-			eval_ptr += num_states;
-			evec_ptr += states2;
-			inv_evec_ptr += states2;
-        	}
-		// copy new values
-		memcpy(&eigenvalues[ptn*num_states], new_eval, sizeof(double)*num_states*vsize);
-		memcpy(&eigenvectors[ptn*states2], new_evec, sizeof(double)*states2*vsize);
-		memcpy(&inv_eigenvectors[ptn*states2], new_inv_evec, sizeof(double)*states2*vsize);
-		calculateSquareMatrixTranspose(new_inv_evec, num_states, &inv_eigenvectors_transposed[ptn*states2]);
+			eval_ptr += nstates;
+			evec_ptr += nstates2;
+			inv_evec_ptr += nstates2;
+		}
+		// copy new values to the wrapper model eigen
+		memcpy(&eigenvalues[ptn*nstates], new_eval, sizeof(double)*nstates*vsize);
+		memcpy(&eigenvectors[ptn*nstates2], new_evec, sizeof(double)*nstates2*vsize);
+		memcpy(&inv_eigenvectors[ptn*nstates2], new_inv_evec, sizeof(double)*nstates2*vsize);
+		calculateSquareMatrixTranspose(new_inv_evec, nstates, &inv_eigenvectors_transposed[ptn*nstates2]);
 	}
 }
 
 void ModelSet::joinEigenMemory()
 {
-	size_t states2 = num_states*num_states;
-	size_t nmixtures = get_safe_upper_limit(size());
+	size_t nstates = num_states;
+	size_t nstates2 = num_states*num_states;
+	size_t nmodels = get_safe_upper_limit(size());
 	aligned_free(eigenvalues);
 	aligned_free(eigenvectors);
 	aligned_free(inv_eigenvectors);
 	aligned_free(inv_eigenvectors_transposed);
-	eigenvalues = aligned_alloc<double>(num_states*nmixtures);
-	eigenvectors = aligned_alloc<double>(states2*nmixtures);
-	inv_eigenvectors = aligned_alloc<double>(states2*nmixtures);
-	inv_eigenvectors_transposed = aligned_alloc<double>(states2*nmixtures);
-	// assigning memory for individual models
+	eigenvalues = aligned_alloc<double>(nmodels*nstates);
+	eigenvectors = aligned_alloc<double>(nmodels*nstates2);
+	inv_eigenvectors = aligned_alloc<double>(nmodels*nstates2);
+	inv_eigenvectors_transposed = aligned_alloc<double>(nmodels*nstates2);
+	// assigning memory for individual submodels
 	size_t m = 0;
 	for (iterator it = begin(); it != end(); it++, m++) {
-		// first copy memory for eigen stuffs
-		memcpy(&eigenvalues[m*num_states], (*it)->eigenvalues, num_states*sizeof(double));
-		memcpy(&eigenvectors[m*states2], (*it)->eigenvectors, states2*sizeof(double));
-		memcpy(&inv_eigenvectors[m*states2], (*it)->inv_eigenvectors, states2*sizeof(double));
-		memcpy(&inv_eigenvectors_transposed[m*states2], (*it)->inv_eigenvectors_transposed, states2*sizeof(double));
-		// then delete
+		// first copy the submodel eigen to the wrapper model
+		memcpy(&eigenvalues[m*nstates], (*it)->eigenvalues, sizeof(double)*nstates);
+		memcpy(&eigenvectors[m*nstates2], (*it)->eigenvectors, sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors[m*nstates2], (*it)->inv_eigenvectors, sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors_transposed[m*nstates2], (*it)->inv_eigenvectors_transposed, sizeof(double)*nstates2);
+		// then delete the submodel eigen
 		aligned_free((*it)->eigenvalues);
 		aligned_free((*it)->eigenvectors);
 		aligned_free((*it)->inv_eigenvectors);
 		aligned_free((*it)->inv_eigenvectors_transposed);
-		// and assign new memory
-		(*it)->eigenvalues = &eigenvalues[m*num_states];
-		(*it)->eigenvectors = &eigenvectors[m*states2];
-		(*it)->inv_eigenvectors = &inv_eigenvectors[m*states2];
-		(*it)->inv_eigenvectors_transposed = &inv_eigenvectors_transposed[m*states2];
+		// and assign the submodel pointers to the wrapper model eigen
+		(*it)->eigenvalues = &eigenvalues[m*nstates];
+		(*it)->eigenvectors = &eigenvectors[m*nstates2];
+		(*it)->inv_eigenvectors = &inv_eigenvectors[m*nstates2];
+		(*it)->inv_eigenvectors_transposed = &inv_eigenvectors_transposed[m*nstates2];
 	}
-	// copy dummy values
-	for (size_t m = size(); m < nmixtures; m++) {
-		memcpy(&eigenvalues[m*num_states], &eigenvalues[(m-1)*num_states], sizeof(double)*num_states);
-		memcpy(&eigenvectors[m*states2], &eigenvectors[(m-1)*states2], sizeof(double)*states2);
-		memcpy(&inv_eigenvectors[m*states2], &inv_eigenvectors[(m-1)*states2], sizeof(double)*states2);
-		memcpy(&inv_eigenvectors_transposed[m*states2], &inv_eigenvectors_transposed[(m-1)*states2], sizeof(double)*states2);
+	// copy the last submodel eigen to the dummy positions
+	for (size_t m = size(); m < nmodels; m++) {
+		memcpy(&eigenvalues[m*nstates], &eigenvalues[(m-1)*nstates], sizeof(double)*nstates);
+		memcpy(&eigenvectors[m*nstates2], &eigenvectors[(m-1)*nstates2], sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors[m*nstates2], &inv_eigenvectors[(m-1)*nstates2], sizeof(double)*nstates2);
+		memcpy(&inv_eigenvectors_transposed[m*nstates2], &inv_eigenvectors_transposed[(m-1)*nstates2], sizeof(double)*nstates2);
 	}
 }
