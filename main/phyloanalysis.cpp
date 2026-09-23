@@ -3567,8 +3567,8 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         }
     }
 
-    bool   finishedInitTree = false;
-    double initEpsilon = params.min_iterations == 0 ? params.modelEps : (params.modelEps*10);
+    bool finishedInitTree = false;
+    double initEpsilon = (params.min_iterations == 0) ? params.modelEps : params.modelEps * 10.0;
     if (iqtree->isTreeMix()) {
         if (iqtree->isHMM())
             initEpsilon = params.treemixhmm_eps;
@@ -4733,8 +4733,8 @@ void convertAlignment(Params &params, IQTree *iqtree) {
 }
 
 /**
-    2016-08-04: compute a site frequency model for profile mixture model
-*/
+ *  Compute a site frequency model or a site rate model for the initial mixture model
+ */
 void computeSiteSpecificModel(Params &params, Alignment *alignment, const string &param_type)
 {
 	ASSERT((param_type == "freq" && params.tree_freq_file) ||
@@ -4779,8 +4779,8 @@ void computeSiteSpecificModel(Params &params, Alignment *alignment, const string
 #endif
 	tree->ensureNumberOfThreadsIsSet(nullptr);
 	tree->initializeAllPartialLh();
-	// 2017-12-07: Increase espilon ten times (0.01 -> 0.1) to speedup PMSF computation
-	double modelEpsilon = (param_type == "freq") ? params.modelEps * 10.0 : params.modelEps;
+	// increase epsilon tenfold (0.01 -> 0.1) to speed up site-specific parameter estimation
+	double modelEpsilon = params.modelEps * 10.0;
 	cout << "Estimate initial model parameters (epsilon = " << modelEpsilon << ")" << endl;
 	tree->getModelFactory()->optimizeParameters(params.fixed_branch_length, true, modelEpsilon);
 	// compute state freqs or rate scalers for all the alignment patterns
@@ -4816,7 +4816,7 @@ void computeSiteSpecificModel(Params &params, Alignment *alignment, const string
 	string out_suffix = (param_type == "freq") ? ".sitefreq" : ".siterate";
 	printSiteParam(((string)params.out_prefix + out_suffix).c_str(), alignment, param_type);
 	// continue analysis using the alignment with the computed site-specific params
-	cout << endl << "===> CONTINUE ANALYSIS USING THE INFERRED SITE " << msg << " MODEL" << endl;
+	cout << "===> CONTINUE ANALYSIS USING THE INFERRED SITE " << msg << " MODEL" << endl;
 }
 
 

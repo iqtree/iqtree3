@@ -1457,15 +1457,15 @@ void PhyloTree::computePatternStateFreq(double* &all_ptn_state_freq, IntVector *
 		// fill ptn_cat, ptn_pp and state_freqs
 		if (ptn_cat) ptn_cat->push_back(max_cat);
 		if (ptn_pp) ptn_pp->push_back(max_lh / sum_lh);
-		if (type == "mean")
+		if (type == "mean") {
 			for (size_t x = 0; x < nstates; ++x) {
-				double freq = 0.0;
-				for (size_t m = 0; m < nmixture; ++m)
-					freq += getModel()->getMixtureClass(m)->state_freq[x] * lh_cat[m];
-				state_freqs[x] = freq / sum_lh;
+				state_freqs[x] = 0.0;
+				for (size_t m = 0; m < nmixture; ++m) {
+					double cat_pp = lh_cat[m] / sum_lh; // precompute for accuracy
+					state_freqs[x] += getModel()->getMixtureClass(m)->state_freq[x] * cat_pp;
+				}
 			}
-		else
-			memcpy(state_freqs, getModel()->getMixtureClass(max_cat)->state_freq, nstates*sizeof(double));
+		} else memcpy(state_freqs, getModel()->getMixtureClass(max_cat)->state_freq, nstates*sizeof(double));
 		// increase the pointers
 		lh_cat += nmixture;
 		state_freqs += nstates;
@@ -1496,7 +1496,7 @@ void PhyloTree::computePatternRate(DoubleVector &ptn_rate, IntVector *ptn_cat, D
 		// find max weight category and compute posterior normalization sum
 		size_t max_cat = 0; // if pinvar: 0=invar, 1=slow, etc.; else: 0=slow, etc.
 		double max_rate = 0.0, max_lh = ptn_invar[ptn];
-		double mean_rate = 0.0, sum_lh = ptn_invar[ptn];
+		double sum_lh = ptn_invar[ptn];
 		for (size_t c = 0; c < ncategory; ++c) {
 			if (lh_cat[c] > max_lh ||
 			(lh_cat[c] == max_lh && random_double() < 0.5)) { // break the tie randomly
@@ -1504,16 +1504,18 @@ void PhyloTree::computePatternRate(DoubleVector &ptn_rate, IntVector *ptn_cat, D
 				max_rate = getRate()->getRate(c);
 				max_lh = lh_cat[c];
 			}
-			mean_rate += getRate()->getRate(c) * lh_cat[c];
 			sum_lh += lh_cat[c];
 		}
 		// fill ptn_cat, ptn_pp and ptn_rate
 		if (ptn_cat) ptn_cat->push_back(max_cat);
 		if (ptn_pp) ptn_pp->push_back(max_lh / sum_lh);
-		if (type == "mean")
-			ptn_rate[ptn] = mean_rate / sum_lh;
-		else
-			ptn_rate[ptn] = max_rate;
+		if (type == "mean") {
+			ptn_rate[ptn] = 0.0; // invar cat already included
+			for (size_t c = 0; c < ncategory; ++c) {
+				double cat_pp = lh_cat[c] / sum_lh; // precompute for accuracy
+				ptn_rate[ptn] += getRate()->getRate(c) * cat_pp;
+			}
+		} else ptn_rate[ptn] = max_rate;
 		// increase the pointers
 		lh_cat += ncategory;
 	}
