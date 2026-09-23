@@ -1488,94 +1488,92 @@ void Alignment::orderPatternByNumChars(int pat_type) {
 //    cout << ordered_pattern.size() << " ordered_pattern" << endl;
 }
 
-void Alignment::ungroupSitePattern()
-{
-	// assign an individual pattern to each site
-	vector<Pattern> stored_pat = (*this);
-	clear();
-	IntVector stored_site_pattern = site_pattern;
-	for (size_t i = 0; i < getNSite(); ++i) {
-		Pattern pat = stored_pat[getPatternID(i)];
-		pat.frequency = 1;
-		push_back(pat);
-		site_pattern[i] = i;
-	}
-	ASSERT(getNPattern() == getNSite());
-	pattern_index.clear();
-	// update the pattern_first_site map
-	pattern_first_site = site_pattern;
-	// refill the existing pattern-specific parameters
-	if (isSSF()) {
-		vector<double*> stored_ptn_state_freq = ptn_state_freq;
-		ptn_state_freq.clear();
-		for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-			ptn_state_freq.push_back(stored_ptn_state_freq[stored_site_pattern[ptn]]);
-		}
-	}
-	if (isSSR()) {
-		vector<double> stored_ptn_rate_scaler = ptn_rate_scaler;
-		ptn_rate_scaler.clear();
-		for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-			ptn_rate_scaler.push_back(stored_ptn_rate_scaler[stored_site_pattern[ptn]]);
-		}
-	}
+void Alignment::ungroupSitePattern() {
+    // assign an individual pattern to each site
+    vector<Pattern> stored_pat = (*this);
+    clear();
+    IntVector stored_site_pattern = site_pattern;
+    for (size_t i = 0; i < getNSite(); ++i) {
+        Pattern pat = stored_pat[getPatternID(i)];
+        pat.frequency = 1;
+        push_back(pat);
+        site_pattern[i] = i;
+    }
+    ASSERT(getNPattern() == getNSite());
+    pattern_index.clear();
+    // update the pattern_first_site map
+    pattern_first_site = site_pattern;
+    // refill the existing pattern-specific parameters
+    if (isSSF()) {
+        vector<double*> stored_ptn_state_freq = ptn_state_freq;
+        ptn_state_freq.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_state_freq.push_back(stored_ptn_state_freq[stored_site_pattern[ptn]]);
+        }
+    }
+    if (isSSR()) {
+        vector<double> stored_ptn_rate_scaler = ptn_rate_scaler;
+        ptn_rate_scaler.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_rate_scaler.push_back(stored_ptn_rate_scaler[stored_site_pattern[ptn]]);
+        }
+    }
 }
 
-void Alignment::regroupSitePattern(int groups, const IntVector &site_group)
-{
-	// subdivide patterns based on their assignment to the provided groups
-	vector<Pattern> stored_pat = (*this);
-	clear();
-	IntVector stored_site_pattern = site_pattern;
-	site_pattern.clear();
-	site_pattern.resize(stored_site_pattern.size(), -1);
-	size_t cnt = 0;
-	for (int g = 0; g < groups; ++g) {
-		pattern_index.clear();
-		for (size_t i = 0; i < getNSite(); ++i) {
-			if (site_group[i] == g) {
-				cnt ++;
-				Pattern pat = stored_pat[stored_site_pattern[i]];
-				addPattern(pat, i);
-			}
-		}
-	}
-	ASSERT(cnt == getNSite());
-	// check pattern frequencies of the new patterns
-	cnt = 0;
-	for (iterator it = begin(); it != end(); ++it) {
-		cnt += it->frequency;
-	}
-	ASSERT(cnt == getNSite());
-	pattern_index.clear();
-	//printPhylip("/dev/stdout");
-	// update the pattern_first_site map
-	pattern_first_site = IntVector(getNPattern(), -1);
-	for (size_t i = 0; i < getNSite(); ++i) {
-		if (pattern_first_site[site_pattern[i]] == -1) {
-			pattern_first_site[site_pattern[i]] = i;
-		}
-	}
-	// refill the existing pattern-specific parameters
-	IntVector new_to_old_pattern;
-	for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-		int i = pattern_first_site[ptn];
-		new_to_old_pattern.push_back(stored_site_pattern[i]);
-	}
-	if (isSSF()) {
-		vector<double*> stored_ptn_state_freq = ptn_state_freq;
-		ptn_state_freq.clear();
-		for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-			ptn_state_freq.push_back(stored_ptn_state_freq[new_to_old_pattern[ptn]]);
-		}
-	}
-	if (isSSR()) {
-		vector<double> stored_ptn_rate_scaler = ptn_rate_scaler;
-		ptn_rate_scaler.clear();
-		for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-			ptn_rate_scaler.push_back(stored_ptn_rate_scaler[new_to_old_pattern[ptn]]);
-		}
-	}
+void Alignment::regroupSitePattern(int groups, const IntVector &site_group) {
+    // subdivide patterns based on their assignment to the provided groups
+    vector<Pattern> stored_pat = (*this);
+    clear();
+    IntVector stored_site_pattern = site_pattern;
+    site_pattern.clear();
+    site_pattern.resize(stored_site_pattern.size(), -1);
+    size_t cnt = 0;
+    for (int g = 0; g < groups; ++g) {
+        pattern_index.clear();
+        for (size_t i = 0; i < getNSite(); ++i) {
+            if (site_group[i] == g) {
+                cnt++;
+                Pattern pat = stored_pat[stored_site_pattern[i]];
+                addPattern(pat, i);
+            }
+        }
+    }
+    ASSERT(cnt == getNSite());
+    // check pattern frequencies of the new patterns
+    cnt = 0;
+    for (iterator it = begin(); it != end(); ++it) {
+        cnt += it->frequency;
+    }
+    ASSERT(cnt == getNSite());
+    pattern_index.clear();
+    //printPhylip("/dev/stdout");
+    // update the pattern_first_site map
+    pattern_first_site = IntVector(getNPattern(), -1);
+    for (size_t i = 0; i < getNSite(); ++i) {
+        if (pattern_first_site[site_pattern[i]] == -1) {
+            pattern_first_site[site_pattern[i]] = i;
+        }
+    }
+    // refill the existing pattern-specific parameters
+    IntVector new_to_old_pattern;
+    for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+        int i = pattern_first_site[ptn];
+        new_to_old_pattern.push_back(stored_site_pattern[i]);
+    }
+    if (isSSF()) {
+        vector<double*> stored_ptn_state_freq = ptn_state_freq;
+        ptn_state_freq.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_state_freq.push_back(stored_ptn_state_freq[new_to_old_pattern[ptn]]);
+        }
+    }
+    if (isSSR()) {
+        vector<double> stored_ptn_rate_scaler = ptn_rate_scaler;
+        ptn_rate_scaler.clear();
+        for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+            ptn_rate_scaler.push_back(stored_ptn_rate_scaler[new_to_old_pattern[ptn]]);
+        }
+    }
 }
 
 /**
@@ -5919,212 +5917,217 @@ double Alignment::multinomialProb (IntVector &pattern_freq)
     return (fac - sumFac + sumProb);
 }
 
-bool Alignment::readSiteParamFile(const char* site_param_file, const string &param_type)
-{
-	ASSERT((param_type == "freq" && ptn_state_freq.empty()) ||
-		(param_type == "rate" && ptn_rate_scaler.empty()));
-	string msg = (param_type == "freq") ? "state frequency" : "rate";
-	cout << endl << "Reading site-specific " << msg << " file " << site_param_file << " ..." << endl;
-	bool aln_changed = false;
-	int specified_sites = 0;
-	IntVector site_model(getNSite(), -1); // map each site to a model
-	vector<double*> models; // site-specific frequency vectors or rate scalers
-	// fill the pattern_first_site map
-	pattern_first_site = IntVector(getNPattern(), -1);
-	for (size_t i = 0; i < getNSite(); ++i) {
-		if (pattern_first_site[site_pattern[i]] == -1) {
-			pattern_first_site[site_pattern[i]] = i;
-		}
-	}
-	// read the input file
-	try {
-	ifstream in;
-	in.exceptions(ios::failbit | ios::badbit);
-	in.open(site_param_file);
-	// remove the failbit
-	in.exceptions(ios::badbit);
-	int prev_site = -1;
-	while (true) {
-		string site_spec;
-		in >> site_spec;
-		if (in.eof()) break;
-		// handle the line site ids
-		IntVector site_ids; // sites specified in a single line
-		extractSiteID(this, site_spec.c_str(), site_ids);
-		if (site_ids.size() == 0) throw "No site ID specified";
-		if (site_ids.size() > 1) throw "Muptiple site IDs in a single line";
-		int site = site_ids[0];
-		if (prev_site == site) throw "Duplicated site ID";
-		if (prev_site > site) throw "Wrong order of sites";
-		prev_site = site;
-		specified_sites ++;
-		ASSERT(site_model[site] == -1);
-		site_model[site] = models.size();
-		// handle the line params
-		double *site_param_entry;
-		if (param_type == "freq") {
-			double freq;
-			double *state_freqs = new double[num_states];
-			double sum = 0.0;
-			for (int x = 0; x < num_states; ++x) {
-				in >> freq;
-				if (freq <= 0.0 || freq >= 1.0) throw "Frequencies must be strictly positive and smaller than 1";
-				state_freqs[x] = freq;
-				sum += freq;
-			}
-			if (fabs(sum - 1.0) > 1e-4) {
-				outWarning("Frequencies of site " + site_spec + " do not sum up to 1 and will be normalized");
-				for (int x = 0; x < num_states; ++x) {
-					state_freqs[x] /= sum;
-				}
-			}
-			convfreq(state_freqs); // regularize freqs (if some freqs are too close to 0)
-			site_param_entry = state_freqs;
-		} else {
-			double rate;
-			double *rate_scaler = new double[1];
-			in >> rate;
-			if (rate < 0.0 || rate > 100.0) throw "Rates must be non-negative and not higher than 100";
-			rate = max(rate, MIN_SITE_RATE); // regularize rate (if it is too close to 0)
-			*rate_scaler = rate;
-			site_param_entry = rate_scaler;
-		}
-		// add the model only if it is its first occurence for the pattern of the current site
-		int first_site = pattern_first_site[site_pattern[site]];
-		if (first_site < site && site_model[first_site] != -1) {
-			// compare the site param with the first_site param
-			bool matched_param = true;
-			double *first_site_param_entry = models[site_model[first_site]];
-			if (param_type == "freq") {
-				for (int x = 0; x < num_states; ++x) {
-					if (site_param_entry[x] != first_site_param_entry[x]) {
-						matched_param = false;
-						break;
-					}
-				}
-			} else {
-				if (*site_param_entry != *first_site_param_entry) {
-					matched_param = false;
-				}
-			}
-			if (matched_param) {
-				// the only case when we do not add the model
-				site_model[site] = site_model[first_site];
-			} else {
-				aln_changed = true;
-			}
-		} // else: the current site is effectively the first one of its pattern
-		if (site_model[site] == models.size()) {
-			models.push_back(site_param_entry);
-		} else {
-			delete [] site_param_entry;
-		}
-	}
-	in.clear();
-	// set the failbit again
-	in.exceptions(ios::failbit | ios::badbit);
-	in.close();
-	} catch (const char *str) {
-		outError(str);
-	} catch (const string &str) {
-		outError(str);
-	} catch(ios::failure) {
-		outError(ERR_READ_INPUT);
-	}
-	// check for unspecified sites
-	if (specified_sites < getNSite()) {
-		aln_changed = true;
-		msg = (param_type == "freq") ? "frequencies" : "rates";
-		cout << site_model.size() - specified_sites << " unspecified sites will get default " << msg << endl;
-		for (size_t site = 0; site < getNSite(); ++site) {
-			if (site_model[site] == -1) {
-				site_model[site] = models.size();
-			}
-		}
-		double *default_param_entry = nullptr;
-		models.push_back(default_param_entry);
-	}
-	// if needed, subdivide patterns so that sites in each new pattern have same freqs and rates
-	if (aln_changed) {
-		cout << "Regrouping alignment sites..." << endl;
-		regroupSitePattern(models.size(), site_model);
-	}
-	// fill the selected pattern-specific parameter with the contents of the models
-	for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
-		int first_site = pattern_first_site[ptn];
-		double *param_entry = models[site_model[first_site]];
-		if (param_type == "freq") {
-			double *state_freq = param_entry;
-			ptn_state_freq.push_back(state_freq);
-		} else {
-			double rate = (param_entry) ? *param_entry : -1.0;
-			ptn_rate_scaler.push_back(rate);
-		}
-	}
-	for (size_t i = 0; (param_type == "rate") && (i < models.size()); ++i) {
-		delete [] models[i];
-	}
-	msg = (param_type == "freq") ? "state frequency vectors" : "rate scalers";
-	cout << models.size() << " distinct per-site " << msg << " detected" << endl;
-	return aln_changed;
+bool Alignment::readSiteParamFile(const char *site_param_file, const string &param_type) {
+    ASSERT((param_type == "freq" && ptn_state_freq.empty()) ||
+           (param_type == "rate" && ptn_rate_scaler.empty()));
+    string msg = (param_type == "freq") ? "state frequency" : "rate";
+    cout << endl << "Reading site-specific " << msg << " file " << site_param_file << " ..." << endl;
+    bool aln_changed = false;
+    int specified_sites = 0;
+    IntVector site_model(getNSite(), -1); // map each site to a model
+    vector<double*> models; // site-specific frequency vectors or rate scalers
+    // fill the pattern_first_site map
+    pattern_first_site = IntVector(getNPattern(), -1);
+    for (size_t i = 0; i < getNSite(); ++i) {
+        if (pattern_first_site[site_pattern[i]] == -1) {
+            pattern_first_site[site_pattern[i]] = i;
+        }
+    }
+    // read the input file
+    try {
+        ifstream in;
+        in.exceptions(ios::failbit | ios::badbit);
+        in.open(site_param_file);
+        // remove the failbit
+        in.exceptions(ios::badbit);
+        int prev_site = -1;
+        while (true) {
+            string site_spec;
+            in >> site_spec;
+            if (in.eof()) break;
+            // handle the line site ids
+            IntVector site_ids; // sites specified in a single line
+            extractSiteID(this, site_spec.c_str(), site_ids);
+            if (site_ids.size() == 0) throw "No site ID specified";
+            if (site_ids.size() > 1) throw "Muptiple site IDs in a single line";
+            int site = site_ids[0];
+            if (prev_site == site) throw "Duplicated site ID";
+            if (prev_site > site) throw "Wrong order of sites";
+            prev_site = site;
+            specified_sites++;
+            ASSERT(site_model[site] == -1);
+            site_model[site] = models.size();
+            // handle the line params
+            double *site_param_entry;
+            if (param_type == "freq") {
+                double freq;
+                double *state_freqs = new double[num_states];
+                double sum = 0.0;
+                for (int x = 0; x < num_states; ++x) {
+                    in >> freq;
+                    if (freq <= 0.0 || freq >= 1.0) {
+                        throw "Frequencies must be strictly positive and smaller than 1";
+                    }
+                    state_freqs[x] = freq;
+                    sum += freq;
+                }
+                if (fabs(sum - 1.0) > 1e-4) {
+                    outWarning("Frequencies of site " + site_spec + " do not sum up to 1 and will be normalized");
+                    for (int x = 0; x < num_states; ++x) {
+                        state_freqs[x] /= sum;
+                    }
+                }
+                convfreq(state_freqs); // regularize freqs (if some freqs are too close to 0)
+                site_param_entry = state_freqs;
+            } else {
+                double rate;
+                double *rate_scaler = new double[1];
+                in >> rate;
+                if (rate < 0.0 || rate > 100.0) {
+                    throw "Rates must be non-negative and not higher than 100";
+                }
+                rate = max(rate, MIN_SITE_RATE); // regularize rate (if it is too close to 0)
+                *rate_scaler = rate;
+                site_param_entry = rate_scaler;
+            }
+            // add the model only if it is its first occurence for the pattern of the current site
+            int first_site = pattern_first_site[site_pattern[site]];
+            if (first_site < site && site_model[first_site] != -1) {
+                // compare the site param with the first_site param
+                bool matched_param = true;
+                double *first_site_param_entry = models[site_model[first_site]];
+                if (param_type == "freq") {
+                    for (int x = 0; x < num_states; ++x) {
+                        if (site_param_entry[x] != first_site_param_entry[x]) {
+                            matched_param = false;
+                            break;
+                        }
+                    }
+                } else {
+                    if (*site_param_entry != *first_site_param_entry) {
+                        matched_param = false;
+                    }
+                }
+                if (matched_param) {
+                    // the only case when we do not add the model
+                    site_model[site] = site_model[first_site];
+                } else {
+                    aln_changed = true;
+                }
+            } // else: the current site is effectively the first one of its pattern
+            if (site_model[site] == models.size()) {
+                models.push_back(site_param_entry);
+            } else {
+                delete [] site_param_entry;
+            }
+        }
+        in.clear();
+        // set the failbit again
+        in.exceptions(ios::failbit | ios::badbit);
+        in.close();
+    } catch (const char *str) {
+        outError(str);
+    } catch (const string &str) {
+        outError(str);
+    } catch(ios::failure) {
+        outError(ERR_READ_INPUT);
+    }
+    // check for unspecified sites
+    if (specified_sites < getNSite()) {
+        aln_changed = true;
+        msg = (param_type == "freq") ? "frequencies" : "rates";
+        cout << site_model.size() - specified_sites << " unspecified sites will get default " << msg << endl;
+        for (size_t site = 0; site < getNSite(); ++site) {
+            if (site_model[site] == -1) {
+                site_model[site] = models.size();
+            }
+        }
+        double *default_param_entry = nullptr;
+        models.push_back(default_param_entry);
+    }
+    // if needed, subdivide patterns so that sites in each new pattern have same freqs and rates
+    if (aln_changed) {
+        cout << "Regrouping alignment sites..." << endl;
+        regroupSitePattern(models.size(), site_model);
+    }
+    // fill the selected pattern-specific parameter with the contents of the models
+    for (size_t ptn = 0; ptn < getNPattern(); ++ptn) {
+        int first_site = pattern_first_site[ptn];
+        double *param_entry = models[site_model[first_site]];
+        if (param_type == "freq") {
+            double *state_freq = param_entry;
+            ptn_state_freq.push_back(state_freq);
+        } else {
+            double rate = (param_entry) ? *param_entry : -1.0;
+            ptn_rate_scaler.push_back(rate);
+        }
+    }
+    for (size_t i = 0; (param_type == "rate") && (i < models.size()); ++i) {
+        delete [] models[i];
+    }
+    msg = (param_type == "freq") ? "state frequency vectors" : "rate scalers";
+    cout << models.size() << " distinct per-site " << msg << " detected" << endl;
+    return aln_changed;
 }
 
-double Alignment::normalizePtnRateScaler()
-{
-	// the goal is to end up with mean rate == 1.0,
-	// some rates may become > MAX_SITE_RATE, but
-	// all rates must stay >= MIN_SITE_RATE
-	size_t nptn = getNPattern();
-	ASSERT(ptn_rate_scaler.size() == nptn);
-	// calculate the mean rate value
-	// default rates (-1.0) are treated as if they equal that mean rate
-	size_t cnt = 0;
-	double sum = 0.0;
-	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		size_t ptnf = at(ptn).frequency;
-		double rate = ptn_rate_scaler[ptn];
-		if (rate != -1.0) {
-			cnt += ptnf;
-			sum += rate * ptnf;
-		}
-	}
-	double mean = 1.0;
-	if (cnt > 0) {
-		mean = sum / cnt;
-		if (fabs(mean - 1.0) <= 1e-4) {
-			mean = 1.0;
-		}
-	}
-	// normalization: divide rates by their mean value
-	bool regularize = false;
-	size_t cnt_fast = 0;
-	double sum_slow = 0.0, sum_fast = 0.0;
-	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		size_t ptnf = at(ptn).frequency;
-		double rate = ptn_rate_scaler[ptn];
-		rate = (rate != -1.0) ? (rate / mean) : 1.0;
-		ptn_rate_scaler[ptn] = rate;
-		// data for regularization
-		if (rate > 1.0) {
-			cnt_fast += ptnf;
-			sum_fast += rate * ptnf;
-		} else if (rate < MIN_SITE_RATE) {
-			regularize |= true;
-			sum_slow += MIN_SITE_RATE * ptnf;
-		} else {
-			sum_slow += rate * ptnf;
-		}
-	}
-	if (!regularize) return mean;
-	// regularization: bound min rates and scale down the above-one parts of the fast rates
-	double coef = (getNSite() - cnt_fast - sum_slow) / (sum_fast - cnt_fast);
-	for (size_t ptn = 0; ptn < nptn; ++ptn) {
-		double rate = ptn_rate_scaler[ptn];
-		if (rate < MIN_SITE_RATE) rate = MIN_SITE_RATE;
-		if (rate > 1.0) rate = rate * coef + 1.0 - coef;
-		ptn_rate_scaler[ptn] = rate;
-	}
-	return mean;
+double Alignment::normalizePtnRateScaler() {
+    // the goal is to end up with mean rate == 1.0,
+    // some rates may become > MAX_SITE_RATE, but
+    // all rates must stay >= MIN_SITE_RATE
+    size_t nptn = getNPattern();
+    ASSERT(ptn_rate_scaler.size() == nptn);
+    // calculate the mean rate value
+    // default rates (-1.0) are treated as if they equal that mean rate
+    size_t cnt = 0;
+    double sum = 0.0;
+    for (size_t ptn = 0; ptn < nptn; ++ptn) {
+        size_t ptnf = at(ptn).frequency;
+        double rate = ptn_rate_scaler[ptn];
+        if (rate != -1.0) {
+            cnt += ptnf;
+            sum += rate * ptnf;
+        }
+    }
+    double mean = 1.0;
+    if (cnt > 0) {
+        mean = sum / cnt;
+        if (fabs(mean - 1.0) <= 1e-4) {
+            mean = 1.0;
+        }
+    }
+    // normalization: divide rates by their mean value
+    bool regularize = false;
+    size_t cnt_fast = 0;
+    double sum_slow = 0.0, sum_fast = 0.0;
+    for (size_t ptn = 0; ptn < nptn; ++ptn) {
+        size_t ptnf = at(ptn).frequency;
+        double rate = ptn_rate_scaler[ptn];
+        rate = (rate != -1.0) ? (rate / mean) : 1.0;
+        ptn_rate_scaler[ptn] = rate;
+        // data for regularization
+        if (rate > 1.0) {
+            cnt_fast += ptnf;
+            sum_fast += rate * ptnf;
+        } else if (rate < MIN_SITE_RATE) {
+            regularize |= true;
+            sum_slow += MIN_SITE_RATE * ptnf;
+        } else {
+            sum_slow += rate * ptnf;
+        }
+    }
+    if (!regularize) return mean;
+    // regularization: bound min rates and scale down the above-one parts of the fast rates
+    double coef = (getNSite() - cnt_fast - sum_slow) / (sum_fast - cnt_fast);
+    for (size_t ptn = 0; ptn < nptn; ++ptn) {
+        double rate = ptn_rate_scaler[ptn];
+        if (rate < MIN_SITE_RATE) {
+            rate = MIN_SITE_RATE;
+        } else if (rate > 1.0) {
+            rate = rate * coef + 1.0 - coef;
+        }
+        ptn_rate_scaler[ptn] = rate;
+    }
+    return mean;
 }
 
 /**

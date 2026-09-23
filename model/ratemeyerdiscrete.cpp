@@ -249,15 +249,17 @@ int RateMeyerDiscrete::computePatternRates(DoubleVector &pattern_rates, IntVecto
 */
 
 int RateMeyerDiscrete::getPatternRates(DoubleVector &ptn_rate, IntVector &ptn_category) {
-	if (!is_categorized) return RateMeyerHaeseler::getPatternRates(ptn_rate, ptn_category);
-	ASSERT(ptn_cat && rates);
-	ptn_rate.resize(size(), 1.0);
-	ptn_category.resize(size(), -1);
-	for (size_t ptn = 0; ptn < size(); ++ptn) {
-		ptn_rate[ptn] = rates[ptn_cat[ptn]];
-		ptn_category[ptn] = ptn_cat[ptn];
-	}
-	return ncategory;
+    if (!is_categorized) {
+        return RateMeyerHaeseler::getPatternRates(ptn_rate, ptn_category);
+    }
+    ASSERT(ptn_cat && rates);
+    ptn_rate.resize(size(), 1.0);
+    ptn_category.resize(size(), -1);
+    for (size_t ptn = 0; ptn < size(); ++ptn) {
+        ptn_rate[ptn] = rates[ptn_cat[ptn]];
+        ptn_category[ptn] = ptn_cat[ptn];
+    }
+    return ncategory;
 }
 
 /*double RateMeyerDiscrete::optimizeParameters() {

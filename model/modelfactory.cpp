@@ -17,8 +17,8 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-
 #include "modelfactory.h"
+
 #include "modelprotein.h"
 #include "modelset.h"
 #include "modelmixture.h"
@@ -115,7 +115,7 @@ ModelsBlock *readModelsDefinition(Params &params) {
         MyToken token(nexus.inf);
         nexus.Execute(token);
         int num_model = 0, num_freq = 0;
-        for (ModelsBlock::iterator it = models_block->begin(); it != models_block->end(); it++) {
+        for (ModelsBlock::iterator it = models_block->begin(); it != models_block->end(); ++it) {
             if (it->second.flag & NM_FREQ) num_freq++; else num_model++;
 	}
         cout << num_model << " models and " << num_freq << " frequency vectors loaded" << endl;
@@ -612,19 +612,21 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 
     /******************** initialize model ****************************/
 
-    if (tree->aln->isSSR() && params.fixed_branch_length == BRLEN_FIX)
+    if (tree->aln->isSSR() && params.fixed_branch_length == BRLEN_FIX) {
         outError("-blfix option is incompatible with site-specific rates");
-
+    }
     if (!tree->aln->isSSF() && !tree->aln->isSSR()) {
         // simple or mixture model
         if (model_str.substr(0, 3) == "MIX" || freq_type == FREQ_MIXTURE) {
             // mixture model
             string model_list;
             if (model_str.substr(0, 3) == "MIX") {
-                if (model_str[3] != OPEN_BRACKET)
+                if (model_str[3] != OPEN_BRACKET) {
                     outError("Mixture model name must start with 'MIX{'");
-                if (model_str.rfind(CLOSE_BRACKET) != model_str.length()-1)
+                }
+                if (model_str.rfind(CLOSE_BRACKET) != model_str.length()-1) {
                     outError("Close bracket not found at the end of ", model_str);
+                }
                 model_list = model_str.substr(4, model_str.length()-5);
                 model_str = model_str.substr(0, 3);
             }
@@ -638,10 +640,12 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
         }
     } else {
         // site-specific model
-        if (model_str.substr(0, 3) == "MIX")
+        if (model_str.substr(0, 3) == "MIX") {
             outError("Matrix mixture models are incompatible with site-specific models");
-        if (freq_type == FREQ_MIXTURE && !params.tree_freq_file)
-            outError("State frequency mixture models are incompatible with site-specific models");
+        }
+        if (freq_type == FREQ_MIXTURE && !params.tree_freq_file) {
+            outError("Frequency mixture models are incompatible with site-specific models");
+        }
         if (params.tree_freq_file) {
             if (verbose_mode >= VB_MIN)
                 cout << "NOTE: Switching frequency mixture model to SSF model" << endl;
@@ -997,8 +1001,9 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 //        else
 //            model_str = model_str.substr(0, model_str.find('*'));
     } else {
-        if (rate_mixture && !params.tree_rate_file)
+        if (rate_mixture && !params.tree_rate_file) {
             outError("Rate or branch mixture models are incompatible with site-specific rates");
+        }
         if (params.tree_rate_file) {
             if (verbose_mode >= VB_MIN)
                 cout << "NOTE: Switching rate mixture model to SSR model" << endl;
@@ -1010,11 +1015,12 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     }
 
     if (fused_mix_rate) {
-        if (tree->aln->isSSF())
-            outError("Unlinked rate or branch mixture models are incompatible with site-specific frequencies");
+        if (tree->aln->isSSF()) {
+            outError("Fused mixture models are incompatible with site-specific frequencies");
+        }
         if (!model->isMixture()) {
             if (verbose_mode >= VB_MED)
-                cout << endl << "NOTE: Using mixture model with unlinked " << model_str << " parameters" << endl;
+                cout << endl << "NOTE: Using fused mixture model with unlinked " << model_str << " parameters" << endl;
             string model_list = model_str;
             delete model;
             for (int i = 1; i < site_rate->getNRate(); i++)

@@ -4735,88 +4735,97 @@ void convertAlignment(Params &params, IQTree *iqtree) {
 /**
  *  Compute a site frequency model or a site rate model for the initial mixture model
  */
-void computeSiteSpecificModel(Params &params, Alignment *alignment, const string &param_type)
-{
-	ASSERT((param_type == "freq" && params.tree_freq_file) ||
-		(param_type == "rate" && params.tree_rate_file));
-	string msg = (param_type == "freq") ? "FREQUENCY" : "RATE";
-	char *filename = (param_type == "freq") ? params.tree_freq_file : params.tree_rate_file;
-	cout << endl << "===> COMPUTING SITE " << msg << " MODEL BASED ON TREE FILE " << filename << endl;
-	// init auxiliary tree, model, etc.
-	PhyloTree *tree = new PhyloTree(alignment);
-	tree->setParams(&params);
-	tree->setLikelihoodKernel(params.SSE);
-	tree->setNumThreads(params.num_threads);
-	bool myrooted = params.is_rooted;
-	tree->readTree(filename, myrooted);
-	tree->setRootNode(params.root);
-	tree->setAlignment(alignment);
-	ModelsBlock *models_block = readModelsDefinition(params);
-	tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
-	delete models_block;
-	// check model compatibility
-	if (!tree->getModel()->isReversible())
-		outError("Non-reversible models are incompatible with site-specific models");
-	if (tree->getModel()->isMixture() && !tree->getModel()->isMixtureSameQ())
-		outError("Matrix mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
-	if (tree->getModel()->isFused())
-		outError("Unlinked rate mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
-	if (param_type == "rate" && tree->getModel()->isMixture())
-		outError("Frequency mixture models are incompatible with site-specific models. Use -wsr option to estimate site-specific rates");
-	// check for the starting mixture model
-	if (param_type == "freq" && !tree->getModel()->isMixture())
-		outError("No frequency mixture model was specified!");
-	if (param_type == "rate" && !tree->getRate()->isMixture())
-		outError("No rate mixture model was specified!");
-	uint64_t mem_size = tree->getMemoryRequired();
-	uint64_t total_mem = getMemorySize();
-	cout << "NOTE: " << (mem_size / 1024) / 1024 << " MB RAM is required!" << endl;
-	if (mem_size >= total_mem)
-		outError("Memory required exceeds your computer RAM size!");
+void computeSiteSpecificModel(Params &params, Alignment *alignment, const string &param_type) {
+    ASSERT((param_type == "freq" && params.tree_freq_file) ||
+           (param_type == "rate" && params.tree_rate_file));
+    string msg = (param_type == "freq") ? "FREQUENCY" : "RATE";
+    char *filename = (param_type == "freq") ? params.tree_freq_file : params.tree_rate_file;
+    cout << endl << "===> COMPUTING SITE " << msg << " MODEL BASED ON TREE FILE " << filename << endl;
+    // init auxiliary tree, model, etc.
+    PhyloTree *tree = new PhyloTree(alignment);
+    tree->setParams(&params);
+    tree->setLikelihoodKernel(params.SSE);
+    tree->setNumThreads(params.num_threads);
+    bool myrooted = params.is_rooted;
+    tree->readTree(filename, myrooted);
+    tree->setRootNode(params.root);
+    tree->setAlignment(alignment);
+    ModelsBlock *models_block = readModelsDefinition(params);
+    tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
+    delete models_block;
+    // check model compatibility
+    if (!tree->getModel()->isReversible()) {
+        outError("Non-reversible models are incompatible with site-specific models");
+    }
+    if (tree->getModel()->isMixture() && !tree->getModel()->isMixtureSameQ()) {
+        outError("Matrix mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
+    }
+    if (tree->getModel()->isFused()) {
+        outError("Fused mixture models are incompatible with site-specific models. Use -wsf or -wsr options to estimate site-specific parameters");
+    }
+    if (param_type == "rate" && tree->getModel()->isMixture()) {
+        outError("Frequency mixture models are incompatible with site-specific models. Use -wsr option to estimate site-specific rates");
+    }
+    // check for the initial mixture model
+    if (param_type == "freq" && !tree->getModel()->isMixture()) {
+        outError("No frequency mixture model was specified!");
+    }
+    if (param_type == "rate" && !tree->getRate()->isMixture()) {
+        outError("No rate mixture model was specified!");
+    }
+    // check memory limits
+    uint64_t mem_size = tree->getMemoryRequired();
+    uint64_t total_mem = getMemorySize();
+    cout << "NOTE: " << (mem_size / 1024) / 1024 << " MB RAM is required!" << endl;
+    if (mem_size >= total_mem) {
+        outError("Memory required exceeds your computer RAM size!");
+    }
 #ifdef BINARY32
-	if (mem_size >= 2000000000)
-		outError("Memory required exceeds 2GB limit of 32-bit executable");
+    if (mem_size >= 2000000000) {
+        outError("Memory required exceeds 2GB limit of 32-bit executable");
+    }
 #endif
-	tree->ensureNumberOfThreadsIsSet(nullptr);
-	tree->initializeAllPartialLh();
-	// increase epsilon tenfold (0.01 -> 0.1) to speed up site-specific parameter estimation
-	double modelEpsilon = params.modelEps * 10.0;
-	cout << "Estimate initial model parameters (epsilon = " << modelEpsilon << ")" << endl;
-	tree->getModelFactory()->optimizeParameters(params.fixed_branch_length, true, modelEpsilon);
-	// compute state freqs or rate scalers for all the alignment patterns
-	size_t nptn = alignment->getNPattern();
-	if (param_type == "freq") {
-		double *all_ptn_state_freq = nullptr;
-		tree->computePatternStateFreq(all_ptn_state_freq);
-		ASSERT(all_ptn_state_freq);
-		size_t nstates = alignment->num_states;
-		for (size_t ptn = 0; ptn < nptn; ptn++) {
-			double *state_freqs = new double[nstates];
-			memcpy(state_freqs, all_ptn_state_freq + ptn*nstates, sizeof(double)*nstates);
-			alignment->convfreq(state_freqs); // regularize freqs
-			alignment->ptn_state_freq.push_back(state_freqs);
-		}
-		delete [] all_ptn_state_freq;
-		ASSERT(alignment->ptn_state_freq.size() == nptn);
-		params.site_state_freq_type = WSF_NONE;
-	} else {
-		DoubleVector ptn_rate;
-		tree->computePatternRate(ptn_rate);
-		ASSERT(ptn_rate.size());
-		for (size_t ptn = 0; ptn < nptn; ptn++) {
-			double rate = ptn_rate[ptn];
-			rate = min(max(rate, MIN_SITE_RATE), MAX_SITE_RATE); // regularize rate
-			alignment->ptn_rate_scaler.push_back(rate);
-		}
-		ASSERT(alignment->ptn_rate_scaler.size() == nptn);
-		params.site_rate_type = WSR_NONE;
-	}
-	delete tree;
-	// print the computed site-specific params into a file
-	string out_suffix = (param_type == "freq") ? ".sitefreq" : ".siterate";
-	printSiteParam(((string)params.out_prefix + out_suffix).c_str(), alignment, param_type);
-	// continue analysis using the alignment with the computed site-specific params
-	cout << "===> CONTINUE ANALYSIS USING THE INFERRED SITE " << msg << " MODEL" << endl;
+    // optimize the initial mixture model
+    tree->ensureNumberOfThreadsIsSet(nullptr);
+    tree->initializeAllPartialLh();
+    // increase epsilon tenfold (0.01 -> 0.1) to speed up the optimization
+    double modelEpsilon = params.modelEps * 10.0;
+    cout << "Estimate initial model parameters (epsilon = " << modelEpsilon << ")" << endl;
+    tree->getModelFactory()->optimizeParameters(params.fixed_branch_length, true, modelEpsilon);
+    // compute state freqs or rate scalers for all the alignment patterns
+    size_t nptn = alignment->getNPattern();
+    if (param_type == "freq") {
+        double *all_ptn_state_freq = nullptr;
+        tree->computePatternStateFreq(all_ptn_state_freq);
+        ASSERT(all_ptn_state_freq);
+        size_t nstates = alignment->num_states;
+        for (size_t ptn = 0; ptn < nptn; ++ptn) {
+            double *state_freqs = new double[nstates];
+            memcpy(state_freqs, all_ptn_state_freq + ptn*nstates, sizeof(double)*nstates);
+            alignment->convfreq(state_freqs); // regularize freqs
+            alignment->ptn_state_freq.push_back(state_freqs);
+        }
+        delete [] all_ptn_state_freq;
+        ASSERT(alignment->ptn_state_freq.size() == nptn);
+        params.site_state_freq_type = WSF_NONE;
+    } else {
+        DoubleVector ptn_rate;
+        tree->computePatternRate(ptn_rate);
+        ASSERT(ptn_rate.size());
+        for (size_t ptn = 0; ptn < nptn; ++ptn) {
+            double rate = ptn_rate[ptn];
+            rate = min(max(rate, MIN_SITE_RATE), MAX_SITE_RATE); // regularize rate
+            alignment->ptn_rate_scaler.push_back(rate);
+        }
+        ASSERT(alignment->ptn_rate_scaler.size() == nptn);
+        params.site_rate_type = WSR_NONE;
+    }
+    delete tree;
+    // print the computed site-specific params into a file
+    string out_suffix = (param_type == "freq") ? ".sitefreq" : ".siterate";
+    printSiteParam(((string)params.out_prefix + out_suffix).c_str(), alignment, param_type);
+    // continue analysis using the alignment with the computed site-specific params
+    cout << "===> CONTINUE ANALYSIS USING THE INFERRED SITE " << msg << " MODEL" << endl;
 }
 
 

@@ -84,27 +84,27 @@ public:
         fixed_parameters = fix;
         return current;
     }
-    
-	/**
-	 * @return TRUE if this is a site-specific model, FALSE otherwise
-	 */
-	virtual bool isSiteSpecificModel() { return false; }
 
-        /**
-         * @return TRUE if the model has site-specific frequencies, FALSE otherwise
-         */
-        virtual bool isSSF() { return false; }
+    /**
+     *  @return TRUE if this is a site-specific model, FALSE otherwise
+     */
+    virtual bool isSiteSpecificModel() { return false; }
 
-        /**
-         * @return TRUE if the model has site-specific rates, FALSE otherwise
-         */
-        virtual bool isSSR() { return false; }
+    /**
+     *  @return TRUE if the model has site-specific frequencies, FALSE otherwise
+     */
+    virtual bool isSSF() { return false; }
 
-	/**
-	 * @return TRUE if this is a mixture model, FALSE otherwise
-	 */
-	virtual bool isMixture() { return false; }
-    
+    /**
+     *  @return TRUE if the model has site-specific rates, FALSE otherwise
+     */
+    virtual bool isSSR() { return false; }
+
+    /**
+     *  @return TRUE if this is a mixture model, FALSE otherwise
+     */
+    virtual bool isMixture() { return false; }
+
     /**
      * @return TRUE if this is a liemarkov model, FALSE otherwise
      */
@@ -295,10 +295,10 @@ public:
 	*/
 	virtual StateFreqType getFreqType() { return FREQ_EQUAL; }
 
-	/**
-		set frequency type
-	*/
-	virtual void setFreqType(StateFreqType freq) { freq_type = freq; }
+    /**
+     *  Set frequency type
+     */
+    virtual void setFreqType(StateFreqType freq) { freq_type = freq; }
 
     /**
         set the associated tree

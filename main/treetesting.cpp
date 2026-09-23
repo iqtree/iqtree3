@@ -412,127 +412,131 @@ void printAncestralSequences(const char *out_prefix, PhyloTree *tree, AncestralS
 }
 
 void printSiteStateFreq(const char *filename, PhyloTree *tree) {
-	cout << endl << "Infer site state frequencies" << endl;
-	try {
-	ofstream out;
-	out.exceptions(ios::failbit | ios::badbit);
-	out.open(filename);
-	string msg;
-	// write the comment header
-	out << "# Site-specific state frequencies determined by empirical Bayesian method" << endl;
-	out << "# This file can be read in MS Excel or in R with command:" << endl
-		<< "#   tab=read.table('" << filename << "',header=TRUE,fill=TRUE)" << endl
-		<< "# Columns are tab-separated with following meaning:" << endl;
-	if (tree->isSuperTree())
-		out << "#   Part:    Partition ID (1=" << ((PhyloSuperTree*)tree)->front()->aln->name << ", etc)" << endl
-			<< "#   Site:    Site ID within partition (starting from 1 for each partition)" << endl;
-	else
-		out << "#   Site:    Alignment site ID" << endl;
-	msg = (tree->params->site_state_freq_type == WSF_POSTERIOR_MEAN) ? "mean" : "max";
-	out << "#   pi_X:    Posterior " << msg << " site frequency of state X" << endl
-		<< "#   Cat:     Category with the highest posterior weight" << endl
-		<< "#   CatPP:   Posterior probability of the highest weight category" << endl;
-	// write the main header
-	msg = "";
-	size_t nstates;
-	if (tree->isSuperTree()) {
-		msg += "Part\tSite";
-		nstates = ((SuperAlignment*)tree->aln)->max_num_states;
-		for (size_t x = 0; x < nstates; ++x)
-			msg += "\tpi_" + convertIntToString(x);
-	} else {
-		msg += "Site";
-		nstates = tree->aln->num_states;
-		for (size_t x = 0; x < nstates; ++x)
-			msg += "\tpi_" + tree->aln->convertStateBackStr(x);
-	}
-	msg += "\tCat\tCatPP";
-	out << msg << endl;
-	// infer and write the site freqs
-	tree->writeSiteFreqs(out);
-	out.close();
-	} catch (ios::failure) {
-		outError(ERR_WRITE_OUTPUT, filename);
-	}
-	cout << "Site state frequencies printed to " << filename << endl;
+    cout << endl << "Infer site state frequencies" << endl;
+    try {
+        ofstream out;
+        out.exceptions(ios::failbit | ios::badbit);
+        out.open(filename);
+        string msg;
+        // write the comment header
+        out << "# Site-specific state frequencies determined by empirical Bayesian method" << endl;
+        out << "# This file can be read in MS Excel or in R with command:" << endl
+            << "#   tab=read.table('" << filename << "',header=TRUE,fill=TRUE)" << endl
+            << "# Columns are tab-separated with following meaning:" << endl;
+        if (tree->isSuperTree()) {
+            out << "#   Part:    Partition ID (1=" << ((PhyloSuperTree*)tree)->front()->aln->name << ", etc)" << endl
+                << "#   Site:    Site ID within partition (starting from 1 for each partition)" << endl;
+        } else {
+            out << "#   Site:    Alignment site ID" << endl;
+        }
+        msg = (tree->params->site_state_freq_type == WSF_POSTERIOR_MEAN) ? "mean" : "max";
+        out << "#   pi_X:    Posterior " << msg << " site frequency of state X" << endl
+            << "#   Cat:     Category with the highest posterior weight" << endl
+            << "#   CatPP:   Posterior probability of the highest weight category" << endl;
+        // write the main header
+        msg = "";
+        size_t nstates;
+        if (tree->isSuperTree()) {
+            msg += "Part\tSite";
+            nstates = ((SuperAlignment*)tree->aln)->max_num_states;
+            for (size_t x = 0; x < nstates; ++x) {
+                msg += "\tpi_" + convertIntToString(x);
+            }
+        } else {
+            msg += "Site";
+            nstates = tree->aln->num_states;
+            for (size_t x = 0; x < nstates; ++x) {
+                msg += "\tpi_" + tree->aln->convertStateBackStr(x);
+            }
+        }
+        msg += "\tCat\tCatPP";
+        out << msg << endl;
+        // infer and write the site freqs
+        tree->writeSiteFreqs(out);
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, filename);
+    }
+    cout << "Site state frequencies printed to " << filename << endl;
 }
 
 void printSiteRate(const char *filename, PhyloTree *tree, bool bayes) {
-	cout << endl << "Infer site rates" << endl;
-	try {
-	ofstream out;
-	out.exceptions(ios::failbit | ios::badbit);
-	out.open(filename);
-	string msg;
-	// write the comment header
-	msg = (bayes) ? "empirical Bayesian method" : "maximum likelihood";
-	out << "# Site-specific substitution rates determined by " << msg << endl;
-	out << "# This file can be read in MS Excel or in R with command:" << endl
-		<< "#   tab=read.table('" << filename << "',header=TRUE,fill=TRUE)" << endl
-		<< "# Columns are tab-separated with following meaning:" << endl;
-	if (tree->isSuperTree())
-		out << "#   Part:    Partition ID (1=" << ((PhyloSuperTree*)tree)->front()->aln->name << ", etc)" << endl
-			<< "#   Site:    Site ID within partition (starting from 1 for each partition)" << endl;
-	else
-		out << "#   Site:    Alignment site ID" << endl;
-	if (bayes) {
-		msg = (tree->params->site_rate_type == WSR_POSTERIOR_MEAN) ? "mean" : "max";
-		out << "#   Rate:    Posterior " << msg << " site rate" << endl
-			<< "#   Cat:     Category with the highest posterior weight (0=invariable, 1=slow, etc)" << endl
-			<< "#   CatRate: Rate of the highest weight category" << endl
-			<< "#   CatPP:   Posterior probability of the highest weight category" << endl;
-	} else {
-		out << "#   Rate:    Site rate estimated by maximum likelihood" << endl;
-	}
-	// write the main header
-	msg = "";
-	if (tree->isSuperTree()) msg += "Part\t";
-	msg += "Site\tRate";
-	if (bayes) msg += "\tCat\tCatRate\tCatPP";
-	out << msg << endl;
-	// infer and write the site rates
-	tree->writeSiteRates(out, bayes);
-	out.close();
-	} catch (ios::failure) {
-		outError(ERR_WRITE_OUTPUT, filename);
-	}
-	cout << "Site rates printed to " << filename << endl;
+    cout << endl << "Infer site rates" << endl;
+    try {
+        ofstream out;
+        out.exceptions(ios::failbit | ios::badbit);
+        out.open(filename);
+        string msg;
+        // write the comment header
+        msg = (bayes) ? "empirical Bayesian method" : "maximum likelihood";
+        out << "# Site-specific substitution rates determined by " << msg << endl;
+        out << "# This file can be read in MS Excel or in R with command:" << endl
+            << "#   tab=read.table('" << filename << "',header=TRUE,fill=TRUE)" << endl
+            << "# Columns are tab-separated with following meaning:" << endl;
+        if (tree->isSuperTree()) {
+            out << "#   Part:    Partition ID (1=" << ((PhyloSuperTree*)tree)->front()->aln->name << ", etc)" << endl
+                << "#   Site:    Site ID within partition (starting from 1 for each partition)" << endl;
+        } else {
+            out << "#   Site:    Alignment site ID" << endl;
+        }
+        if (bayes) {
+            msg = (tree->params->site_rate_type == WSR_POSTERIOR_MEAN) ? "mean" : "max";
+            out << "#   Rate:    Posterior " << msg << " site rate" << endl
+                << "#   Cat:     Category with the highest posterior weight (0=invariable, 1=slow, etc)" << endl
+                << "#   CatRate: Rate of the highest weight category" << endl
+                << "#   CatPP:   Posterior probability of the highest weight category" << endl;
+        } else {
+            out << "#   Rate:    Site rate estimated by maximum likelihood" << endl;
+        }
+        // write the main header
+        msg = "";
+        if (tree->isSuperTree()) msg += "Part\t";
+        msg += "Site\tRate";
+        if (bayes) msg += "\tCat\tCatRate\tCatPP";
+        out << msg << endl;
+        // infer and write the site rates
+        tree->writeSiteRates(out, bayes);
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, filename);
+    }
+    cout << "Site rates printed to " << filename << endl;
 }
 
-void printSiteParam(const char* filename, Alignment *aln, const string &param_type) {
-	ASSERT(param_type == "freq" || param_type == "rate");
-	if (param_type == "freq" && !aln->isSSF()) return;
-	if (param_type == "rate" && !aln->isSSR()) return;
-	size_t nsites = aln->getNSite();
-	int nstates = aln->num_states;
-	try {
-	ofstream out;
-	out.exceptions(ios::failbit | ios::badbit);
-	out.open(filename);
-	IntVector site_pattern;
-	aln->getSitePatternIndex(site_pattern);
-	for (size_t site = 0; site < nsites; ++site) {
-		out.width(6);
-		out << left << site + 1 << " ";
-		if (param_type == "freq") {
-			double *state_freqs = aln->ptn_state_freq[site_pattern[site]];
-			for (size_t x = 0; x < nstates; ++x) {
-				out.width(15);
-				out << state_freqs[x] << " ";
-			}
-		} else {
-			double rate = aln->ptn_rate_scaler[site_pattern[site]];
-			out.width(15);
-			out << rate << " ";
-		}
-		out << endl;
-	}
-	out.close();
-	} catch (ios::failure) {
-		outError(ERR_WRITE_OUTPUT, filename);
-	}
-	string msg = (param_type == "freq") ? "state frequency vectors" : "rate scalers";
-	cout << "Site " << msg << " printed to " << filename << endl;
+void printSiteParam(const char *filename, Alignment *aln, const string &param_type) {
+    ASSERT(param_type == "freq" || param_type == "rate");
+    if (param_type == "freq" && !aln->isSSF()) return;
+    if (param_type == "rate" && !aln->isSSR()) return;
+    size_t nsites = aln->getNSite();
+    int nstates = aln->num_states;
+    try {
+        ofstream out;
+        out.exceptions(ios::failbit | ios::badbit);
+        out.open(filename);
+        IntVector site_pattern;
+        aln->getSitePatternIndex(site_pattern);
+        for (size_t site = 0; site < nsites; ++site) {
+            out.width(6);
+            out << left << site + 1 << " ";
+            if (param_type == "freq") {
+                double *state_freqs = aln->ptn_state_freq[site_pattern[site]];
+                for (size_t x = 0; x < nstates; ++x) {
+                    out.width(15);
+                    out << state_freqs[x] << " ";
+                }
+            } else {
+                double rate = aln->ptn_rate_scaler[site_pattern[site]];
+                out.width(15);
+                out << rate << " ";
+            }
+            out << endl;
+        }
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, filename);
+    }
+    string msg = (param_type == "freq") ? "state frequency vectors" : "rate scalers";
+    cout << "Site " << msg << " printed to " << filename << endl;
 }
 
 int countDistinctTrees(istream &in, bool rooted, IQTree *tree, IntVector &distinct_ids, bool exclude_duplicate) {

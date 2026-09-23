@@ -985,20 +985,20 @@ public:
 
     void getAppearance(StateType state, StateBitset &state_app);
 
-	/**
-	 * read site-specific state frequency vectors or site-specific rate (branch length) scalers
-	 * from a file to create a site-specific model
-	 * @param site_param_file input file name
-	 * @param param_type should be set to "freq" or "rate"
-	 * @return TRUE if alignment patterns need to be changed, FALSE otherwise
-	 */
-	bool readSiteParamFile(const char* site_param_file, const string &param_type);
+    /**
+     *  Read site-specific state frequency vectors or rate (tree) scalers
+     *  from a file to create a site-specific model
+     *  @param site_param_file Input file name
+     *  @param param_type Should be set to "freq" or "rate"
+     *  @return TRUE if alignment patterns have been changed, FALSE otherwise
+     */
+    bool readSiteParamFile(const char *site_param_file, const string &param_type);
 
-	/**
-	 * normalize site-specific rates by their mean value
-	 * @return mean rate before normalization
-	 */
-	double normalizePtnRateScaler();
+    /**
+     *  Normalize site-specific rates by their mean value
+     *  @return The mean rate before normalization
+     */
+    double normalizePtnRateScaler();
 
     // added by TD
     /**
@@ -1050,23 +1050,23 @@ public:
     void extractMapleFile(const std::string& aln_name, const InputType& format);
 
 protected:
-	/** sequence names */
-	vector<string> seq_names;
+    /** sequence names */
+    vector<string> seq_names;
 
-	/** expected num_sites */
-	int expected_num_sites = -1;
+    /** expected num_sites */
+    int expected_num_sites = -1;
 
-	/** site to pattern index map */
-	IntVector site_pattern;
+    /** site to pattern index map */
+    IntVector site_pattern;
 
-	/** pattern index to first pattern site map */
-	IntVector pattern_first_site;
+    /** pattern index to first pattern site map */
+    IntVector pattern_first_site;
 
-	/** hash map from pattern to index in the vector of patterns (the alignment) */
-	PatternIntMap pattern_index;
+    /** hash map from pattern to index in the vector of patterns (the alignment) */
+    PatternIntMap pattern_index;
 
-	/** alisim: caching ntfreq if it has already randomly initialized */
-	double* cache_ntfreq = NULL;
+    /** alisim: caching ntfreq if it has already been randomly initialized */
+    double *cache_ntfreq = nullptr;
 
 private:
     /**

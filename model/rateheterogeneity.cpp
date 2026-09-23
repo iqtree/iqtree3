@@ -21,18 +21,15 @@
 #include "tree/phylotree.h"
 #include "rateheterogeneity.h"
 
-
-RateHeterogeneity::RateHeterogeneity(PhyloTree *tree)
-	: Optimization(), CheckpointFactory()
-{
-	name = "";
-	full_name = "Uniform";
-	phylo_tree = tree;
-	// update name if site-specific rates are used
-	if (phylo_tree && phylo_tree->aln->isSSR()) {
-		name = "+SSR";
-		full_name = "(site-specific rates)";
-	}
+RateHeterogeneity::RateHeterogeneity(PhyloTree *tree) {
+    name = "";
+    full_name = "Uniform";
+    phylo_tree = tree;
+    // update name if site-specific rates are used
+    if (phylo_tree && phylo_tree->aln->isSSR()) {
+        name = "+SSR";
+        full_name = "(site-specific rates)";
+    }
 }
 
 void RateHeterogeneity::setTree(PhyloTree *tree) {

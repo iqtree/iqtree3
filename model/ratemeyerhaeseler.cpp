@@ -144,8 +144,8 @@ int RateMeyerHaeseler::computePatternRates(DoubleVector &pattern_rates, IntVecto
 */
 
 int RateMeyerHaeseler::getPatternRates(DoubleVector &ptn_rate, IntVector &ptn_category) {
-	ptn_rate.insert(ptn_rate.begin(), begin(), end());
-	return 1;
+    ptn_rate.insert(ptn_rate.begin(), begin(), end());
+    return 1;
 }
 
 void RateMeyerHaeseler::getRates(DoubleVector &rates) {
@@ -485,40 +485,41 @@ void RateMeyerHaeseler::computeFuncDerv(double value, double &df, double &ddf) {
 }
 
 void RateMeyerHaeseler::runIterativeProc(Params &params, IQTree &tree) {
-	if (verbose_mode >= VB_MED) {
-		ofstream out("x");
-		out.close();
-	}
-	setTree(&tree);
-	RateHeterogeneity *backup_rate = tree.getRate();
-	if (backup_rate->isMixture()) {
-		tree.computePatternRate(*this);
-		double sum = 0.0;
-		size_t seqLen = size();
-		auto freq = phylo_tree->getConvertedSequenceFrequencies();
-		if (freq!=nullptr && seqLen == phylo_tree->getConvertedSequenceLength()) {
-			#ifdef _OPENMP
-			#pragma omp parallel for reduction(+:sum)
-			#endif
-			for (size_t i = 0; i < seqLen ; ++i) {
-				sum += at(i) * freq[i];
-			}
-		} else {
-			for (size_t i = 0; i < seqLen; ++i) {
-				sum += at(i) * phylo_tree->aln->at(i).frequency;
-			}
-		}
-		sum /= phylo_tree->aln->getNSite();
-		if (fabs(sum - 1.0) > 0.0001) {
-			if (verbose_mode >= VB_MED)
-				cout << "Normalizing site rates (mean: " << sum << ")" << endl;
-			for (size_t i = 0; i < size(); ++i) {
-				at(i) /= sum;
-			}
-		}
-	}
-	tree.getModelFactory()->site_rate = this;
-	tree.setRate(this);
+    if (verbose_mode >= VB_MED) {
+        ofstream out("x");
+        out.close();
+    }
+    setTree(&tree);
+    RateHeterogeneity *backup_rate = tree.getRate();
+    if (backup_rate->isMixture()) {
+        tree.computePatternRate(*this);
+        double sum = 0.0;
+        size_t seqLen = size();
+        auto freq = phylo_tree->getConvertedSequenceFrequencies();
+        if (freq!=nullptr && seqLen == phylo_tree->getConvertedSequenceLength()) {
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+:sum)
+#endif
+            for (size_t i = 0; i < seqLen ; ++i) {
+                sum += at(i) * freq[i];
+            }
+        } else {
+            for (size_t i = 0; i < seqLen; ++i) {
+                sum += at(i) * phylo_tree->aln->at(i).frequency;
+            }
+        }
+        sum /= phylo_tree->aln->getNSite();
+        if (fabs(sum - 1.0) > 0.0001) {
+            if (verbose_mode >= VB_MED) {
+                cout << "Normalizing site rates (mean: " << sum << ")" << endl;
+            }
+            for (size_t i = 0; i < size(); ++i) {
+                at(i) /= sum;
+            }
+        }
+    }
+    tree.getModelFactory()->site_rate = this;
+    tree.setRate(this);
 
 	//if  (empty()) initializeRates();
 
