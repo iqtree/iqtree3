@@ -49,6 +49,26 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint);
 */
 void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Alignment *&aln, bool align_is_given = false, ModelCheckpoint *model_info = NULL);
 
+/**
+    carry out phylogenetic inference after reading an alignment
+    @param params program parameters
+*/
+void runPhyloAnalysisAfterReadingAln(Params &params, Checkpoint *checkpoint, IQTree *&tree, Alignment *&aln, ModelCheckpoint *model_info = NULL);
+
+/**
+    reconstruct (ancestral/extant) sequences with gaps from faked binary data
+    @param[in,out] params program parameters for the binary-data run; this function mutates it
+        in place (model, tree, prefix, ...), so the CALLER must supply an object it owns and that
+        outlives the returned tree: the returned IQTree keeps a raw Params* pointing back at this
+        very object (via IQTree::setParams), so it must not be a temporary or a by-value copy that
+        goes out of scope when this function returns (bug #2 from PR review: this used to take
+        Params by value, leaving the returned tree's params pointer dangling into a destroyed
+        stack frame)
+    @param[in] original_tree the original tree
+    @return a tree that could be used to output gap and non-gap characters
+*/
+IQTree* reconstructGappedSeqs(Params &params, IQTree* original_tree);
+
 /*! \brief Run CMaple algorithm for phylogenetic inference (if suitable)
  *  @param params program parameters
  *  @return TRUE if CMaple algorithm is applicable for the input alignment
@@ -125,5 +145,14 @@ void exportMCMCTreeCMD(Params &params, ostream &out);
 
 /** compute rootstrap for a user defined tree from a set of trees */
 void runRootstrap(Params &params);
+
+/**
+    Initialize a Checkpoint and check to restore/restart the previous run
+    @param[in] filename the filename of the checkpoint
+    @param[in] params program parameters
+    @param[in|out] append_log check whether the log file should be appended
+    @return a pointer to the checkpoint
+*/
+Checkpoint* initAndCheckCheckpoint(const string& filename, const Params& params, bool& append_log);
 
 #endif

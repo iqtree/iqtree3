@@ -224,6 +224,7 @@ const char* aa_usual_model = "LG";
 const char* aa_usual_nonrev_model = "NQ.pfam";
 const char* codon_usual_model = "GY+F3X4";
 const char* bin_usual_model = "GTR2";
+const char* bin_usual_nonrev_model = "UNREST";
 const char* morph_usual_model = "MK";
 const char* pomo_usual_model = "GTR+P";
 
@@ -260,7 +261,13 @@ string getUsualModelSubst(SeqType seq_type) {
             else
                 return aa_usual_model;
         case SEQ_CODON: return codon_usual_model;
-        case SEQ_BINARY: return bin_usual_model;
+        case SEQ_BINARY:
+            // NHANLT: I used a new variable "allow_nonrev_bin" instead of reusing the existing variable "contain_nonrev"
+            // because nonreversible model was only tested for gapped-ESR/ASR and not yet be tested for any other features.
+            if (Params::getInstance().allow_nonrev_bin)
+                return bin_usual_nonrev_model;
+            else
+                return bin_usual_model;
         case SEQ_MORPH: return morph_usual_model;
         case SEQ_POMO: return pomo_usual_model;
         default: ASSERT(0 && "Unprocessed seq_type"); return "";
@@ -1277,6 +1284,12 @@ void getRateHet(SeqType seq_type, string model_name, double frac_invariant_sites
                 test_options = test_options_morph_fast;
             else
                 test_options = test_options_morph;
+            
+            // When reconstructing gapped ASR/ESR, we can't use +ASC on binary data
+            // Otherwise, we this assertion may fail (tree_lh-new_tree_lh < max_delta_lh)
+            // So here, we need to use test_options_noASC_I_fast when reconstructing gapped ASR/ESR
+            if (Params::getInstance().gapped_seq_reconstruction && seq_type == SEQ_BINARY)
+                test_options = test_options_noASC_I_fast;
         } else {
             if (rate_set == "1")
                 test_options = test_options_noASC_I_fast;

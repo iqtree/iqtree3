@@ -976,6 +976,19 @@ public:
 
     template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false, const bool SITE_MODEL = false>
     double computeLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+    
+    
+    /** Implementations of likelihood compuation at branch*/
+    template<class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false>
+    double implComputingNonrevLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value = true);
+    template<class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
+    double implComputingNonrevLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value = true);
+
+    template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
+    double implComputingLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value = true);
+
+    template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false, const bool SITE_MODEL = false>
+    double implComputingLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value = true);
 
     /*
     template <class VectorClass, const int VCSIZE, const int nstates>
@@ -987,6 +1000,32 @@ public:
     template <class VectorClass, const int VCSIZE, const int nstates>
     double computeSitemodelLikelihoodBranchEigenSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad);
     */
+    
+    /****************************************************************************
+            computing likelihood on a branch with a fake leaf (used to reconstruct an extant sequence)
+     ****************************************************************************/
+
+    /**
+            compute tree likelihood on a branch with a fake leaf (used to reconstruct an extant sequence)
+            @param dad_branch the branch leading to the subtree
+            @param dad its dad, used to direct the tranversal
+            @return tree likelihood
+     */
+    virtual double computeLikelihoodBranchESR(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    typedef double (PhyloTree::*ComputeLikelihoodBranchESRType)(PhyloNeighbor*, PhyloNode*, bool);
+    ComputeLikelihoodBranchESRType computeLikelihoodBranchESRPointer;
+
+    template<class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false>
+    double computeNonrevLikelihoodBranchESRGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+    template<class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false>
+    double computeNonrevLikelihoodBranchESRSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
+    double computeLikelihoodBranchESRSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
+
+    template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false, const bool SITE_MODEL = false>
+    double computeLikelihoodBranchESRGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value = true);
 
     /****************************************************************************
             computing likelihood on a branch using buffer
@@ -1087,6 +1126,27 @@ public:
     */
     virtual void computeMarginalAncestralState(PhyloNeighbor *dad_branch, PhyloNode *dad,
         double *ptn_ancestral_prob, int *ptn_ancestral_seq);
+    
+    /**
+        compute extant sequence probability for a leaf node by marginal reconstruction
+        (Yang, Kumar and Nei 1995)
+        @param dad_branch branch leading to an internal node where to obtain ancestral sequence
+        @param dad dad of the target internal node
+        @param[out] ptn_ancestral_prob pattern ancestral probability vector of dad_branch->node
+        @param[out] ptn_ancestral_seq vector of state with highest probability
+    */
+    virtual void computeMarginalExtantState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+        double *ptn_ancestral_prob, int *ptn_ancestral_seq);
+    
+    /**
+        compute sequence probability for an internal/extant node by marginal reconstruction
+        (Yang, Kumar and Nei 1995)
+        @param dad_branch branch leading to an internal/leaf node where to obtain ancestral/extant sequence
+        @param dad dad of the target internal/leaf node
+        @param[out] ptn_ancestral_prob pattern ancestral/extant probability vector of dad_branch->node
+    */
+    virtual void computeMarginalState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+        double *ptn_ancestral_prob, int *ptn_ancestral_seq);
 
     /**
         compute ancestral sequence probability for an internal node by partial_lh of that subtree
@@ -1097,7 +1157,18 @@ public:
     virtual void computeSubtreeAncestralState(PhyloNeighbor *dad_branch, PhyloNode *dad,
         double *ptn_ancestral_prob, int *ptn_ancestral_seq);
 
-    virtual void writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq);
+    /**
+        write reconstructed (gapped/non-gapped) ancestral/extant sequence to an output stream
+        @param[in|out] out output stream
+        @param[in] node node of interest
+        @param[in] ptn_ancestral_prob non-gapped pattern ancestral probability vector
+        @param[in] marginal_ancestral_seq non-gapped state
+        @param[in] gapped_seq_reconstruction TRUE if using gapped_seq_reconstruction
+        @param[in] gsr_tree phylogenetic tree used
+        @param[in] ptn_gsr_prob gapped pattern ancestral probability vector
+        @param[in] ptn_gsr_seq gapped state
+    */
+    virtual void writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq, const bool gapped_seq_reconstruction = false, PhyloTree* gsr_tree = nullptr, double *ptn_gsr_prob = nullptr, int *ptn_gsr_seq = nullptr);
 
     /**
         end computing ancestral sequence probability for an internal node by marginal reconstruction

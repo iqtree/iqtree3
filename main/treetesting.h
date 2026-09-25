@@ -11,6 +11,7 @@
 #include "utils/tools.h"
 #include "alignment/alignment.h"
 
+class PhyloNode;
 class PhyloTree;
 class IQTree;
 
@@ -97,9 +98,38 @@ void printSiteStateFreq(const char* filename, Alignment *aln);
     print ancestral sequences
     @param filename output file name
     @param tree phylogenetic tree
+    @param gsr_tree phylogenetic tree for gapped sequence reconstruction
     @param ast either AST_MARGINAL or AST_JOINT
 */
-void printAncestralSequences(const char*filename, PhyloTree *tree, AncestralSeqType ast);
+void printAncestralSequences(const char*filename, PhyloTree *tree, PhyloTree* gsr_tree, AncestralSeqType ast);
+
+/**
+    print extant sequences
+    @param filename output file name
+    @param tree phylogenetic tree
+    @param gsr_tree phylogenetic tree for gapped sequence reconstruction
+*/
+void printExtantSequences(const char*filename, PhyloTree* tree, PhyloTree* gsr_tree);
+
+/**
+    compute (gapped/non-gapped) ancestral/extant sequence probability for a node by marginal reconstruction
+    @param[in] is_ancestral TRUE to print ancestral sequences. Otherwise, print extant sequences
+    @param[in] tree phylogenetic tree
+    @param[in] node node of interest
+    @param[out] ptn_ancestral_prob pattern ancestral probability vector
+    @param[out] marginal_ancestral_seq state
+*/
+void computeMarginalState(const bool is_ancestral, PhyloTree *tree, PhyloNode *node, double *marginal_ancestral_prob, int *marginal_ancestral_seq);
+
+/**
+    print ancestral or extant sequences
+    @param is_ancestral TRUE to print ancestral sequences. Otherwise, print extant sequences
+    @param filename output file name
+    @param tree phylogenetic tree
+    @param gsr_tree phylogenetic tree for gapped sequence reconstruction
+    @param ast either AST_MARGINAL or AST_JOINT
+*/
+void printAncestralOrExtantSequences(const bool is_ancestral, const char*filename, PhyloTree *tree, PhyloTree* gsr_tree, AncestralSeqType ast);
 
 /**
  * Evaluate user-trees with possibility of tree topology tests

@@ -3742,12 +3742,32 @@ void parseArg(int argc, char *argv[], Params &params) {
 				params.print_site_prob = WSL_MIXTURE_RATECAT;
 				continue;
 			}
+            
+            if (strcmp(argv[cnt], "-esr") == 0 || strcmp(argv[cnt], "--extant") == 0) {
+                params.print_extant_seqs = true;
+                params.ignore_identical_seqs = false;
+                continue;
+            }
+            
+            if (strcmp(argv[cnt], "-gap-esr") == 0 || strcmp(argv[cnt], "--gap-extant") == 0) {
+                params.gapped_seq_reconstruction = true;
+                params.print_extant_seqs = true;
+                params.ignore_identical_seqs = false;
+                continue;
+            }
 
 			if (strcmp(argv[cnt], "-asr") == 0 || strcmp(argv[cnt], "--ancestral") == 0) {
 				params.print_ancestral_sequence = AST_MARGINAL;
                 params.ignore_identical_seqs = false;
 				continue;
 			}
+            
+            if (strcmp(argv[cnt], "-gap-asr") == 0 || strcmp(argv[cnt], "--gap-ancestral") == 0) {
+                params.gapped_seq_reconstruction = true;
+                params.print_ancestral_sequence = AST_MARGINAL;
+                params.ignore_identical_seqs = false;
+                continue;
+            }
 
 			if (strcmp(argv[cnt], "-asr-min") == 0 || strcmp(argv[cnt], "--asr-min") == 0) {
                 cnt++;
@@ -5664,6 +5684,22 @@ void parseArg(int argc, char *argv[], Params &params) {
                  " The site-frequency model is only estimated for a single-partition alignment,"
                  " and was previously ignored without warning.");
 
+    // don't support both -gap-asr/-gap-esr and --no-treefile/--no-outfiles
+    if (params.gapped_seq_reconstruction && (params.suppress_output_flags & OUT_TREEFILE)) {
+        outWarning("--no-treefile/--no-outfiles is not supported together with -gap-asr/-gap-esr:"
+                   " the tree file is needed internally to reconstruct gapped sequences, so it"
+                   " will still be written.");
+        params.suppress_output_flags &= ~OUT_TREEFILE;
+    }
+
+    // don't support both -gap-asr/-gap-esr and -o
+    // an outgroup-rooted main tree and a default-rooted binary tree can end up numbering internal nodes
+    // differently, silently misattaching gap posteriors to the wrong nodes
+    if (params.gapped_seq_reconstruction && params.root) {
+        outWarning("-o (outgroup) is ignored since it not supported together with -gap-asr/-gap-esr.");
+        params.root = nullptr;
+    }
+
     // Users have to specify a random seed to run AliSim
     if (params.alisim_active && !params.seed_specified)
         outError("To make the simulation reproducible, please specify a random seed via `-seed <NUM>`");
@@ -7339,6 +7375,9 @@ void Params::setDefault() {
     print_trees_site_posterior = 0;
     print_ancestral_sequence = AST_NONE;
     min_ancestral_prob = 0.0;
+    print_extant_seqs = false;
+    gapped_seq_reconstruction = false;
+    allow_nonrev_bin = false;
     print_tree_lh = false;
     lambda = 1;
     speed_conf = 1.0;
