@@ -584,6 +584,11 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
         return;
     }
 
+    if (aln->seq_type == SEQ_POMO) {
+        m->report(out);
+        return;
+    }
+
     ASSERT(aln->num_states == m->num_states);
     double *rate_mat = new double[m->num_states * m->num_states];
     if (!m->isSiteSpecificModel())
@@ -661,11 +666,6 @@ void reportModel(ostream &out, Alignment *aln, ModelSubst *m) {
     }
     
     delete[] rate_mat;
-
-    if (aln->seq_type == SEQ_POMO) {
-        m->report(out);
-        return;
-    }
 
     out << "State frequencies: ";
     if (m->isSiteSpecificModel())
