@@ -26,36 +26,28 @@ ModelSet::ModelSet(const char *model_name, PhyloTree *tree) : ModelMarkov(tree)
 	full_name += "+site-specific state-frequency model (unpublished)";
 }
 
-void ModelSet::computeTransMatrix(double time, double* trans_matrix, int mixture, int selected_row)
-{
-    // TODO not working with vectorization
-    ASSERT(0);
-	for (iterator it = begin(); it != end(); it++) {
-		(*it)->computeTransMatrix(time, trans_matrix, mixture, selected_row);
-		trans_matrix += (num_states * num_states);
-	}
-}
-
-void ModelSet::computeTransDerv(double time, double* trans_matrix, double* trans_derv1, double* trans_derv2, int mixture)
-{
-    // TODO not working with vectorization
-    ASSERT(0);
-	for (iterator it = begin(); it != end(); it++) {
-		(*it)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2, mixture);
-		trans_matrix += (num_states * num_states);
-		trans_derv1 += (num_states * num_states);
-		trans_derv2 += (num_states * num_states);
-	}
-}
-
-int ModelSet::getPtnModelID(int ptn)
-{
-    ASSERT(ptn >= 0 && ptn < size());
+int ModelSet::getPtnModelID(size_t ptn) const {
+    ASSERT(ptn < size());
     return ptn;
 }
 
+void ModelSet::computeTransMatrix(double time, double *trans_matrix, int model_id, int selected_row) {
+    // TODO not working with vectorization
+    ASSERT(0);
+    ASSERT(model_id > -1); // no default
+    at(model_id)->computeTransMatrix(time, trans_matrix, -1, selected_row);
+}
 
-double ModelSet::computeTrans(double time, int model_id, int state1, int state2) {
+void ModelSet::computeTransDerv(double time, double *trans_matrix,
+                                double *trans_derv1, double *trans_derv2, int model_id) {
+    // TODO not working with vectorization
+    ASSERT(0);
+    ASSERT(model_id > -1); // no default
+    at(model_id)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2);
+}
+
+double ModelSet::computeTrans(double time, int state1, int state2, int model_id) {
+    ASSERT(model_id > -1); // no default
     if (phylo_tree->vector_size == 1) {
         return at(model_id)->computeTrans(time, state1, state2);
     }
@@ -77,7 +69,9 @@ double ModelSet::computeTrans(double time, int model_id, int state1, int state2)
 	return trans_prob;
 }
 
-double ModelSet::computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2) {
+double ModelSet::computeTrans(double time, int state1, int state2,
+                              double &derv1, double &derv2, int model_id) {
+    ASSERT(model_id > -1); // no default
     if (phylo_tree->vector_size == 1) {
         return at(model_id)->computeTrans(time, state1, state2, derv1, derv2);
     }
@@ -103,6 +97,42 @@ double ModelSet::computeTrans(double time, int model_id, int state1, int state2,
 	return trans_prob;
 }
 
+void ModelSet::getRateMatrix(double *rate_mat, int model_id) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->getRateMatrix(rate_mat);
+}
+
+void ModelSet::setRateMatrix(double *rate_mat) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelSet::getQMatrix(double *q_mat, int model_id) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->getQMatrix(q_mat);
+}
+
+void ModelSet::setQMatrix(double *q_mat, double *freq_vec) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelSet::getStateFrequency(double *freq_vec, int model_id) {
+    ASSERT(model_id >= -1);
+    if (model_id >= 0) {
+        at(model_id)->getStateFrequency(freq_vec);
+        return;
+    }
+    // default: return the +F freqs across all patterns
+    ModelMarkov::getStateFrequency(freq_vec);
+}
+
+void ModelSet::setStateFrequency(double *freq_vec) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelSet::adaptStateFrequency(double *freq_vec) {
+    ASSERT(false); // call for each submodel separately!
+}
+
 int ModelSet::getNDim()
 {
 	ASSERT(size());
@@ -123,16 +153,6 @@ void ModelSet::writeInfo(ostream& out)
 	} else {
 		front()->writeInfo(out);
 	}
-}
-
-void ModelSet::getStateFrequency(double *state_freq, int mixture) {
-    ASSERT(mixture >= -1);
-    if (mixture >= 0) {
-        at(mixture)->getStateFrequency(state_freq);
-        return;
-    }
-    // default: return the +F freqs across all patterns
-    ModelMarkov::getStateFrequency(state_freq);
 }
 
 void ModelSet::decomposeRateMatrix()

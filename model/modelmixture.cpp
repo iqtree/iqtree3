@@ -3803,35 +3803,6 @@ void ModelMixture::restoreCheckpoint() {
         phylo_tree->clearAllPartialLH();
 }
 
-void ModelMixture::getStateFrequency(double *state_freq, int mixture) {
-    ASSERT(mixture < getNMixtures());
-    if (mixture >= 0) {
-        at(mixture)->getStateFrequency(state_freq);
-        return;
-    }
-    // special case: return weighted sum of state_freq across classes
-    // for mixture model, take the weighted sum of frequency vectors
-    double state_freq_class[num_states];
-    int mix = getNMixtures();
-    memset(state_freq, 0, sizeof(double)*num_states);
-    bool fused = isFused();
-    for (int i = 0; i < mix; i++) {
-        at(i)->getStateFrequency(state_freq_class);
-        double weight = getMixtureWeight(i);
-        // fused model, take the weight from site_rate
-        if (fused)
-            weight = phylo_tree->getRate()->getProp(i) / (1.0 - phylo_tree->getRate()->getPInvar());
-        for (int j = 0; j < num_states; j++)
-            state_freq[j] += weight*state_freq_class[j];
-    }
-    // // DEBUG.
-    // cout << "Weighted state frequency of mixture component zero: ";
-    // for (int i = 0; i < num_states; i++) {
-    //   cout << state_freq[i] << " ";
-    // }
-    // cout << endl;
-}
-
 // estimate the initial frequency vectors
 // method 1: given a set of classes in the mixture model, randomly assign each alignment position to one of the classes.
 // Then the nucleotide frequency array of each class is initialized according to the nucleotide frequencies among the positions assigned to the class.
@@ -3947,29 +3918,78 @@ void ModelMixture::estimateInitFreq2() {
     }
 }
 
-void ModelMixture::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
-    ASSERT(mixture < getNMixtures());
-    at(mixture)->computeTransMatrix(time, trans_matrix, 0, selected_row);
-}
-
-void ModelMixture::getQMatrix(double *q_mat, int mixture)
-{
-    ASSERT(mixture < getNMixtures());
-    at(mixture)->getQMatrix(q_mat);
+void ModelMixture::computeTransMatrix(double time, double *trans_matrix, int model_id, int selected_row) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->computeTransMatrix(time, trans_matrix, -1, selected_row);
 }
 
 void ModelMixture::computeTransDerv(double time, double *trans_matrix,
-    double *trans_derv1, double *trans_derv2, int mixture) {
-    ASSERT(mixture < getNMixtures());
-    at(mixture)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2);
+                                    double *trans_derv1, double *trans_derv2, int model_id) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->computeTransDerv(time, trans_matrix, trans_derv1, trans_derv2);
 }
 
-void ModelMixture::adaptStateFrequency(double* freq)
-{
+double ModelMixture::computeTrans(double time, int state1, int state2, int model_id) {
+    ASSERT(model_id > -1); // no default
+    return at(model_id)->computeTrans(time, state1, state2);
+}
+
+double ModelMixture::computeTrans(double time, int state1, int state2,
+                                  double &derv1, double &derv2, int model_id) {
+    ASSERT(model_id > -1); // no default
+    return at(model_id)->computeTrans(time, state1, state2, derv1, derv2);
+}
+
+void ModelMixture::getRateMatrix(double *rate_mat, int model_id) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->getRateMatrix(rate_mat);
+}
+
+void ModelMixture::setRateMatrix(double *rate_mat) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelMixture::getQMatrix(double *q_mat, int model_id) {
+    ASSERT(model_id > -1); // no default
+    at(model_id)->getQMatrix(q_mat);
+}
+
+void ModelMixture::setQMatrix(double *q_mat, double *freq_vec) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelMixture::getStateFrequency(double *freq_vec, int model_id) {
+    ASSERT(model_id >= -1);
+    if (model_id >= 0) {
+        at(model_id)->getStateFrequency(freq_vec);
+        return;
+    }
+    // default: return the weighted sum of state_freq across classes
+    bool fused = isFused();
+    double state_freq_class[num_states];
+    std::fill_n(freq_vec, num_states, 0.0);
+    for (size_t m = 0; m < getNMixtures(); ++m) {
+        at(m)->getStateFrequency(state_freq_class);
+        double weight = getMixtureWeight(m);
+        if (fused) {
+            // fused model, take the weight from site_rate
+            weight = phylo_tree->getRate()->getProp(m) / (1.0 - phylo_tree->getRate()->getPInvar());
+        }
+        for (int x = 0; x < num_states; ++x) {
+            freq_vec[x] += weight * state_freq_class[x];
+        }
+    }
+}
+
+void ModelMixture::setStateFrequency(double *freq_vec) {
+    ASSERT(false); // call for each submodel separately!
+}
+
+void ModelMixture::adaptStateFrequency(double *freq_vec) {
     ASSERT(state_freq);
     for (iterator it = begin(); it != end(); it++) {
         if ((*it)->freq_type == FREQ_ESTIMATE || (*it)->freq_type == FREQ_EMPIRICAL)
-            (*it)->adaptStateFrequency(freq);
+            (*it)->adaptStateFrequency(freq_vec);
     }
 }
 

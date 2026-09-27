@@ -178,106 +178,94 @@ public:
         return 0;
     }
 
-	/**
-	 * get the size of transition matrix, default is num_states*num_states.
-	 * can be changed for e.g. site-specific model
-	 */
-	virtual int getTransMatrixSize() { return num_states * num_states; }
-
-	/**
-		compute the transition probability matrix. One should override this function when defining new model.
-		The default is the Juke-Cantor model, valid for all kind of data (DNA, AA, Codon, etc)
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-        @param selected_row (optional) only compute the entries of one selected row. By default, compute all rows
-		@param trans_matrix (OUT) the transition matrix between all pairs of states. 
-			Assume trans_matrix has size of num_states * num_states.
-	*/
-	virtual void computeTransMatrix(double time, double *trans_matrix, int mixture = 0, int selected_row = -1);
-
-	/**
-		compute the transition probability between two states. 
-		One should override this function when defining new model.
-		The default is the Juke-Cantor model, valid for all kind of data (DNA, AA, Codon, etc)
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-	*/
-	virtual double computeTrans(double time, int state1, int state2);
-
-	/**
-		compute the transition probability between two states at a specific model ID, useful for partition model 
-		One should override this function when defining new model.
-		The default is the Juke-Cantor model, valid for all kind of data (DNA, AA, Codon, etc)
-		@param time time between two events
-		@param model_id model ID
-		@param state1 first state
-		@param state2 second state
-	*/
-	virtual double computeTrans(double time, int model_id, int state1, int state2);
-
-	/**
-		compute the transition probability and its 1st and 2nd derivatives between two states. 
-		One should override this function when defining new model.
-		The default is the Juke-Cantor model, valid for all kind of data (DNA, AA, Codon, etc)
-		@param time time between two events
-		@param state1 first state
-		@param state2 second state
-		@param derv1 (OUT) 1st derivative
-		@param derv2 (OUT) 2nd derivative
-	*/
-	virtual double computeTrans(double time, int state1, int state2, double &derv1, double &derv2);
-
-	/**
-		compute the transition probability and its 1st and 2nd derivatives between two states at a specific model ID
-		One should override this function when defining new model.
-		The default is the Juke-Cantor model, valid for all kind of data (DNA, AA, Codon, etc)
-		@param time time between two events
-		@param model_id model ID
-		@param state1 first state
-		@param state2 second state
-		@param derv1 (OUT) 1st derivative
-		@param derv2 (OUT) 2nd derivative
-	*/
-	virtual double computeTrans(double time, int model_id, int state1, int state2, double &derv1, double &derv2);
-
-	/**
-	 * @return pattern ID to model ID map, useful for e.g., partition model
-	 * @param ptn pattern ID of the alignment
-	 */
-	virtual int getPtnModelID(int ptn) { return 0; }
-	
-
-	/**
-	 * Get the rate parameters like a,b,c,d,e,f for DNA model!!!
-		Get the above-diagonal entries of the rate matrix, assuming that the last element is 1.
-		ONE SHOULD OVERRIDE THIS FUNCTION WHEN DEFINING NEW MODEL!!!
-		The default is equal rate of 1 (JC Model), valid for all kind of data.
-		@param rate_mat (OUT) upper-triangle rate matrix. Assume rate_mat has size of num_states*(num_states-1)/2
-	*/
-	
-	virtual void getRateMatrix(double *rate_mat);
-
-	/**
-		Get the rate matrix Q. One should override this function when defining new model.
-		The default is equal rate of 1 (JC Model), valid for all kind of data.
-		@param rate_mat (OUT) upper-triagle rate matrix. Assume rate_mat has size of num_states*(num_states-1)/2
-	*/
-	virtual void getQMatrix(double *q_mat, int mixture = 0);
-
-	/**
-		compute the state frequency vector. One should override this function when defining new model.
-		The default is equal state sequency, valid for all kind of data.
-        @param mixture (optional) class for mixture model
-		@param[out] state_freq state frequency vector. Assume state_freq has size of num_states
-	*/
-	virtual void getStateFrequency(double *state_freq, int mixture = 0);
+    /**
+     *  Map alignment patterns to submodels (for site-specific models)
+     *  @param ptn ID of an alignment pattern
+     *  @return ID of the corresponding model
+     */
+    virtual int getPtnModelID(size_t ptn) const { return -1; }
 
     /**
-     set the state frequency vector.
-     @param state_freq state frequency vector. Assume state_freq has size of num_states
+     *  Compute the transition probability matrix on a branch.
+     *  The default is the JC model, valid for all kinds of data
+     *  @param time The branch length
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     *  @param selected_row Only compute the entries for the selected row,
+     *                      the default is to compute entries for all rows
+     *  @param[out] trans_matrix The transition matrix between all pairs of states,
+     *                           assumed to have the size of num_states*num_states
      */
-    virtual void setStateFrequency(double *state_freq);
+    virtual void computeTransMatrix(double time, double *trans_matrix, int model_id = -1, int selected_row = -1);
+
+    /**
+     *  The same as computeTransMatrix() above, but also computes the
+     *  1st and 2nd derivative matrices with respect to the branch length
+     *  @param[out] trans_matrix The transition matrix between all pairs of states,
+     *                           assumed to have the size of num_states*num_states
+     *  @param[out] trans_derv1 The 1st derivative matrix between all pairs of states
+     *  @param[out] trans_derv2 The 2nd derivative matrix between all pairs of states
+     */
+    virtual void computeTransDerv(double time, double *trans_matrix,
+                                  double *trans_derv1, double *trans_derv2, int model_id = -1);
+
+    /**
+     *  Compute the transition probability between the two states on a branch.
+     *  The default is the JC model, valid for all kinds of data
+     *  @param time The branch length between the two states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     *  @param state1 The start state
+     *  @param state2 The end state
+     *  @param[out] derv1 The 1st derivative
+     *  @param[out] derv2 The 2nd derivative
+     *  @return The transition probability
+     */
+    virtual double computeTrans(double time, int state1, int state2, int model_id = -1);
+
+    /**
+     *  The same as computeTrans() above, but also computes the
+     *  1st and 2nd derivatives with respect to the branch length
+     *  @param[out] derv1 The 1st derivative
+     *  @param[out] derv2 The 2nd derivative
+     *  @return The transition probability
+     */
+    virtual double computeTrans(double time, int state1, int state2,
+                                double &derv1, double &derv2, int model_id = -1);
+
+    /**
+     *  Get the rate parameters, such as a,b,c,d,e,f for a DNA model.
+     *  Get the above-diagonal entries of the rate matrix, assuming that
+     *  the last element is 1.
+     *  The default is equal rates of 1 (JC Model), valid for all kinds of data
+     *  @param[out] rate_mat An upper-triangle rate matrix, assumed to have the
+     *                       size of num_states*(num_states-1)/2
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getRateMatrix(double *rate_mat, int model_id = -1);
+
+    /**
+     *  Get the instantaneous rate matrix Q.
+     *  The default is derived from equal rates and equal state frequencies
+     *  @param[out] q_mat A full matrix: qij >= 0, qii = -sum_j qij (j != i),
+     *                    assumed to have the size of num_states*num_states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getQMatrix(double *q_mat, int model_id = -1);
+
+    /**
+     *  Get the state frequency vector.
+     *  The default is equal state frequencies, valid for all kinds of data
+     *  @param[out] freq_vec A state frequency vector, assumed to have the
+     *                       size of num_states
+     *  @param model_id ID of a submodel (for mixture and site-specific models)
+     */
+    virtual void getStateFrequency(double *freq_vec, int model_id = -1);
+
+    /**
+     *  Set the state frequency vector
+     *  @param freq_vec A state frequency vector, assumed to have the
+     *                  size of num_states
+     */
+    virtual void setStateFrequency(double *freq_vec) {}
 
 	/**
 		get frequency type
@@ -290,38 +278,19 @@ public:
         @param tree the associated tree
     */
     virtual void setTree(PhyloTree *tree) {}
-    
-    /** for reversible models, multiply likelihood with inverse eigenvectors for fast pruning algorithm
-            @param[in/out] state_lk state likelihood multiplied with inverse eigenvectors
+
+    /**
+     *  For reversible models, multiply the partial likelihood vector with
+     *  the matrix of inverse eigenvectors for the fast pruning algorithm
+     *  @param[in/out] state_lh The partial likelihood vector
      */
-    void multiplyWithInvEigenvector(double *state_lk);
+    virtual void multiplyWithInvEigenvector(double *state_lh) {}
 
     /** compute the tip likelihood vector of a state for Felsenstein's pruning algorithm
      @param state character state
      @param[out] state_lk state likehood vector of size num_states
      */
     virtual void computeTipLikelihood(PML::StateType state, double *state_lk);
-    
-	/**
-		allocate memory for a transition matrix. One should override this function when defining new model
-		such as Gamma model. The default is to allocate a double vector of size num_states * num_states. This
-		is equivalent to the memory needed by a square matrix.
-		@return the pointer to the newly allocated transition matrix
-	*/
-	virtual double *newTransMatrix();
-
-
-	/**
-		compute the transition probability matrix.and the derivative 1 and 2
-		@param time time between two events
-        @param mixture (optional) class for mixture model
-		@param trans_matrix (OUT) the transition matrix between all pairs of states.
-			Assume trans_matrix has size of num_states * num_states.
-		@param trans_derv1 (OUT) the 1st derivative matrix between all pairs of states. 
-		@param trans_derv2 (OUT) the 2nd derivative matrix between all pairs of states. 
-	*/
-	virtual void computeTransDerv(double time, double *trans_matrix, 
-		double *trans_derv1, double *trans_derv2, int mixture = 0);
 
 	/**
 		decompose the rate matrix into eigenvalues and eigenvectors
