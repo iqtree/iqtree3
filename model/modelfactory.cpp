@@ -804,12 +804,13 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     // e.g. +Gs (default #categories), +G8s, +G4s{0.5} and the fused variant *G4s.
     // The 's' comes after the optional number of categories; strip it here so that
     // #categories and the shape parameter are parsed by the regular +G code below.
-    bool unequal_gamma = false;
+    bool explicit_unequal_gamma = false;
     string::size_type posGS = posRateGammaUnequal(rate_str);
     if (posGS != string::npos) {
-        unequal_gamma = true;
+        explicit_unequal_gamma = true;
         rate_str = rate_str.substr(0, posGS) + rate_str.substr(posGS+1);
     }
+    bool unequal_gamma = explicit_unequal_gamma;
 
     string::size_type posI = rate_str.find("+I");
     string::size_type posG = rate_str.find("+G");
@@ -855,6 +856,11 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             fused_mix_rate = true;
         }
     }
+
+    // --gamma-unequal: interpret a plain +G (or *G) as the unequal-weight +G{n}s.
+    // Continuous Gamma (+GC) is left alone.
+    if (params.gamma_unequal && !is_continuous_gamma)
+        unequal_gamma = true;
 
     string::size_type posR = rate_str.find("+R"); // FreeRate model
     string::size_type posR2 = rate_str.find("*R"); // FreeRate model
@@ -992,7 +998,9 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             site_rate = new RateHeterotachy(num_rate_cats, heterotachy_params, tree);
         } else if (posI != string::npos && posG != string::npos) {
             if (unequal_gamma)
-                outError("Unequal-weight Gamma model (+G{n}s) does not yet support invariable sites (+I)");
+                outError(explicit_unequal_gamma ?
+                    "Unequal-weight Gamma model (+G{n}s) does not yet support invariable sites (+I)" :
+                    "Option --gamma-unequal does not yet support invariable sites (+I)");
             site_rate = new RateGammaInvar(num_rate_cats, gamma_shape, params.gamma_median,
                     p_invar_sites, params.optimize_alg_gammai, tree, false);
         } else if (posI != string::npos && posR != string::npos) {

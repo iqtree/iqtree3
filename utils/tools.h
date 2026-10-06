@@ -1791,6 +1791,11 @@ public:
     bool gamma_median;
 
     /**
+            TRUE to interpret +G as the unequal-weight (Lloyd-Max) Gamma model +G{n}s
+     */
+    bool gamma_unequal;
+
+    /**
             proportion of invariable sites
      */
     double p_invar_sites;
