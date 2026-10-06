@@ -86,6 +86,27 @@ string::size_type posPOMO(string &model_name) {
     return findSubStr(model_name, "+P", "*P");
 }
 
+/**
+    find the 's' suffix marking an unequal-weight (Lloyd-Max) Gamma model,
+    i.e. +G<K>s or *G<K>s with an optional number of categories: +Gs, +G8s,
+    +G4s{0.5}, *G4s. NOTE: the suffix is lower-case; +GC (continuous Gamma)
+    is not matched.
+    @return position of the 's', or string::npos if not an unequal-weight Gamma
+*/
+string::size_type posRateGammaUnequal(string &model_name) {
+    for (string::size_type posG = model_name.find('G'); posG != string::npos;
+         posG = model_name.find('G', posG+1)) {
+        if (posG == 0 || (model_name[posG-1] != '+' && model_name[posG-1] != '*'))
+            continue;
+        string::size_type pos = posG+1;
+        while (pos < model_name.length() && isdigit(model_name[pos]))
+            pos++;
+        if (pos < model_name.length() && model_name[pos] == 's')
+            return pos;
+    }
+    return string::npos;
+}
+
 ModelsBlock *readModelsDefinition(Params &params) {
 
     ModelsBlock *models_block = new ModelsBlock;
@@ -366,8 +387,8 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             outError("PoMo does not yet support frequency mixture models (+FMIX).");
         if (posRateHeterotachy(rate_str) != string::npos)
             outError("PoMo does not yet support heterotachy models (+H).");
-        if (rate_str.find("+GU") != string::npos)
-            outError("PoMo does not yet support unequal-weight Gamma models (+GU).");
+        if (posRateGammaUnequal(rate_str) != string::npos)
+            outError("PoMo does not yet support unequal-weight Gamma models (+G{n}s).");
     }
 
     // PoMo. The +P{}, +GXX and +I flags are interpreted during model creation.
@@ -779,16 +800,15 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
 
     /******************** initialize site rate heterogeneity ****************************/
 
-    // +GU: discrete Gamma with unequal category weights (Lloyd-Max discretisation).
-    // Strip the 'U' here so that the number of categories and the shape parameter
-    // are parsed by the regular +G code below.
+    // +G<K>s: discrete Gamma with unequal category weights (Lloyd-Max discretisation),
+    // e.g. +Gs (default #categories), +G8s, +G4s{0.5} and the fused variant *G4s.
+    // The 's' comes after the optional number of categories; strip it here so that
+    // #categories and the shape parameter are parsed by the regular +G code below.
     bool unequal_gamma = false;
-    string::size_type posGU = rate_str.find("+GU");
-    if (posGU == string::npos)
-        posGU = rate_str.find("*GU"); // fused mixture-rate variant
-    if (posGU != string::npos) {
+    string::size_type posGS = posRateGammaUnequal(rate_str);
+    if (posGS != string::npos) {
         unequal_gamma = true;
-        rate_str = rate_str.substr(0, posGU+2) + rate_str.substr(posGU+3);
+        rate_str = rate_str.substr(0, posGS) + rate_str.substr(posGS+1);
     }
 
     string::size_type posI = rate_str.find("+I");
@@ -972,7 +992,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             site_rate = new RateHeterotachy(num_rate_cats, heterotachy_params, tree);
         } else if (posI != string::npos && posG != string::npos) {
             if (unequal_gamma)
-                outError("Unequal-weight Gamma model (+GU) does not yet support invariable sites (+I)");
+                outError("Unequal-weight Gamma model (+G{n}s) does not yet support invariable sites (+I)");
             site_rate = new RateGammaInvar(num_rate_cats, gamma_shape, params.gamma_median,
                     p_invar_sites, params.optimize_alg_gammai, tree, false);
         } else if (posI != string::npos && posR != string::npos) {

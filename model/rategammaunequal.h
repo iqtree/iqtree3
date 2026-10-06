@@ -103,7 +103,7 @@ public:
     virtual int isGammaRate() { return GAMMA_CUT_LLOYD; }
 
     /**
-        @return model name with parameters, e.g. +GU4{0.5}
+        @return model name with parameters, e.g. +G4s{0.5}
     */
     virtual string getNameParams();
 

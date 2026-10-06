@@ -64,14 +64,14 @@ void RateGammaUnequal::setNCategory(int ncat) {
         rates[cat] = 1.0;
         prop[cat]  = 1.0 / ncategory;
     }
-    name = "+GU" + convertIntToString(ncategory);
+    name = "+G" + convertIntToString(ncategory) + "s";
     full_name = "Gamma with " + convertIntToString(ncategory) + " unequally weighted categories";
     computeRates();
 }
 
 string RateGammaUnequal::getNameParams() {
     ostringstream str;
-    str << "+GU" << ncategory << '{' << gamma_shape << '}';
+    str << "+G" << ncategory << "s{" << gamma_shape << '}';
     return str.str();
 }
 
