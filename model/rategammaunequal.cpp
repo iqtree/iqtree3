@@ -65,7 +65,7 @@ void RateGammaUnequal::setNCategory(int ncat) {
         prop[cat]  = 1.0 / ncategory;
     }
     name = "+G" + convertIntToString(ncategory) + "s";
-    full_name = "Gamma with " + convertIntToString(ncategory) + " unequally weighted categories";
+    full_name = "DGM-star with " + convertIntToString(ncategory) + " unequally weighted categories";
     computeRates();
 }
 

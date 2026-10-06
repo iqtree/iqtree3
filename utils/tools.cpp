@@ -3303,8 +3303,8 @@ void parseArg(int argc, char *argv[], Params &params) {
 				params.gamma_median = true;
 				continue;
 			}
-			if (strcmp(argv[cnt], "--gamma-unequal") == 0) {
-				params.gamma_unequal = true;
+			if (strcmp(argv[cnt], "--gamma-star") == 0) {
+				params.gamma_star = true;
 				continue;
 			}
 			if (strcmp(argv[cnt], "-i") == 0) {
@@ -7278,7 +7278,7 @@ void Params::setDefault() {
     gamma_shape = -1.0;
     min_gamma_shape = MIN_GAMMA_SHAPE;
     gamma_median = false;
-    gamma_unequal = false;
+    gamma_star = false;
     p_invar_sites = -1.0;
     optimize_model_rate_joint = false;
     optimize_by_newton = true;

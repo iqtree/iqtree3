@@ -1791,9 +1791,10 @@ public:
     bool gamma_median;
 
     /**
-            TRUE to interpret +G as the unequal-weight (Lloyd-Max) Gamma model +G{n}s
+            TRUE to interpret +G as the DGM-star model +G[n]s (Discrete Gamma
+            Model-star: Lloyd-Max discretisation with unequal category weights)
      */
-    bool gamma_unequal;
+    bool gamma_star;
 
     /**
             proportion of invariable sites

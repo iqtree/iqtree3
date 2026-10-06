@@ -847,9 +847,9 @@ void reportRate(ostream &out, PhyloTree &tree) {
                 out << endl;
             }
         if (rate_model->isGammaRate() == GAMMA_CUT_LLOYD) {
-            out << "The Gamma distribution is discretized by Lloyd-Max quantization, so that the categories"
-                << endl << "have unequal proportions. Relative rates are computed as MEAN of the portion of the"
-                << endl << "Gamma distribution falling in the category." << endl;
+            out << "DGM-star model: the Gamma distribution is discretized by Lloyd-Max quantization,"
+                << endl << "so that the categories have unequal proportions. Relative rates are computed as"
+                << endl << "MEAN of the portion of the Gamma distribution falling in the category." << endl;
         } else if (rate_model->isGammaRate()) {
             out << "Relative rates are computed as " << ((rate_model->isGammaRate() == GAMMA_CUT_MEDIAN) ? "MEDIAN" : "MEAN") <<
                 " of the portion of the Gamma distribution falling in the category." << endl;
