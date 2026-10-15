@@ -1657,8 +1657,9 @@ void PhyloSuperTreePlen::initializeAllPartialLh() {
 	for (partid = 0; partid < ntrees; partid++) {
 		part = part_order[partid];
         it = begin() + part;
-        // extra #numStates for ascertainment bias correction
-		mem_size[part] = get_safe_upper_limit((*it)->getAlnNPattern()) + get_safe_upper_limit((*it)->aln->num_states);
+        // extra entries for ascertainment bias correction, as in PhyloTree::initializeAllPartialLh()
+		mem_size[part] = get_safe_upper_limit((*it)->getAlnNPattern()) + max(get_safe_upper_limit((*it)->aln->num_states),
+                get_safe_upper_limit((*it)->model_factory->unobserved_ptns.size()));
         size_t mem_cat_size = mem_size[part] * (*it)->getRate()->getNRate() *
 				(((*it)->model_factory->fused_mix_rate)? 1 : (*it)->getModel()->getNMixtures());
 
