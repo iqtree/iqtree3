@@ -368,7 +368,6 @@ bool  ModelCheckpoint::getBestTree(string &best_tree) {
 }
 
 bool ModelCheckpoint::getOrderedModels(PhyloTree *tree, CandidateModelSet &ordered_models) {
-    double best_score_AIC, best_score_AICc, best_score_BIC;
     if (tree->isSuperTree()) {
         PhyloSuperTree *stree = (PhyloSuperTree*)tree;
         ordered_models.clear();
@@ -378,44 +377,62 @@ bool ModelCheckpoint::getOrderedModels(PhyloTree *tree, CandidateModelSet &order
             if (!getBestModel(info.subst_name)) return false;
             info.restoreCheckpoint(this);
             info.computeICScores(stree->at(part)->getAlnNSite());
+            // weights of the best model among the candidates of this partition
+            CandidateModelSet part_models;
+            if (getWeightedModels(stree->at(part)->getAlnNSite(), part_models)) {
+                for (auto &m : part_models)
+                    if (m.getName() == info.getName()) {
+                        info.AIC_weight = m.AIC_weight;
+                        info.AICc_weight = m.AICc_weight;
+                        info.BIC_weight = m.BIC_weight;
+                        info.AIC_conf = m.AIC_conf;
+                        info.AICc_conf = m.AICc_conf;
+                        info.BIC_conf = m.BIC_conf;
+                        break;
+                    }
+            }
             endStruct();
             ordered_models.push_back(info);
         }
         return true;
-    } else {
-        CKP_RESTORE2(this, best_score_AIC);
-        CKP_RESTORE2(this, best_score_AICc);
-        CKP_RESTORE2(this, best_score_BIC);
-        double sum_AIC = 0, sum_AICc = 0, sum_BIC = 0;
-        string str;
-        bool ret = getBestModelList(str);
-        if (!ret) return false;
-        istringstream istr(str);
-        string model;
-        ordered_models.clear();
-        while (istr >> model) {
-            CandidateModel info;
-            info.subst_name = model;
-            info.restoreCheckpoint(this);
-            info.computeICScores(tree->getAlnNSite());
-            sum_AIC  += info.AIC_weight = exp(-0.5*(info.AIC_score-best_score_AIC));
-            sum_AICc += info.AICc_weight = exp(-0.5*(info.AICc_score-best_score_AICc));
-            sum_BIC  += info.BIC_weight = exp(-0.5*(info.BIC_score-best_score_BIC));
-            ordered_models.push_back(info);
-        }
-        sum_AIC = 1.0/sum_AIC;
-        sum_AICc = 1.0/sum_AICc;
-        sum_BIC = 1.0/sum_BIC;
-        for (auto it = ordered_models.begin(); it != ordered_models.end(); it++) {
-            it->AIC_weight *= sum_AIC;
-            it->AICc_weight *= sum_AICc;
-            it->BIC_weight *= sum_BIC;
-            it->AIC_conf = it->AIC_weight > 0.05;
-            it->AICc_conf = it->AICc_weight > 0.05;
-            it->BIC_conf = it->BIC_weight > 0.05;
-        }
-        return true;
     }
+    return getWeightedModels(tree->getAlnNSite(), ordered_models);
+}
+
+bool ModelCheckpoint::getWeightedModels(size_t sample_size, CandidateModelSet &ordered_models) {
+    double best_score_AIC, best_score_AICc, best_score_BIC;
+    CKP_RESTORE2(this, best_score_AIC);
+    CKP_RESTORE2(this, best_score_AICc);
+    CKP_RESTORE2(this, best_score_BIC);
+    double sum_AIC = 0, sum_AICc = 0, sum_BIC = 0;
+    string str;
+    bool ret = getBestModelList(str);
+    if (!ret) return false;
+    istringstream istr(str);
+    string model;
+    ordered_models.clear();
+    while (istr >> model) {
+        CandidateModel info;
+        info.subst_name = model;
+        info.restoreCheckpoint(this);
+        info.computeICScores(sample_size);
+        sum_AIC  += info.AIC_weight = exp(-0.5*(info.AIC_score-best_score_AIC));
+        sum_AICc += info.AICc_weight = exp(-0.5*(info.AICc_score-best_score_AICc));
+        sum_BIC  += info.BIC_weight = exp(-0.5*(info.BIC_score-best_score_BIC));
+        ordered_models.push_back(info);
+    }
+    sum_AIC = 1.0/sum_AIC;
+    sum_AICc = 1.0/sum_AICc;
+    sum_BIC = 1.0/sum_BIC;
+    for (auto it = ordered_models.begin(); it != ordered_models.end(); it++) {
+        it->AIC_weight *= sum_AIC;
+        it->AICc_weight *= sum_AICc;
+        it->BIC_weight *= sum_BIC;
+        it->AIC_conf = it->AIC_weight > 0.05;
+        it->AICc_conf = it->AICc_weight > 0.05;
+        it->BIC_conf = it->BIC_weight > 0.05;
+    }
+    return true;
 }
 
 /**

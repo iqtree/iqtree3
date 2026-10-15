@@ -51,6 +51,8 @@ public:
         AIC_score = DBL_MAX;
         AICc_score = DBL_MAX;
         BIC_score = DBL_MAX;
+        AIC_weight = AICc_weight = BIC_weight = 0.0;
+        AIC_conf = AICc_conf = BIC_conf = false;
         this->flag = flag;
         syncChkPoint = nullptr;
         //init_first_mix = false;
@@ -374,6 +376,14 @@ public:
         @return TRUE if ordered_models found, FALSE otherwise (unfinished job)
     */
     bool getOrderedModels(PhyloTree *tree, CandidateModelSet &ordered_models);
+
+    /*
+        get the models of the current struct ordered by score, with information criterion weights
+        @param sample_size sample size for the information criteria
+        @param[out] ordered_models list of models ordered by specified criterion
+        @return TRUE if ordered_models found, FALSE otherwise (unfinished job)
+    */
+    bool getWeightedModels(size_t sample_size, CandidateModelSet &ordered_models);
 
     /*
         get the best tree
