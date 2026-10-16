@@ -921,8 +921,8 @@ void PhyloTree::initializeAllPartialLh() {
         gradient_vector = aligned_alloc<double>(branchNum);
     if(!hessian_diagonal)
         hessian_diagonal = aligned_alloc<double>(branchNum);
-    //todo: please check here for memory allocation
-    if(!G_matrix) {
+    // only the MCMCTree Hessian output reads G_matrix
+    if(!G_matrix && params->dating_method == "mcmctree") {
         size_t g_matrix_size = branchNum * mem_size;
         G_matrix = aligned_alloc<double>(g_matrix_size);
     }
