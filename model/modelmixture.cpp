@@ -4150,6 +4150,8 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
     tree->central_partial_lh = phylo_tree->central_partial_lh;
     tree->central_scale_num = phylo_tree->central_scale_num;
     tree->central_partial_pars = phylo_tree->central_partial_pars;
+    // same number of slots as the borrowed memory
+    tree->mem_save_fraction = phylo_tree->mem_save_fraction;
 
     tree->copyPhyloTree(phylo_tree, true);
     tree->optimize_by_newton = phylo_tree->optimize_by_newton;

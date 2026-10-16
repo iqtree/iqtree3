@@ -3619,7 +3619,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 
         uint64_t mem_required = iqtree->getMemoryRequired();
 
-        if (mem_required >= total_mem*0.95 && !iqtree->isSuperTree()) {
+        if (mem_required >= total_mem*0.95) {
             // switch to memory saving mode
             if (params.lh_mem_save != LM_MEM_SAVE) {
                 params.max_mem_size = (total_mem*0.95)/mem_required;
