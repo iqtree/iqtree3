@@ -2393,6 +2393,13 @@ int main(int argc, char *argv[]) {
         instruction_set = LK_AVX_FMA;
 
     Params::getInstance().SSE = min(Params::getInstance().SSE, (LikelihoodKernel)instruction_set);
+#if INSTRSET >= 2
+    // the non-vectorized kernel is only built for CPUs without SSE2
+    if (Params::getInstance().SSE < LK_SSE2) {
+        outWarning("x86 likelihood kernel is not available in this build, using SSE2");
+        Params::getInstance().SSE = LK_SSE2;
+    }
+#endif
 
     cout << "Kernel:  ";
 
@@ -3547,6 +3554,13 @@ char* build_phylogenetic(StringArray& cnames, StringArray& cseqs, const char* cm
         instruction_set = LK_AVX_FMA;
 
     Params::getInstance().SSE = min(Params::getInstance().SSE, (LikelihoodKernel)instruction_set);
+#if INSTRSET >= 2
+    // the non-vectorized kernel is only built for CPUs without SSE2
+    if (Params::getInstance().SSE < LK_SSE2) {
+        outWarning("x86 likelihood kernel is not available in this build, using SSE2");
+        Params::getInstance().SSE = LK_SSE2;
+    }
+#endif
 
     cout << "Kernel:  ";
 
