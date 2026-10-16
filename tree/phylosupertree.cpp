@@ -614,6 +614,8 @@ void PhyloSuperTree::linkTrees() {
 }
 
 void PhyloSuperTree::initializeAllPartialLh() {
+    if (params->lh_mem_save == LM_MEM_SAVE)
+        getMemoryRequired(); // sets the slots of each partition
 	for (iterator it = begin(); it != end(); it++) {
 		(*it)->initializeAllPartialLh();
 	}
@@ -1225,6 +1227,18 @@ PhyloTree *PhyloSuperTree::extractSubtree(set<int> &ids) {
 
 uint64_t PhyloSuperTree::getMemoryRequired(size_t ncategory, bool full_mem) {
 //	uint64_t mem_size = PhyloTree::getMemoryRequired(ncategory);
+    if (!full_mem && params->lh_mem_save == LM_MEM_SAVE) {
+        // partitions share one -mem budget: give each the same fraction of its slots
+        double fraction = params->max_mem_size;
+        if (fraction > 1.0) {
+            uint64_t full_size = 0;
+            for (iterator it = begin(); it != end(); it++)
+                full_size += (*it)->getMemoryRequired(ncategory, true);
+            fraction = min(1.0, fraction / full_size);
+        }
+        for (iterator it = begin(); it != end(); it++)
+            (*it)->mem_save_fraction = fraction;
+    }
 	// supertree does not need any memory for likelihood vectors!
 	uint64_t mem_size = 0;
 	for (iterator it = begin(); it != end(); it++)

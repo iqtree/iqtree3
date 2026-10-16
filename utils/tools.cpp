@@ -5560,9 +5560,6 @@ void parseArg(int argc, char *argv[], Params &params) {
     if (params.do_au_test && params.topotest_replicates == 0)
         outError("For AU test please specify number of bootstrap replicates via -zb option");
     
-    if (params.lh_mem_save == LM_MEM_SAVE && params.partition_file)
-        outError("-mem option does not work with partition models yet");
-    
     if (params.gbo_replicates && params.num_bootstrap_samples)
         outError("UFBoot (-bb) and standard bootstrap (-b) must not be specified together");
     
