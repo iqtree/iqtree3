@@ -926,7 +926,7 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED) {
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.skip_marginal_lh) {
         // compute mAIC/mBIC/mAICc if it is a partition model
         double mar_lh = tree.getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
@@ -4009,7 +4009,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     // Pre-compute the marginal log-likelihood (mAIC) here, before the total runtime is
     // reported, so its cost is included in the reported time. reportTree then just loads
     // and prints the cached value like AIC/BIC.
-    if (iqtree->isSuperTree() && params.partition_type != TOPO_UNLINKED)
+    if (iqtree->isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.skip_marginal_lh)
         iqtree->getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
     printFinalSearchInfo(params, *iqtree, search_cpu_time, search_real_time);
