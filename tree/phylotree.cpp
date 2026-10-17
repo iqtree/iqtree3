@@ -3324,6 +3324,10 @@ void PhyloTree::prepareToComputeDistances() {
     for (threads -= distanceProcessors.size(); 0 < threads; --threads) {
         distanceProcessors.emplace_back(new AlignmentPairwise(this));
     }
+    prepareDistanceSummary();
+}
+
+void PhyloTree::prepareDistanceSummary() {
     if (summary!=nullptr && !isSummaryBorrowed) {
         delete summary;
         summary = nullptr;

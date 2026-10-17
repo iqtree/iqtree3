@@ -406,6 +406,19 @@ void PhyloSuperTree::prepareToComputeDistances() {
     for (threads -= distanceProcessors.size(); 0 < threads; --threads) {
         distanceProcessors.push_back(newDistanceProcessor());
     }
+    // partition trees use their own alignment summaries, only needed to optimize the distances
+    if (model_factory && site_rate) {
+        for (iterator it = begin(); it != end(); it++) {
+            (*it)->prepareDistanceSummary();
+        }
+    }
+}
+
+void PhyloSuperTree::doneComputingDistances() {
+    PhyloTree::doneComputingDistances();
+    for (iterator it = begin(); it != end(); it++) {
+        (*it)->doneComputingDistances();
+    }
 }
 
 AlignmentPairwise *PhyloSuperTree::newDistanceProcessor() {

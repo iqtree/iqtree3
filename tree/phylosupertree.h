@@ -221,6 +221,11 @@ public:
     virtual void prepareToComputeDistances() override;
 
     /**
+            also free the alignment summaries of the partition trees
+     */
+    virtual void doneComputingDistances() override;
+
+    /**
             @return a new distance processor
      */
     virtual AlignmentPairwise *newDistanceProcessor();
