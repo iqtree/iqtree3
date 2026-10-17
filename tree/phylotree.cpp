@@ -3755,7 +3755,8 @@ double PhyloTree::computeDist(Params &params, Alignment *alignment, double* &dis
     }
     if (!params.dist_file) {
         double begin_time = getRealTime();
-        longest_dist = (params.experimental)
+        // the experimental distance does not work for super alignments
+        longest_dist = (params.experimental && !alignment->isSuperAlignment())
             ? computeDist_Experimental(dist_mat, var_mat)
             : computeDist(dist_mat, var_mat);
         if (verbose_mode >= VB_MED) {

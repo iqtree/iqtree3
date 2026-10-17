@@ -19,24 +19,29 @@ SuperAlignmentPairwisePlen::SuperAlignmentPairwisePlen(PhyloSuperTreePlen *atree
     part_info = &(atree->part_info);
 }
 
+SuperAlignmentPairwisePlen::SuperAlignmentPairwisePlen(PhyloSuperTreePlen *atree)
+: SuperAlignmentPairwise((PhyloSuperTree*) atree)
+{
+    part_info = &(atree->part_info);
+}
+
 double SuperAlignmentPairwisePlen::computeFunction(double value) {
-    int part = 0;
     double lh = 0.0;
-    for (auto it = partitions.begin(); it != partitions.end(); it++, part++) {
-        lh += it->computeFunction(part_info->at(part).part_rate*value);
+    for (int part : pair_parts) {
+        lh += partitions[part]->computeFunction(part_info->at(part).part_rate*value);
     }
     return lh;
 }
 
 void SuperAlignmentPairwisePlen::computeFuncDerv(double value, double &df, double &ddf) {
-    int part = 0;
     df = 0.0;
     ddf = 0.0;
-    for (auto it = partitions.begin(); it != partitions.end(); it++, part++) {
+    for (int part : pair_parts) {
         double d1, d2;
-        it->computeFuncDerv(part_info->at(part).part_rate*value, d1, d2);
-        df += part_info->at(part).part_rate*d1;
-        ddf += part_info->at(part).part_rate*part_info->at(part).part_rate*d2;
+        double rate = part_info->at(part).part_rate;
+        partitions[part]->computeFuncDerv(rate*value, d1, d2);
+        df += rate*d1;
+        ddf += rate*rate*d2;
     }
 }
 

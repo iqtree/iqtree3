@@ -31,6 +31,12 @@ public:
      @param seq_id2 ID of the second sequence
      */
     SuperAlignmentPairwisePlen(PhyloSuperTreePlen *atree, int seq1, int seq2);
+
+    /**
+     construct the pairwise alignments of all partitions, sequences are set later
+     @param atree input super tree
+     */
+    SuperAlignmentPairwisePlen(PhyloSuperTreePlen *atree);
     
     ~SuperAlignmentPairwisePlen();
     
