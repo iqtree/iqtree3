@@ -193,6 +193,10 @@ double PhyloSuperTreePlen::computeDist(int seq1, int seq2, double initial_dist, 
     return aln_pair.optimizeDist(initial_dist, var);
 }
 
+AlignmentPairwise *PhyloSuperTreePlen::newDistanceProcessor() {
+    return new SuperAlignmentPairwisePlen(this);
+}
+
 void PhyloSuperTreePlen::mapTrees() {
 	ASSERT(root);
 

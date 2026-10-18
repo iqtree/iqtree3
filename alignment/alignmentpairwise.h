@@ -54,7 +54,7 @@ public:
         @param seq1 ID of the first sequence
         @param seq2 ID of the second sequence
     */
-    void setSequenceNumbers(int seq1, int seq2);
+    virtual void setSequenceNumbers(int seq1, int seq2);
     
     
 	/**

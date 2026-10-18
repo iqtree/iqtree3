@@ -24,27 +24,57 @@ SuperAlignmentPairwise::SuperAlignmentPairwise()
 {
 }
 
-SuperAlignmentPairwise::SuperAlignmentPairwise(PhyloSuperTree *atree, int seq1, int seq2) 
- : AlignmentPairwise() 
+SuperAlignmentPairwise::SuperAlignmentPairwise(PhyloSuperTree *atree)
+ : AlignmentPairwise()
 {
 	tree = atree;
+	partitions.reserve(atree->size());
+	for (auto it = atree->begin(); it != atree->end(); it++) {
+		partitions.push_back(new AlignmentPairwise(*it));
+	}
+}
+
+SuperAlignmentPairwise::SuperAlignmentPairwise(PhyloSuperTree *atree, int seq1, int seq2)
+ : SuperAlignmentPairwise(atree)
+{
+	setSequenceNumbers(seq1, seq2);
+}
+
+void SuperAlignmentPairwise::setSequenceNumbers(int seq1, int seq2) {
+	++pairCount;
 	seq_id1 = seq1;
 	seq_id2 = seq2;
-	SuperAlignment *aln = (SuperAlignment*) atree->aln;
-	int part = 0;
-    partitions.reserve(atree->size());
-	for ( auto it = atree->begin(); it != atree->end(); it++, part++ ) {
+	SuperAlignment *aln = (SuperAlignment*) tree->aln;
+	pair_parts.clear();
+	for (int part = 0; part < partitions.size(); part++) {
 		int id1 = aln->taxa_index[seq1][part];
 		int id2 = aln->taxa_index[seq2][part];
-		if (id1 >= 0 && id2 >= 0)
-		partitions.emplace_back(AlignmentPairwise((*it), id1, id2));
+		if (id1 >= 0 && id2 >= 0) {
+			partitions[part]->setSequenceNumbers(id1, id2);
+			pair_parts.push_back(part);
+		}
 	}
+}
+
+double SuperAlignmentPairwise::recomputeDist(int seq1, int seq2, double initial_dist, double &d2l) {
+	// initial guess of the distance using Jukes-Cantor correction over all partitions
+	if (initial_dist == 0.0) {
+		if (tree->params->compute_obs_dist)
+			return tree->aln->computeObsDist(seq1, seq2);
+		initial_dist = tree->aln->computeDist(seq1, seq2);
+	}
+	if (initial_dist == MAX_GENETIC_DIST) return initial_dist;
+	// if no model or site rate is specified, return JC distance
+	if (!tree->hasModelFactory() || !tree->hasRateHeterogeneity()) return initial_dist;
+	// now optimize the distance based on the model and site rate
+	setSequenceNumbers(seq1, seq2);
+	return optimizeDist(initial_dist, d2l);
 }
 
 double SuperAlignmentPairwise::computeFunction(double value) {
 	double lh = 0.0;
-	for (auto it = partitions.begin(); it != partitions.end(); it++) {
-		lh += it->computeFunction(value);
+	for (int part : pair_parts) {
+		lh += partitions[part]->computeFunction(value);
 	}
 	return lh;
 }
@@ -52,9 +82,9 @@ double SuperAlignmentPairwise::computeFunction(double value) {
 void SuperAlignmentPairwise::computeFuncDerv(double value, double &df, double &ddf) {
 	df = 0.0;
 	ddf = 0.0;
-	for (auto it = partitions.begin(); it != partitions.end(); it++) {
+	for (int part : pair_parts) {
 		double d1, d2;
-		it->computeFuncDerv(value, d1, d2);
+		partitions[part]->computeFuncDerv(value, d1, d2);
 		df += d1;
 		ddf += d2;
 	}
@@ -62,4 +92,6 @@ void SuperAlignmentPairwise::computeFuncDerv(double value, double &df, double &d
 
 SuperAlignmentPairwise::~SuperAlignmentPairwise()
 {
+	for (auto it : partitions)
+		delete it;
 }

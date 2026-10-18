@@ -1699,6 +1699,11 @@ public:
      ****************************************************************************/
 
     virtual void prepareToComputeDistances();
+
+    /**
+            build the alignment summary used by the experimental distance code
+     */
+    void prepareDistanceSummary();
     
     /**
             compute the distance between 2 sequences.
