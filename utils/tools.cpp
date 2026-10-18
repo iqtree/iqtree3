@@ -51,6 +51,7 @@
 #include "gzstream.h"
 #include "MPIHelper.h"
 #include "alignment/alignment.h"
+#include <limits>
 
 VerboseMode verbose_mode;
 extern void printCopyright(ostream &out);
@@ -6243,6 +6244,11 @@ InputType detectInputFile(const char *input_file) {
         do {
             in >> ch;
         } while (ch <= 32 && !in.eof() && count++ < 20);
+        // skip ';' comment lines before the first FASTA record (original Pearson FASTA format)
+        while (ch == ';' && !in.eof()) {
+            in.ignore(numeric_limits<streamsize>::max(), '\n');
+            in >> ch;
+        }
         in >> ch2;
         in.close();
         switch (ch) {
