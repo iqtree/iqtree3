@@ -345,6 +345,7 @@ class PhyloTree : public MTree, public Optimization, public CheckpointFactory {
     friend class PhyloSuperTreePlen;
     friend class RateGamma;
     friend class RateGammaInvar;
+    friend class RateGammaStarInvar;
     friend class RateKategory;
     friend class ModelMixture;
     friend class RateFree;

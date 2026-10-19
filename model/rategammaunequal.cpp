@@ -207,8 +207,16 @@ void RateGammaUnequal::normalize() {
         prop[cat] /= sum_prop;
 
     // sum_i prop[i]*rates[i] is 1 by construction, this only removes the
-    // rounding error accumulated by the iteration
-    rescaleRates();
+    // rounding error accumulated by the iteration.
+    // NOTE: deliberately not rescaleRates()/meanRates() -- those are virtual and a
+    // derived class (RateGammaStarInvar) defines the mean over all sites, invariable
+    // ones included, which must NOT be applied here.
+    double mean_rate = 0.0;
+    for (int cat = 0; cat < ncategory; cat++)
+        mean_rate += prop[cat] * rates[cat];
+    if (mean_rate > 0.0)
+        for (int cat = 0; cat < ncategory; cat++)
+            rates[cat] /= mean_rate;
 }
 
 double RateGammaUnequal::meanRates() {
