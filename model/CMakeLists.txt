@@ -10,7 +10,7 @@ modelsubst.cpp modelsubst.h
 partitionmodel.cpp partitionmodel.h
 partitionmodelplen.cpp partitionmodelplen.h
 rategamma.cpp rategamma.h
-rategammaunequal.cpp rategammaunequal.h
+rategammastar.cpp rategammastar.h
 rategammastarinvar.cpp rategammastarinvar.h
 rategammainvar.cpp rategammainvar.h
 ratecontinuousgamma.cpp ratecontinuousgamma.h

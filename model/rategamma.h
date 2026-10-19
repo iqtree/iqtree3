@@ -24,7 +24,7 @@
 
 const int GAMMA_CUT_MEDIAN = 1; // 2 discrete Gamma approximations (mean or median) of Yang 1994
 const int GAMMA_CUT_MEAN   = 2;
-const int GAMMA_CUT_LLOYD  = 3; // Lloyd-Max quantisation with unequal weights, see RateGammaUnequal
+const int GAMMA_CUT_LLOYD  = 3; // Lloyd-Max quantisation with unequal weights, see RateGammaStar
 
 class PhyloTree;
 /**
@@ -127,7 +127,7 @@ public:
 
 	/** discrete Gamma according to Yang 1994 (JME 39:306-314) and using median cutting point
 		It takes 'ncategory' and 'gamma_shape' variables as input. On output, it write to 'rates' variable.
-        NOTE: virtual so that derived classes (e.g. RateGammaUnequal) can use another
+        NOTE: virtual so that derived classes (e.g. RateGammaStar) can use another
         discretisation, including when called from RateGamma member functions.
 	*/
 	virtual void computeRates();

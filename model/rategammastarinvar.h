@@ -22,7 +22,7 @@
 #define RATEGAMMASTARINVAR_H
 
 #include "rateinvar.h"
-#include "rategammaunequal.h"
+#include "rategammastar.h"
 
 /**
     class for the +I+G[n]s rate heterogeneity, i.e. invariable sites combined
@@ -36,7 +36,7 @@
       - computeRates() rescales the category rates by 1/(1-p_invar) explicitly.
         RateGammaInvar instead pre-fills rates[] with 1/(1-p_invar) and relies
         on RateGamma::computeRates() preserving that scale, which does not work
-        here because RateGammaUnequal::computeRates() normalises to mean rate 1;
+        here because RateGammaStar::computeRates() normalises to mean rate 1;
       - meanRates() is the prop-weighted mean.
 
     Everything else (EM, random restart, empirical Bayes site rates, the BFGS
@@ -45,7 +45,7 @@
 
     @author BUI Quang Minh <m.bui@anu.edu.au>
 */
-class RateGammaStarInvar : public RateInvar, public RateGammaUnequal
+class RateGammaStarInvar : public RateInvar, public RateGammaStar
 {
 public:
     /**
@@ -96,7 +96,7 @@ public:
         @param category category ID from 0 to #category-1
         @return the rate of the specified category
     */
-    virtual double getRate(int category) { return RateGammaUnequal::getRate(category); }
+    virtual double getRate(int category) { return RateGammaStar::getRate(category); }
 
     /**
         Lloyd-Max discretisation, with the rates scaled such that the mean rate
@@ -147,7 +147,7 @@ public:
     /**
         return the number of dimensions
     */
-    virtual int getNDim() { return RateInvar::getNDim() + RateGammaUnequal::getNDim(); }
+    virtual int getNDim() { return RateInvar::getNDim() + RateGammaStar::getNDim(); }
 
     /**
         the target function which needs to be optimized

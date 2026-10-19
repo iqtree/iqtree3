@@ -17,8 +17,8 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-#ifndef RATEGAMMAUNEQUAL_H
-#define RATEGAMMAUNEQUAL_H
+#ifndef RATEGAMMASTAR_H
+#define RATEGAMMASTAR_H
 
 #include "rategamma.h"
 
@@ -74,7 +74,7 @@ class PhyloTree;
 
     @author BUI Quang Minh <minh.bui@univie.ac.at>
 */
-class RateGammaUnequal : public RateGamma
+class RateGammaStar : public RateGamma
 {
 
 public:
@@ -84,12 +84,12 @@ public:
         @param shape Gamma shape parameter
         @param tree associated phylogenetic tree
     */
-    RateGammaUnequal(int ncat, double shape, PhyloTree *tree);
+    RateGammaStar(int ncat, double shape, PhyloTree *tree);
 
     /**
         destructor
     */
-    virtual ~RateGammaUnequal();
+    virtual ~RateGammaStar();
 
     /**
         start structure for checkpointing

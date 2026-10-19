@@ -19,7 +19,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include "tree/phylotree.h"
-#include "rategammaunequal.h"
+#include "rategammastar.h"
 #include <cmath>
 #include <vector>
 
@@ -29,7 +29,7 @@ static double pointGamma(double prob, double alpha, double beta) {
     return RateGamma::cmpPointChi2(prob, 2.0 * alpha) / (2.0 * beta);
 }
 
-RateGammaUnequal::RateGammaUnequal(int ncat, double shape, PhyloTree *tree)
+RateGammaStar::RateGammaStar(int ncat, double shape, PhyloTree *tree)
     : RateGamma(ncat, shape, false, tree)
 {
     // NOTE: the base constructor already called RateGamma::setNCategory(), which
@@ -40,21 +40,21 @@ RateGammaUnequal::RateGammaUnequal(int ncat, double shape, PhyloTree *tree)
     setNCategory(ncat);
 }
 
-RateGammaUnequal::~RateGammaUnequal()
+RateGammaStar::~RateGammaStar()
 {
     delete [] prop;
     prop = nullptr;
 }
 
-void RateGammaUnequal::startCheckpoint() {
-    checkpoint->startStruct("RateGammaUnequal");
+void RateGammaStar::startCheckpoint() {
+    checkpoint->startStruct("RateGammaStar");
 }
 
 // saveCheckpoint()/restoreCheckpoint() are inherited from RateGamma: only
 // gamma_shape needs to be stored, the rates and weights are recomputed from it
 // by the (virtual) computeRates() called in RateGamma::restoreCheckpoint().
 
-void RateGammaUnequal::setNCategory(int ncat) {
+void RateGammaStar::setNCategory(int ncat) {
     ncategory = ncat;
     delete [] prop;
     delete [] rates;
@@ -69,13 +69,13 @@ void RateGammaUnequal::setNCategory(int ncat) {
     computeRates();
 }
 
-string RateGammaUnequal::getNameParams() {
+string RateGammaStar::getNameParams() {
     ostringstream str;
     str << "+G" << ncategory << "s{" << gamma_shape << '}';
     return str.str();
 }
 
-double RateGammaUnequal::binBoundary(double rate_lower, double rate_upper) {
+double RateGammaStar::binBoundary(double rate_lower, double rate_upper) {
     // logarithmic mean: the point where the I-divergences to the two
     // representatives are equal (see class comment)
     if (rate_lower <= 0.0 || rate_upper <= 0.0)
@@ -86,7 +86,7 @@ double RateGammaUnequal::binBoundary(double rate_lower, double rate_upper) {
     return (rate_upper - rate_lower) / log_diff;
 }
 
-bool RateGammaUnequal::initRates(double alpha) {
+bool RateGammaStar::initRates(double alpha) {
     // over-dispersed starting point of lloyd_max_init_cats()
     double init_alpha = (alpha + 1.0) / 3.0;
     double init_beta  = alpha / 3.0;
@@ -102,14 +102,14 @@ bool RateGammaUnequal::initRates(double alpha) {
     return true;
 }
 
-void RateGammaUnequal::initRatesMedian(double alpha) {
+void RateGammaStar::initRatesMedian(double alpha) {
     for (int cat = 0; cat < ncategory; cat++) {
         double prob = (2.0 * cat + 1.0) / (2.0 * ncategory);
         rates[cat] = fabs(pointGamma(prob, alpha, alpha));
     }
 }
 
-void RateGammaUnequal::computeRates() {
+void RateGammaStar::computeRates() {
     if (ncategory == 1) {
         rates[0] = 1.0;
         prop[0]  = 1.0;
@@ -195,7 +195,7 @@ void RateGammaUnequal::computeRates() {
     normalize();
 }
 
-void RateGammaUnequal::normalize() {
+void RateGammaStar::normalize() {
     double sum_prop = 0.0;
     for (int cat = 0; cat < ncategory; cat++) {
         // guard against a zero-weight category
@@ -219,14 +219,14 @@ void RateGammaUnequal::normalize() {
             rates[cat] /= mean_rate;
 }
 
-double RateGammaUnequal::meanRates() {
+double RateGammaStar::meanRates() {
     double ret = 0.0;
     for (int cat = 0; cat < ncategory; cat++)
         ret += prop[cat] * rates[cat];
     return ret;
 }
 
-double RateGammaUnequal::rescaleRates() {
+double RateGammaStar::rescaleRates() {
     double norm = meanRates();
     if (norm <= 0.0)
         return 1.0;
@@ -235,7 +235,7 @@ double RateGammaUnequal::rescaleRates() {
     return norm;
 }
 
-void RateGammaUnequal::writeInfo(ostream &out) {
+void RateGammaStar::writeInfo(ostream &out) {
     out << "Gamma shape alpha: " << gamma_shape << endl;
     if (verbose_mode >= VB_MED) {
         out << "Lloyd-Max categories (rate, weight):";

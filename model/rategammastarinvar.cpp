@@ -22,7 +22,7 @@
 
 RateGammaStarInvar::RateGammaStarInvar(int ncat, double shape, double p_invar_sites,
         string optimize_alg, PhyloTree *tree, bool testParamDone) :
-        RateInvar(p_invar_sites, tree), RateGammaUnequal(ncat, shape, tree) {
+        RateInvar(p_invar_sites, tree), RateGammaStar(ncat, shape, tree) {
     name = "+I" + name;
     full_name = "Invar+" + full_name;
     this->optimize_alg = optimize_alg;
@@ -46,7 +46,7 @@ void RateGammaStarInvar::computeRates() {
         cur_scale += prop[cat] * rates[cat];
 
     // Lloyd-Max bins: weights sum to 1 and sum_i prop[i]*rates[i] == 1
-    RateGammaUnequal::computeRates();
+    RateGammaStar::computeRates();
 
     if (cur_scale > 0.0)
         for (int cat = 0; cat < ncategory; cat++)
@@ -68,7 +68,7 @@ void RateGammaStarInvar::startCheckpoint() {
 
 void RateGammaStarInvar::saveCheckpoint() {
     RateInvar::saveCheckpoint();
-    RateGammaUnequal::saveCheckpoint();
+    RateGammaStar::saveCheckpoint();
 }
 
 void RateGammaStarInvar::restoreCheckpoint() {
@@ -77,11 +77,11 @@ void RateGammaStarInvar::restoreCheckpoint() {
     RateInvar::restoreCheckpoint();
     for (int cat = 0; cat < ncategory; cat++)
         rates[cat] = 1.0 / (1.0 - p_invar);
-    RateGammaUnequal::restoreCheckpoint();
+    RateGammaStar::restoreCheckpoint();
 }
 
 void RateGammaStarInvar::setNCategory(int ncat) {
-    RateGammaUnequal::setNCategory(ncat);
+    RateGammaStar::setNCategory(ncat);
     for (int cat = 0; cat < ncategory; cat++)
         rates[cat] = 1.0 / (1.0 - p_invar);
     name = "+I" + name;
@@ -90,7 +90,7 @@ void RateGammaStarInvar::setNCategory(int ncat) {
 }
 
 string RateGammaStarInvar::getNameParams() {
-    return RateInvar::getNameParams() + RateGammaUnequal::getNameParams();
+    return RateInvar::getNameParams() + RateGammaStar::getNameParams();
 }
 
 double RateGammaStarInvar::meanRates() {
@@ -125,26 +125,26 @@ double RateGammaStarInvar::computeFunction(double value) {
 
 void RateGammaStarInvar::writeInfo(ostream &out) {
     RateInvar::writeInfo(out);
-    RateGammaUnequal::writeInfo(out);
+    RateGammaStar::writeInfo(out);
 }
 
 void RateGammaStarInvar::writeParameters(ostream &out) {
     RateInvar::writeParameters(out);
-    RateGammaUnequal::writeParameters(out);
+    RateGammaStar::writeParameters(out);
 }
 
 void RateGammaStarInvar::setVariables(double *variables) {
-    RateGammaUnequal::setVariables(variables);
-    int gid = RateGammaUnequal::getNDim();
+    RateGammaStar::setVariables(variables);
+    int gid = RateGammaStar::getNDim();
     RateInvar::setVariables(variables+gid);
 }
 
 bool RateGammaStarInvar::getVariables(double *variables) {
-    int gid = RateGammaUnequal::getNDim();
-    bool changed = RateGammaUnequal::getVariables(variables);
+    int gid = RateGammaStar::getNDim();
+    bool changed = RateGammaStar::getVariables(variables);
     changed |= RateInvar::getVariables(variables+gid);
     if (changed) {
-        // NOTE: the virtual computeRates() on purpose -- RateGammaUnequal's
+        // NOTE: the virtual computeRates() on purpose -- RateGammaStar's
         // version would leave out the 1/(1-p_invar) scaling
         computeRates();
     }
@@ -159,8 +159,8 @@ double RateGammaStarInvar::targetFunk(double x[]) {
 }
 
 void RateGammaStarInvar::setBounds(double *lower_bound, double *upper_bound, bool *bound_check) {
-    int gid = RateGammaUnequal::getNDim();
-    RateGammaUnequal::setBounds(lower_bound, upper_bound, bound_check);
+    int gid = RateGammaStar::getNDim();
+    RateGammaStar::setBounds(lower_bound, upper_bound, bound_check);
     RateInvar::setBounds(lower_bound+gid, upper_bound+gid, bound_check+gid);
 }
 
@@ -180,7 +180,7 @@ double RateGammaStarInvar::optimizeParameters(double gradient_epsilon) {
     } else if (optimize_alg.find("Brent") != string::npos || phylo_tree->aln->frac_const_sites == 0.0 || isFixPInvar() || isFixGammaShape()) {
         double lh = phylo_tree->computeLikelihood();
         cur_optimize = 0;
-        double gamma_lh = RateGammaUnequal::optimizeParameters(gradient_epsilon);
+        double gamma_lh = RateGammaStar::optimizeParameters(gradient_epsilon);
         ASSERT(gamma_lh >= lh-0.1);
         cur_optimize = 1;
         double invar_lh = RateInvar::optimizeParameters(gradient_epsilon);
@@ -251,7 +251,7 @@ double RateGammaStarInvar::optimizeWithEM(double gradient_epsilon) {
     double curlh = phylo_tree->computeLikelihood();
 
     cur_optimize = 0;
-    double gamma_lh = RateGammaUnequal::optimizeParameters(gradient_epsilon);
+    double gamma_lh = RateGammaStar::optimizeParameters(gradient_epsilon);
     ASSERT(gamma_lh > curlh - 1.0);
     curlh = gamma_lh;
 

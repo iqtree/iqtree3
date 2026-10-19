@@ -20,7 +20,7 @@
 #include "rateinvar.h"
 #include "modelfactory.h"
 #include "rategamma.h"
-#include "rategammaunequal.h"
+#include "rategammastar.h"
 #include "rategammainvar.h"
 #include "rategammastarinvar.h"
 #include "modelmarkov.h"
@@ -94,7 +94,7 @@ string::size_type posPOMO(string &model_name) {
     is not matched.
     @return position of the 's', or string::npos if not an unequal-weight Gamma
 */
-string::size_type posRateGammaUnequal(string &model_name) {
+string::size_type posRateGammaStar(string &model_name) {
     for (string::size_type posG = model_name.find('G'); posG != string::npos;
          posG = model_name.find('G', posG+1)) {
         if (posG == 0 || (model_name[posG-1] != '+' && model_name[posG-1] != '*'))
@@ -388,7 +388,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             outError("PoMo does not yet support frequency mixture models (+FMIX).");
         if (posRateHeterotachy(rate_str) != string::npos)
             outError("PoMo does not yet support heterotachy models (+H).");
-        if (posRateGammaUnequal(rate_str) != string::npos)
+        if (posRateGammaStar(rate_str) != string::npos)
             outError("PoMo does not yet support the DGM-star model (+G[n]s).");
     }
 
@@ -806,7 +806,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
     // The 's' comes after the optional number of categories; strip it here so that
     // #categories and the shape parameter are parsed by the regular +G code below.
     bool unequal_gamma = false;
-    string::size_type posGS = posRateGammaUnequal(rate_str);
+    string::size_type posGS = posRateGammaStar(rate_str);
     if (posGS != string::npos) {
         unequal_gamma = true;
         rate_str = rate_str.substr(0, posGS) + rate_str.substr(posGS+1);
@@ -1009,7 +1009,7 @@ ModelFactory::ModelFactory(Params &params, string &model_name, PhyloTree *tree, 
             site_rate = new RateInvar(p_invar_sites, tree);
         } else if (posG != string::npos) {
             if (unequal_gamma)
-                site_rate = new RateGammaUnequal(num_rate_cats, gamma_shape, tree);
+                site_rate = new RateGammaStar(num_rate_cats, gamma_shape, tree);
             else
                 site_rate = new RateGamma(num_rate_cats, gamma_shape, params.gamma_median, tree);
         } else if (posR != string::npos) {
