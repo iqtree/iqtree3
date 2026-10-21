@@ -3540,7 +3540,7 @@ template <class L, class F> double computeDistanceMatrix
     //      code for an O(n) step in an O(L.N^2) problem.
     //
     double longest_dist = 0.0;
-    for ( int seq1 = 0; seq1 < nseqs; ++seq1  ) {
+    for ( size_t seq1 = 0; seq1 < nseqs; ++seq1  ) {
         if ( longest_dist < rowMaxDistance[seq1] ) {
             longest_dist = rowMaxDistance[seq1];
         }
