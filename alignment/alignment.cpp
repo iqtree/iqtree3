@@ -4740,7 +4740,8 @@ double Alignment::readDist(istream &in, double *dist_mat) {
     }
     double *tmp_dist_mat = new double[nseqs * nseqs];
     std::map< string, int > map_seqName_ID;
-    int pos = 0, seq1, seq2, id = 0;
+    size_t pos = 0, seq1, seq2;
+    int id = 0;
     // read in distances to a temporary array
     for (seq1 = 0; seq1 < nseqs; seq1++)  {
         string seq_name;
@@ -4780,7 +4781,7 @@ double Alignment::readDist(istream &in, double *dist_mat) {
             }
             int seq1_tmp_id = map_seqName_ID[seq1Name];
             int seq2_tmp_id = map_seqName_ID[seq2Name];
-            dist_mat[seq1 * nseqs + seq2] = tmp_dist_mat[seq1_tmp_id * nseqs + seq2_tmp_id];
+            dist_mat[seq1 * nseqs + seq2] = tmp_dist_mat[static_cast<size_t>(seq1_tmp_id) * nseqs + static_cast<size_t>(seq2_tmp_id)];
             //cout << dist_mat[seq1 * nseqs + seq2] << "  ";
         }
         //cout << endl;

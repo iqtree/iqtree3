@@ -3463,7 +3463,7 @@ double PhyloTree::pairDist(Node *node1, Node *node2, Node *node, Node *dad) {
 
 template <class L, class F> double computeDistanceMatrix
     ( LEAST_SQUARE_VAR vartype
-    , L unknown, const L* sequenceMatrix, int nseqs, int seqLen
+    , L unknown, const L* sequenceMatrix, size_t nseqs, size_t seqLen
     , double denominator, const F* frequencyVector
     , bool uncorrected, double num_states
     , double *dist_mat, double *var_mat)
@@ -3486,18 +3486,18 @@ template <class L, class F> double computeDistanceMatrix
     #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic)
     #endif
-    for (int seq1 = 0; seq1<nseqs; ++seq1 ) {
+    for (size_t seq1 = 0; seq1<nseqs; ++seq1 ) {
         //Scanning is from bottom to top so that if "uneven execution"
         //results in the last few rows being allocated to some worker thread
         //just before the others finish... it won't be running
         //"all by itsef" for as long.
-        int      rowOffset     = nseqs * seq1;
+        size_t   rowOffset     = nseqs * seq1;
         double*  distRow       = dist_mat       + rowOffset;
         double*  varRow        = var_mat        + rowOffset;
         const L* thisSequence  = sequenceMatrix + seq1 * seqLen;
         const L* otherSequence = thisSequence   + seqLen;
         double maxDistanceInRow = 0.0;
-        for (int seq2 = seq1 + 1; seq2 < nseqs; ++seq2) {
+        for (size_t seq2 = seq1 + 1; seq2 < nseqs; ++seq2) {
             double d2l      = varRow[seq2];
             double distance = distRow[seq2];
             if ( 0.0 == distance ) {
@@ -3553,13 +3553,13 @@ template <class L, class F> double computeDistanceMatrix
     #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic)
     #endif
-    for ( int seq1 = nseqs-1; 0 <= seq1; --seq1 ) {
-        int     rowOffset = nseqs * seq1;
+    for ( size_t seq1 = nseqs-1; 0 <= seq1; --seq1 ) {
+        size_t     rowOffset = nseqs * seq1;
         double* distRow   = dist_mat + rowOffset;
         double* varRow    = var_mat  + rowOffset;
         double* distCol   = dist_mat + seq1; //current entries in the columns
         double* varCol    = var_mat  + seq1; //...that we are reading down.
-        for ( int seq2 = 0; seq2 < seq1; ++seq2, distCol+=nseqs, varCol+=nseqs ) {
+        for ( size_t seq2 = 0; seq2 < seq1; ++seq2, distCol+=nseqs, varCol+=nseqs ) {
             distRow [ seq2 ] = *distCol;
             varRow  [ seq2 ] = *varCol;
         }
@@ -3678,7 +3678,7 @@ double PhyloTree::computeDist(double *dist_mat, double *var_mat) {
         #else
             AlignmentPairwise* processor = distanceProcessors[0];
         #endif
-        int rowStartPos = seq1 * nseqs;
+        size_t rowStartPos = seq1 * nseqs;
         for (size_t seq2=seq1+1; seq2 < nseqs; ++seq2) {
             size_t sym_pos = rowStartPos + seq2;
             double d2l = var_mat[sym_pos]; // moved here for thread-safe (OpenMP)
