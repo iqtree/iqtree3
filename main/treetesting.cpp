@@ -451,7 +451,7 @@ void printSiteStateFreq(const char*filename, PhyloTree *tree, double *state_freq
 }
 
 void printSiteStateFreq(const char* filename, Alignment *aln) {
-    if (aln->site_state_freq.empty())
+    if (!aln->isSSF())
         return;
     size_t nsites  = aln->getNSite();
     int    nstates = aln->num_states;
@@ -464,7 +464,7 @@ void printSiteStateFreq(const char* filename, Alignment *aln) {
         for (size_t i = 0; i < nsites; ++i) {
             out.width(6);
             out << left << i+1 << " ";
-            double *state_freq = aln->site_state_freq[pattern_index[i]];
+            double *state_freq = aln->ptn_state_freq[pattern_index[i]];
             for (size_t j = 0; j < nstates; ++j) {
                 out.width(15);
                 out << state_freq[j] << " ";

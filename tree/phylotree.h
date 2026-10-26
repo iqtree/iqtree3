@@ -341,21 +341,18 @@ Phylogenetic Tree class
         @author BUI Quang Minh, Steffen Klaere, Arndt von Haeseler <minh.bui@univie.ac.at>
  */
 class PhyloTree : public MTree, public Optimization, public CheckpointFactory {
-
-	friend class PhyloSuperTree;
-	friend class PhyloSuperTreePlen;
-	friend class RateGamma;
-	friend class RateGammaInvar;
-	friend class RateKategory;
+    friend class PhyloSuperTree;
+    friend class PhyloSuperTreePlen;
+    friend class RateGamma;
+    friend class RateGammaInvar;
+    friend class RateKategory;
     friend class ModelMixture;
     friend class RateFree;
     friend class RateHeterotachy;
     friend class PhyloTreeMixlen;
-    friend class ModelFactoryMixlen;
     friend class MemSlotVector;
     friend class ModelFactory;
     friend class IQTreeMix;
-
 public:
     /**
        default constructor ( everything is initialized to nullptr)
@@ -439,22 +436,21 @@ public:
     void copyConstraintTree(MTree *tree, IntVector &taxon_order, int *rand_stream);
 
     /**
-            copy the phylogenetic tree structure into this tree, designed specifically for PhyloTree.
-            So there is some distinction with copyTree.
-            @param tree the tree to copy
-            @param borrowSummary true if the alignment summary of the other tree is to be "borrowed"
+     *  Copy the phylogenetic tree structure into this tree.
+     *  Designed specifically for copying PhyloTree objects
+     *  @param tree The tree to copy
+     *  @param borrowSummary TRUE to use the alignment summary of tree
      */
     void copyPhyloTree(PhyloTree *tree, bool borrowSummary);
 
     /**
-            copy the phylogenetic tree structure into this tree, designed specifically for PhyloTree.
-            So there is some distinction with copyTree.
-            @param tree the tree to copy
-            @param mix mixture ID of branch lengths
-            @param borrowSummary true if the alignment summary of the other tree is to be "borrowed"
+     *  Copy the phylogenetic tree structure into this tree.
+     *  Designed specifically for copying PhyloTree objects
+     *  @param tree The tree to copy
+     *  @param c The mixlen category to copy
+     *  @param borrowSummary TRUE to use the alignment summary of tree
      */
-    virtual void copyPhyloTreeMixlen(PhyloTree *tree, int mix, bool borrowSummary);
-
+    virtual void copyPhyloTreeMixlen(PhyloTree *tree, int c, bool borrowSummary);
 
     /**
             Set the alignment, important to compute parsimony or likelihood score
@@ -541,11 +537,6 @@ public:
     }
 
     /**
-        @return true if this is a tree with mixture branch lengths, default: false
-    */
-    virtual bool isMixlen() { return false; }
-
-    /**
         @return true if this is a mixture of trees, default: false
     */
     virtual bool isTreeMix() { return false; }
@@ -556,9 +547,15 @@ public:
     virtual bool isHMM() { return false; }
 
     /**
-        @return number of mixture branch lengths, default: 1
-    */
-    virtual int getMixlen() { return 1; }
+     *  Functions for the mixlen stuff
+     */
+    virtual bool isMixlen() const { return false; }
+
+    virtual int getNMixlen() const { return 1; }
+
+    virtual int getCurMixture() const { return -1; }
+
+    virtual void setCurMixture(int c) {}
 
     /**
             allocate a new node. Override this if you have an inherited Node class.
@@ -591,13 +588,16 @@ public:
     }
 
     /**
-     * save branch lengths into a vector
+     *  Save branch lengths into a vector
      */
-    virtual void saveBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
+    virtual void saveBranchLengths(DoubleVector &lenvec, size_t startid = 0,
+                                   PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
     /**
-     * restore branch lengths from a vector previously called with saveBranchLengths
+     *  Restore branch lengths from a vector that
+     *  was previously filled by saveBranchLengths()
      */
-    virtual void restoreBranchLengths(DoubleVector &lenvec, int startid = 0, PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
+    virtual void restoreBranchLengths(DoubleVector &lenvec, size_t startid = 0,
+                                      PhyloNode *node = nullptr, PhyloNode *dad = nullptr);
 
     /****************************************************************************
             Dot product
@@ -1310,9 +1310,6 @@ public:
 
     template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA = false, const bool SITE_MODEL = false>
     void computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf);
-
-    /** For Mixlen stuffs */
-    virtual int getCurMixture() { return 0; }
 
     template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA = false, const bool SITE_MODEL = false>
     void computeLikelihoodDervMixlenSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, double &df, double &ddf);

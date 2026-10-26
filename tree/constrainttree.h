@@ -39,7 +39,7 @@ public:
             @param constraint_file the name of the constraint tree file
             @param fulltaxname the full list of all taxa names
      */
-    void readConstraint(const char *constraint_file, StrVector &fulltaxname);
+    void readConstraint(const char *constraint_file, const StrVector &fulltaxname);
 
     /**
         initialize from another constraint tree

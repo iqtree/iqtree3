@@ -43,8 +43,6 @@
 #define PACKETS_PER_THREAD 2
 void PhyloTree::setNumThreads(int threadCount) {
     if (!isSuperTree() && aln!=nullptr && threadCount > 1 && threadCount > aln->getNPattern()/8) {
-        outWarning(convertIntToString(threadCount) + " threads for alignment length " +
-                   convertIntToString(aln->getNPattern()) + " will slow down analysis");
         threadCount = max(aln->getNPattern()/8,(size_t)1);
     }
     this->num_threads = threadCount;
@@ -547,68 +545,71 @@ void PhyloTree::computePtnFreq() {
 }
 
 void PhyloTree::computePtnInvar() {
-	size_t nptn = aln->getNPattern(), ptn;
-	size_t maxptn = get_safe_upper_limit(nptn)+get_safe_upper_limit(model_factory->unobserved_ptns.size());
-  // For PoMo, only consider monomorphic states and set nstates to the number of
-  // states of the underlying mutation model.
-	int nstates = model->getMutationModel()->num_states;
-    int x;
-    // ambiguous characters
+    size_t nptn = aln->getNPattern();
+    size_t maxptn = get_safe_upper_limit(nptn)+get_safe_upper_limit(model_factory->unobserved_ptns.size());
+    // set nstates:
+    // - for PoMo: to the number of monomorphic (boundary) states
+    // - for other models: to the number of states of the model
+    int nstates = model->getMutationModel()->num_states;
+    // protein ambiguous characters
     int ambi_aa[] = {
-        4+8, // B = N or D
-        32+64, // Z = Q or E
-        512+1024 // U = I or L
+        4+8,     // B = N or D
+        32+64,   // Z = Q or E
+        512+1024 // J = I or L
     };
-
+    // set state_freq:
+    // - for PoMo: to the stationary freqs of monomorphic (boundary) states
+    // - for SSF: to the site-specific stationary freqs, for each pattern below
+    // - for other models: to the stationary freqs of the model
     double state_freq[nstates];
-
-    // -1 for mixture model
-
-    // Again for PoMo, the stationary frequencies are set to the stationary
-    // frequencies of the boundary states.
     model->getMutationModel()->getStateFrequency(state_freq, -1);
-
-	memset(ptn_invar, 0, maxptn*sizeof(double));
-	double p_invar = site_rate->getPInvar();
-	if (p_invar != 0.0) {
-		for (ptn = 0; ptn < nptn; ptn++) {
-            if ((*aln)[ptn].const_char > aln->STATE_UNKNOWN)
+    memset(ptn_invar, 0, maxptn*sizeof(double));
+    double p_invar = site_rate->getPInvar();
+    if (p_invar) {
+        for (size_t ptn = 0; ptn < nptn; ++ptn) {
+            if (model->isSiteSpecificModel()) {
+                model->getStateFrequency(state_freq, ptn);
+            }
+            int cstate = aln->at(ptn).const_char;
+            if (cstate > aln->STATE_UNKNOWN) {
+                // var pattern or PoMo polymorphic const pattern
                 continue;
-
-			if ((*aln)[ptn].const_char == aln->STATE_UNKNOWN) {
-				ptn_invar[ptn] = p_invar;
-        // For PoMo, if a polymorphic state is considered, the likelihood is
-        // left unchanged and zero because ptn_invar has been initialized to 0.
-			} else if ((*aln)[ptn].const_char < nstates) {
-				ptn_invar[ptn] = p_invar * state_freq[(int) (*aln)[ptn].const_char];
-			} else if (aln->seq_type == SEQ_DNA) {
-                // 2016-12-21: handling ambiguous state
-                ptn_invar[ptn] = 0.0;
-                int cstate = (*aln)[ptn].const_char-nstates+1;
-                for (x = 0; x < nstates; x++) {
-                    if ((cstate) & (1 << x))
+            } else if (cstate == aln->STATE_UNKNOWN) {
+                // gap-only pattern
+                ptn_invar[ptn] = p_invar;
+            } else if (cstate < nstates) {
+                // const pattern
+                ptn_invar[ptn] = p_invar * state_freq[cstate];
+            } else if (aln->seq_type == SEQ_DNA) {
+                // invar pattern: handling DNA ambiguous state
+                int astate = cstate - nstates + 1;
+                ASSERT(astate <= 14);
+                for (int x = 0; x < nstates; ++x) {
+                    if (astate & (1 << x)) {
                         ptn_invar[ptn] += state_freq[x];
+                    }
                 }
                 ptn_invar[ptn] *= p_invar;
             } else if (aln->seq_type == SEQ_PROTEIN) {
-                ptn_invar[ptn] = 0.0;
-                int cstate = (*aln)[ptn].const_char-nstates;
-                ASSERT(cstate <= 2);
-                for (x = 0; x < 11; x++)
-                    if (ambi_aa[cstate] & (1 << x))
+                // invar pattern: handling protein ambiguous state
+                int astate = cstate - nstates;
+                ASSERT(astate <= 2);
+                for (int x = 0; x < 11; ++x) {
+                    if (ambi_aa[astate] & (1 << x)) {
                         ptn_invar[ptn] += state_freq[x];
+                    }
+                }
                 ptn_invar[ptn] *= p_invar;
-            } else ASSERT(0);
-		}
-//		// ascertmain bias correction
-//		for (ptn = 0; ptn < model_factory->unobserved_ptns.size(); ptn++)
-//			ptn_invar[nptn+ptn] = p_invar * state_freq[(int)model_factory->unobserved_ptns[ptn]];
-//
-		// dummy values
-		for (ptn = nptn; ptn < maxptn; ptn++)
-			ptn_invar[ptn] = p_invar;
-	}
-//	aligned_free(state_freq);
+            } else {
+                // invar pattern: not defined for other data types
+                ASSERT(0);
+            }
+        }
+        // dummy values
+        for (size_t ptn = nptn; ptn < maxptn; ++ptn) {
+            ptn_invar[ptn] = p_invar;
+        }
+    }
 }
 
 /*******************************************************

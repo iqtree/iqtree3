@@ -1046,6 +1046,9 @@ public:
 
     /** use logarithm of rates for clustering algorithm */
     bool partfinder_log_rate;
+
+    /** use mAIC as partition merging criterion */
+    bool marginal_lh_aic;
     
     /************************************************/
     /******* variables for Terrace analysis *********/
@@ -1619,6 +1622,9 @@ public:
     /** contain non-reversible model */
     bool contain_nonrev;
 
+    /** if true, skip the marginal log-likelihood / mAIC computation for partition models */
+    bool skip_marginal_lh;
+
     /** model name to initialize GTR20 or NONREV protein model */
     char* model_name_init;
 
@@ -1683,6 +1689,15 @@ public:
     /** force to parallelisation over sites */
     bool parallel_over_sites;
 
+    /** each partition gets min(nthreads, size_cap) threads (default strategy) */
+    bool parallel_per_partition;
+
+    /** distribute surplus threads round-robin across partitions */
+    bool parallel_round_robin;
+
+    /** denominator in maxThreadsForAlignment: max(1, nptn*nstate/j). Default 4000. */
+    int mf_thread_factor;
+
     /** force to parall over partition and order by threads(fill the scheduling by threads) **/
     bool order_by_threads;
 
@@ -1692,8 +1707,6 @@ public:
     /** TRUE to optimize mixture model nucleotide/amino acide frequency */
     bool optimize_mixmodel_freq;
 
-    /** number of mixture branch lengths, default 1 */
-    int num_mixlen;
     /** TRUE to always optimize rate matrix even if user parameters are specified in e.g. GTR{1,2,3,4,5} */
     bool optimize_rate_matrix;
 
@@ -2394,9 +2407,12 @@ public:
 
     /** number of threads for OpenMP version     */
     int num_threads;
-    
+
     /** maximum number of threads, default: #CPU scores  */
     int num_threads_max;
+
+    /** user-requested -nt before any sum(cap) reduction; 0 = not saved */
+    int num_threads_orig;
     
     /** true to parallel ModelFinder by models instead of sites */
     bool openmp_by_model;
@@ -2916,6 +2932,18 @@ public:
      * TRUE to output the alternative SPRs with their supports in the tree
      */
     bool out_alter_spr;
+    
+    /**
+     * @private
+     * TRUE to use local references in CMAPLE
+     */
+    bool cmaple_use_local_ref;
+    
+    /**
+     * @private
+     * TRUE to output MAT with CMAPLE
+     */
+    bool cmaple_output_MAT;
 
     /**
     *  Mutation file that specifies pre-defined mutations occurs at nodes
@@ -2936,6 +2964,27 @@ public:
      *  input tree string (instead of a file)
      */
     string intree_str;
+
+    // MUTSEL parameters
+
+    /**
+     *  the file containing the site-specific model parameters.
+     *  it uses a simple binary format and will be output by a MUTSEL run.
+     *  The file is not intended to be human-readable.
+     */
+    std::string site_model_file;
+
+    /**
+     *  the file containing the prior state frequencies for the mutsel model, in the format of "site_ID state1_freq state2_freq ... state20_freq"
+     *  by default MUTSEL will calculate these priors by an approximated PMSF method.
+     */
+    std::string mutsel_prior_freq_file;
+
+    /**
+     *  the prior for the shared rates in PAML format.
+     *  by default MUTSEL will use the CODON model (A matrix derived for this purpose, for more information see the paper).
+     */
+    std::string mutsel_prior_rate_file;
 };
 
 /**

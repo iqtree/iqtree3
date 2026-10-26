@@ -130,6 +130,13 @@ public:
 	*/
 	virtual void writeInfo(ostream &out);
 
+    /**
+     *  Compute the state frequency vector
+     *  @param mixture Submodel id of the state frequency vector, 0 for default frequencies
+     *  @param[out] state_freq State frequency vector, must have the size of num_states
+     */
+    virtual void getStateFrequency(double *state_freq, int mixture = -1);
+
 	/**
 		decompose the rate matrix into eigenvalues and eigenvectors
 	*/
@@ -147,9 +154,6 @@ public:
     		mem += (*it)->getMemoryRequired();
     	return mem;
     }
-
-	/** map from pattern ID to model ID */
-	IntVector pattern_model_map;
 
     /**
         join memory for eigen into one chunk

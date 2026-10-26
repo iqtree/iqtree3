@@ -50,9 +50,8 @@ void ModelSet::computeTransDerv(double time, double* trans_matrix, double* trans
 
 int ModelSet::getPtnModelID(int ptn)
 {
-	ASSERT(ptn >= 0 && ptn < pattern_model_map.size());
-	ASSERT(pattern_model_map[ptn] >= 0 && pattern_model_map[ptn] < size());
-    return pattern_model_map[ptn];
+    ASSERT(ptn >= 0 && ptn < size());
+    return ptn;
 }
 
 
@@ -124,6 +123,16 @@ void ModelSet::writeInfo(ostream& out)
 	} else {
 		front()->writeInfo(out);
 	}
+}
+
+void ModelSet::getStateFrequency(double *state_freq, int mixture) {
+    ASSERT(mixture >= -1);
+    if (mixture >= 0) {
+        at(mixture)->getStateFrequency(state_freq);
+        return;
+    }
+    // default: return the +F freqs across all patterns
+    ModelMarkov::getStateFrequency(state_freq);
 }
 
 void ModelSet::decomposeRateMatrix()

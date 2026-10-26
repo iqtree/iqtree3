@@ -123,32 +123,6 @@ void PhyloSuperTreeUnlinked::restoreCheckpoint() {
     }
 }
 
-/**
- * save branch lengths into a vector
- */
-void PhyloSuperTreeUnlinked::saveBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
-    int totalBranchNum = 0;
-    iterator it;
-    for (it = begin(); it != end(); it++) {
-        totalBranchNum += (*it)->branchNum * (*it)->getMixlen();
-    }
-    lenvec.resize(startid + totalBranchNum);
-    
-    for (iterator it = begin(); it != end(); it++) {
-        (*it)->saveBranchLengths(lenvec, startid);
-        startid += (*it)->branchNum * (*it)->getMixlen();
-    }
-}
-/**
- * restore branch lengths from a vector previously called with saveBranchLengths
- */
-void PhyloSuperTreeUnlinked::restoreBranchLengths(DoubleVector &lenvec, int startid, PhyloNode *node, PhyloNode *dad) {
-    for (iterator it = begin(); it != end(); it++) {
-        (*it)->restoreBranchLengths(lenvec, startid);
-        startid += (*it)->branchNum * (*it)->getMixlen();
-    }
-}
-
 void PhyloSuperTreeUnlinked::setRootNode(const char *my_root, bool multi_taxa) {
     // DOES NOTHING
 }

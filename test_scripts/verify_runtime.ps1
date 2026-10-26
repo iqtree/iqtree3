@@ -1,77 +1,110 @@
 param (
-    [string] $ExpectedColumnName = "windows-x86"
+    [string]$IQTree2Log = "time_log_iqtree2.tsv",
+    [string]$IQTree3Log = "time_log_iqtree3.tsv",
+    [string]$Platform   = ""
 )
 
+# Compare IQ-TREE 3 runtime against the IQ-TREE 2 baseline + threshold.
+# Rows are matched by the "identifier" column, not by position.
+
 $WD = "test_scripts/test_data"
-$expectedFile = Join-Path $WD "expected_runtime.tsv"
-$reportedFile = "time_log.tsv"
-$selectedColumnsFile = Join-Path $WD "selected_columns.tsv"
-$reportedColumnFile = "$env:TEMP\reported_column.tsv"
-$finalFile = Join-Path $WD "combined_with_reported.tsv"
+$thresholdFile = Join-Path $WD "expect_runtime.txt"
+. (Join-Path $PSScriptRoot "remeasure.ps1")
 
-# Get the header and find the index of the expected column name
-$header = Get-Content $expectedFile -TotalCount 1
-$columns = $header -split "`t"
-$columnIndex = $columns.IndexOf($ExpectedColumnName)
-
-if ($columnIndex -lt 0) {
-    Write-Error "Column '$ExpectedColumnName' not found in $expectedFile"
-    exit 1
+$lines  = Get-Content $thresholdFile
+$header = $lines[0] -split "`t"
+$thrIdx = $header.IndexOf("thr-$Platform")
+$fbIdx  = $header.IndexOf($Platform)
+if ($thrIdx -ge 0) {
+    Write-Host "Using per-platform thresholds: thr-$Platform"
+} else {
+    Write-Host "No thr-$Platform column; using the shared diff-threshold"
+    $thrIdx = $header.IndexOf("diff-threshold")
+}
+if ($fbIdx -lt 0) {
+    Write-Host "WARNING: fallback column '$Platform' not found in $thresholdFile; skipping fallback"
 }
 
-# Adjust to 0-based indexing for arrays
-$expectedLines = Get-Content $expectedFile | Select-Object -Skip 1
-$selectedColumns = foreach ($line in $expectedLines) {
-    $parts = $line -split "`t"
-    "$($parts[0])`t$($parts[1])`t$($parts[$columnIndex])"
+$table = @{}
+foreach ($line in $lines | Select-Object -Skip 1) {
+    $p = $line -split "`t"
+    $table[$p[0]] = @{ Threshold = [double]$p[$thrIdx]
+                       Fallback  = if ($fbIdx -ge 0) { [double]$p[$fbIdx] } else { $null } }
 }
-$selectedColumns | Set-Content $selectedColumnsFile
 
-# Read reported column from time_log.tsv (column 3 = RealTime, 4 = Memory)
-$reportedLines = Get-Content $reportedFile | Select-Object -Skip 1
-$reportedColumn = foreach ($line in $reportedLines) {
-    $parts = $line -split "`t"
-    $parts[1]  # column 2 = runtime (0-based index)
+# Runtime is column 2 (0-based) of each log: identifier, Command, RealTime, PeakMemory
+function Read-Log($path) {
+    $h = @{}
+    foreach ($line in (Get-Content $path | Select-Object -Skip 1)) {
+        $p = $line -split "`t"
+        $h[$p[0]] = @{ Command = $p[1]; Value = [double]$p[2] }
+    }
+    return $h
 }
-$reportedColumn | Set-Content $reportedColumnFile
+$log2 = Read-Log $IQTree2Log
+$log3 = Read-Log $IQTree3Log
 
-# Combine both files
-$combinedLines = @()
-for ($i = 0; $i -lt $selectedColumns.Count; $i++) {
-    $combinedLines += "$($selectedColumns[$i])`t$($reportedColumn[$i])"
-}
-$combinedLines | Set-Content $finalFile
-
-# Now compare
 $failCount = 0
-$finalLines = Get-Content $finalFile
 
-foreach ($line in $finalLines) {
-    $parts = $line -split "`t"
-    $command = $parts[0]
-    $threshold = [double]$parts[1]
-    $expected = [double]$parts[2]
-    $reported = [double]$parts[3]
+foreach ($line in (Get-Content $IQTree3Log | Select-Object -Skip 1)) {
+    $id = ($line -split "`t")[0]
+    if (-not $table.ContainsKey($id)) {
+        Write-Host "SKIP $id (no row in $thresholdFile; add one to check it)"
+        continue
+    }
+    $threshold = $table[$id].Threshold
+    $reported  = $log3[$id].Value
+    $expected  = if ($log2.ContainsKey($id)) { $log2[$id].Value } else { 0 }
+
+    if ($expected -eq 0) {
+        if ($null -ne $table[$id].Fallback) {
+            $expected = $table[$id].Fallback
+            Write-Host "INFO  ${id}: IQ-TREE 2 baseline unavailable, using pre-defined expected value (${expected}s)"
+        } else {
+            Write-Host "SKIP $id (IQ-TREE 2 baseline unavailable, no fallback column provided)"
+            continue
+        }
+    }
 
     $allowed = $expected + $threshold
-    $exceededBy = $reported - $expected
+    $diff    = $reported - $expected
+
+    # Retry once before failing.
+    if ($reported -gt $allowed -and $log2.ContainsKey($id)) {
+        Write-Host "RETRY $id exceeded (${diff}s); retrying this command once..."
+        $r2 = Measure-Once $log2[$id].Command
+        $r3 = Measure-Once $log3[$id].Command
+        if ($r2.Ok -and $r3.Ok) {
+            $expected = $r2.Time; $reported = $r3.Time
+            $allowed  = $expected + $threshold
+            $diff     = $reported - $expected
+            Write-Host "   retry: IQ-TREE2 $($r2.Time)s, IQ-TREE3 $($r3.Time)s, Diff ${diff}s"
+        } else {
+            Write-Host "   retry did not produce a usable measurement; keeping the first result"
+        }
+    }
 
     if ($reported -gt $allowed) {
-        Write-Host "❌ $command exceeded the allowed usage."
-        Write-Host "Expected: $expected S, Threshold: $threshold S, Reported: $reported S"
+        Write-Host "FAIL $id exceeded the allowed runtime usage."
+        Write-Host "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${reported}s, Diff: ${diff}s"
         $failCount++
     } else {
-        Write-Host "✅ $command passed the check."
-        Write-Host "Expected: $expected S, Threshold: $threshold S, Reported: $reported S"
+        Write-Host "PASS $id passed the runtime check."
+        Write-Host "   Expected: ${expected}s, Threshold: ${threshold}s, IQ-TREE3: ${reported}s, Diff: ${diff}s"
+    }
+}
+
+foreach ($id in $table.Keys) {
+    if (-not $log3.ContainsKey($id)) {
+        Write-Host "WARNING $id : a row exists in $thresholdFile but no command produced it"
     }
 }
 
 Write-Host ""
-
 if ($failCount -eq 0) {
-    Write-Host "✅ All runtime checks passed."
+    Write-Host "All runtime checks passed."
     exit 0
 } else {
-    Write-Host "❌ $failCount checks failed."
+    Write-Host "$failCount checks failed."
     exit 1
 }

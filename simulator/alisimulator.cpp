@@ -77,10 +77,9 @@ AliSimulator::AliSimulator(Params *input_params, IQTree *iq_tree, int expected_n
 /**
 *  initialize an IQTree instance from input file
 */
-void AliSimulator::initializeIQTreeFromTreeFile()
-{
-    // handle the case with partition models
+void AliSimulator::initializeIQTreeFromTreeFile() {
     if (params->partition_file) {
+    /* partitioned model case */
         // initilize partition alignments
         Alignment *aln;
         if (params->partition_type == TOPO_UNLINKED)
@@ -119,10 +118,7 @@ void AliSimulator::initializeIQTreeFromTreeFile()
         // further initialize super_tree/alignments
         // recording start_time
         auto start = getRealTime();
-        
-        int i;
-        
-        for (i = 0; i < ((PhyloSuperTree*) tree)->size(); i++)
+        for (int i = 0; i < ((PhyloSuperTree*) tree)->size(); ++i)
         {
             // -Q (params->partition_type == BRLEN_OPTIMIZE) -> tree_line_index = i; otherwise (-p, -q), tree_line_index = 0 (only a tree)
             int tree_line_index = 0;
@@ -135,42 +131,33 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                     cout<<" Loading partition trees one by one. Each tree should be specified in a single line in the input tree file."<<endl;
                 }
             }
-            
-            // load phylotrees
-            IQTree *current_tree = (IQTree *) ((PhyloSuperTree*) tree)->at(i);
+            // load the tree for the current partition
+            IQTree *&current_tree = (IQTree*&)((PhyloSuperTree*)tree)->at(i);
+            if (posRateHeterotachy(current_tree->aln->model_name) != string::npos) {
+                // heterotachy rate model -> reset the tree as PhyloTreeMixlen
+                IQTree *new_tree = new PhyloTreeMixlen(current_tree->aln);
+                delete current_tree;
+                current_tree = new_tree;
+            }
             bool is_rooted = false;
             current_tree->readTree(params->user_file, is_rooted, tree_line_index);
-            
             // update the alignment for the current partition
+            int expected_num_states_current_tree = current_tree->aln->getNSite();
+            ASSERT(expected_num_states_current_tree == 0);
             initializeAlignment(current_tree, current_tree->aln->model_name);
-            
-            // extract num_sites from partition
+            // get expected_num_states_current_tree from position_spec
+            string info_spec = current_tree->aln->position_spec;
             IntVector siteIDs;
-            extractSiteID(current_tree->aln, current_tree->aln->position_spec.c_str(), siteIDs, false, -1, true);
-            current_tree->aln->setExpectedNumSites(siteIDs.size());
-            
+            Alignment::extractSiteID(info_spec, siteIDs, current_tree->aln->genetic_code);
+            expected_num_states_current_tree = siteIDs.size();
+            // fill the alignment with fake sites according to position_spec
+            Pattern pat;
+            pat.resize(current_tree->aln->getNSeq(), current_tree->aln->STATE_UNKNOWN);
+            pat.frequency = expected_num_states_current_tree;
+            pat.flag = PAT_INVARIANT;
+            current_tree->aln->addPattern(pat);
             // initialize the model for the current partition
             initializeModel(current_tree, current_tree->aln->model_name);
-            
-            // if a Heterotachy model is used -> re-read the PhyloTreeMixlen from file
-            if (current_tree->getRate()->isHeterotachy())
-            {
-                // initialize a new PhyloTreeMixlen
-                IQTree* new_tree = new PhyloTreeMixlen(current_tree->aln, current_tree->getRate()->getNRate());
-                
-                // delete the old tree
-                delete current_tree;
-                
-                // set the new PhyloTreeMixlen to the new tree
-                current_tree = new_tree;
-                
-                // re-load the tree/branch-lengths from the file
-                current_tree->IQTree::readTree(params->user_file, is_rooted, tree_line_index);
-                
-                // re-initialize the model
-                initializeModel(current_tree, current_tree->aln->model_name);
-            }
-            
             // set partition rate
             if (params->partition_type == BRLEN_SCALE)
             {
@@ -181,11 +168,11 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                     ((PhyloSuperTree*) tree)->part_info[i].part_rate = current_tree_length * inverse_super_tree_length;
                 
                 // update sum of rate*n_sites and num_sites (for rate normalization)
-                sum += ((PhyloSuperTree*) tree)->part_info[i].part_rate * current_tree->aln->getNSite();
+                sum += ((PhyloSuperTree*) tree)->part_info[i].part_rate * expected_num_states_current_tree;
                 if (current_tree->aln->seq_type == SEQ_CODON && ((PhyloSuperTree*) tree)->rescale_codon_brlen)
-                    num_sites += 3 * current_tree->aln->getNSite();
+                    num_sites += 3 * expected_num_states_current_tree;
                 else
-                    num_sites += current_tree->aln->getNSite();
+                    num_sites += expected_num_states_current_tree;
             }
             
             // add missing taxa from the current partition tree to the super tree if topology-unlink partition is used
@@ -240,7 +227,6 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                 }
             }
         }
-        
         // show the reloading tree time
         auto end = getRealTime();
         cout<<" - Time spent on Loading trees: "<<end-start<<endl;
@@ -263,41 +249,22 @@ void AliSimulator::initializeIQTreeFromTreeFile()
                     ((PhyloSuperTree*) tree)->part_info[i].part_rate  *= sum;
             }
         }
-    }
-    // other cases without partition models
-    else
-    {
+    } else {
+    /* non-partitioned model case */
         // initialize tree
-        tree = new IQTree();
+        if (posRateHeterotachy(params->model_name) != string::npos) {
+            tree = new PhyloTreeMixlen();
+        } else {
+            tree = new IQTree();
+        }
         bool is_rooted = false;
         tree->readTree(params->user_file, is_rooted);
         tree->setParams(params);
-        
         // initialize alignment
         tree->aln = new Alignment();
         initializeAlignment(tree, params->model_name);
-        
-        // inittialize model
+        // initialize model
         initializeModel(tree, params->model_name);
-
-        // if a Heterotachy model is used -> re-read the PhyloTreeMixlen from file
-        if (tree->getRate()->isHeterotachy())
-        {
-            // initialize a new PhyloTreeMixlen
-            IQTree* new_tree = new PhyloTreeMixlen(tree->aln, tree->getRate()->getNRate());
-            
-            // delete the old tree
-            delete tree;
-            
-            // set the new PhyloTreeMixlen to the new tree
-            tree = new_tree;
-            
-            // re-load the tree/branch-lengths from the file
-            tree->IQTree::readTree(params->user_file, is_rooted);
-            
-            // re-initialize the model
-            initializeModel(tree, params->model_name);
-        }
     }
 }
 
@@ -390,45 +357,44 @@ void AliSimulator::initializeAlignment(IQTree *tree, string model_fullname)
             }
         }
     }
-    
-    if (tree->aln->seq_type == SEQ_UNKNOWN)
+    if (tree->aln->seq_type == SEQ_UNKNOWN) {
         outError("Could not detect SequenceType from Model Name. Please check your Model Name or specify the SequenceType by --seqtype <SEQ_TYPE_STR> where <SEQ_TYPE_STR> is BIN, DNA, AA, NT2AA, CODON, or MORPH.");
-    
-    switch (tree->aln->seq_type) {
-        case SEQ_BINARY:
-            tree->aln->num_states = 2;
-            break;
-        case SEQ_DNA:
-            tree->aln->num_states = 4;
-            break;
-        case SEQ_PROTEIN:
-            tree->aln->num_states = 20;
-            break;
-        case SEQ_MORPH:
-                // only set num_state if it has not yet set (noting that num_states of Morph could be set in partition file)
-                if (tree->aln->num_states == 0)
-                    tree->aln->num_states = params->alisim_num_states_morph;
-
-                // throw error if users dont specify the number of states when simulating morph data
-                if (tree->aln->num_states <= 0)
-                    outError("Please specify the number of states for morphological data by --seqtype MORPH{<NUM_STATES>}");
-            break;
-        case SEQ_POMO:
-            throw "Sorry! SEQ_POMO is currently not supported";
-            break;
-        case SEQ_GENOTYPE:
-            tree->aln->num_states = std::stoi(model_fullname.substr(2));
-            break;
-    default:
-        break;
     }
-    
+    switch (tree->aln->seq_type) {
+    case SEQ_BINARY:
+        tree->aln->num_states = 2;
+        break;
+    case SEQ_DNA:
+        tree->aln->num_states = 4;
+        break;
+    case SEQ_PROTEIN:
+        tree->aln->num_states = 20;
+        break;
+    case SEQ_MORPH:
+        // only set num_state if it has not yet set (noting that num_states of Morph could be set in partition file)
+        if (tree->aln->num_states == 0) {
+            tree->aln->num_states = params->alisim_num_states_morph;
+        }
+        // throw error if users dont specify the number of states when simulating morph data
+        if (tree->aln->num_states <= 0) {
+            outError("Please specify the number of states for morphological data by --seqtype MORPH{<NUM_STATES>}");
+        }
+        break;
+    case SEQ_CODON:
+        tree->aln->initCodon(&tree->aln->sequence_type[5]);
+        break;
+    case SEQ_POMO:
+        throw "Sorry! SEQ_POMO is currently not supported";
+        break;
+    case SEQ_GENOTYPE:
+        tree->aln->num_states = std::stoi(model_fullname.substr(2));
+        break;
+    default:
+        throw "Invalid sequence type";
+    }
+    tree->aln->computeUnknownState();
     // add all leaf nodes' name into the alignment
     addLeafNamesToAlignment(tree->aln, tree->root, tree->root);
-    
-    // init Codon (if neccessary)
-    if (tree->aln->seq_type == SEQ_CODON)
-        tree->aln->initCodon(&tree->aln->sequence_type[5]);
 }
 
 /**
@@ -451,7 +417,6 @@ void AliSimulator::addLeafNamesToAlignment(Alignment *aln, Node *node, Node *dad
 void AliSimulator::initializeModel(IQTree *tree, string model_name)
 {
     tree->aln->model_name = model_name;
-    tree->aln->computeUnknownState();
     ModelsBlock *models_block = readModelsDefinition(*params);
     tree->params = params;
     tree->IQTree::initializeModel(*params, tree->aln->model_name, models_block);
@@ -2528,7 +2493,13 @@ void AliSimulator::branchSpecificEvolutionMasterThread(int sequence_length, doub
     string model_full_name = (*it)->attributes["model"];
     // convert separator from "/" to ","
     std::replace(model_full_name.begin(), model_full_name.end(), '/', ',');
-    IQTree *tmp_tree = new IQTree();
+    // initialize tree
+    IQTree *tmp_tree;
+    if (tree->getRate()->isHeterotachy()) {
+        tmp_tree = new PhyloTreeMixlen();
+    } else {
+        tmp_tree = new IQTree();
+    }
     tmp_tree->copyPhyloTree(tree, true);
     initializeModel(tmp_tree, model_full_name);
     
@@ -2903,7 +2874,7 @@ void AliSimulator::simulateSeqByGillespie(int segment_start, int &segment_length
     int ori_seq_length = node_seq_chunk.size();
     Insertion* insertion_before_simulation = latest_insertion;
     
-    double branch_length = (*it)->length * params->alisim_branch_scale;
+    double branch_length = (*it)->length * params->alisim_branch_scale * partition_rate;
     while (branch_length > 0)
     {
         // generate a waiting time s1 by sampling from the exponential distribution with mean 1/total_event_rate
@@ -3277,24 +3248,32 @@ void AliSimulator::handleSubs(int segment_start, double &total_sub_rate, vector<
 int AliSimulator::selectValidPositionForIndels(int upper_bound, vector<short int> &sequence)
 {
     int position = -1;
+    // Fast random site selection: select a site across only non-gapped sites.
+    // max attempts: upper_bound.
+    // Cheap (O(1) amortized) whenever gaps are not the majority of the sequence
     for (int i = 0; i < upper_bound; i++)
     {
         position = random_int(upper_bound);
-        
-        // try to move to the following site if the selected site is a gap
-        if (position < sequence.size() && sequence[position] == STATE_UNKNOWN)
-            for (; position < upper_bound; position++)
-                if (position == sequence.size() || sequence[position] != STATE_UNKNOWN)
-                    break;
-        
+
         // a valid position must not be a deleted site
         if (position == sequence.size() || sequence[position] != STATE_UNKNOWN)
-            break;
+            return position;
     }
-    // validate the position
-    if (position < sequence.size() && sequence[position] == STATE_UNKNOWN)
+
+    // Fallback: when the sequence is heavily gapped (i.e., extreme cases), so random draws kept missing
+    // the non-gapped sites within the max attempts.
+    // Collect all non-gapped positions once and pick uniformly among them.
+    vector<int> valid_positions;
+    valid_positions.reserve(upper_bound);
+    for (int i = 0; i < upper_bound; i++)
+        if (i == sequence.size() || sequence[i] != STATE_UNKNOWN)
+            valid_positions.push_back(i);
+
+    // validate that at least one valid position exists
+    if (valid_positions.empty())
         outError("Sorry! Could not select a valid position (not a deleted-site) for insertion/deletion events. You may specify a too high deletion rate, thus almost all sites were deleted. Please try again a a smaller deletion ratio!");
-    return position;
+
+    return valid_positions[random_int((int)valid_positions.size())];
 }
 
 /**

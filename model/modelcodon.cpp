@@ -393,7 +393,11 @@ void ModelCodon::init(const char *model_name, string model_params, StateFreqType
     size_t pos;
 	if ((pos=name.find('_')) == string::npos) {
 		def_freq = initCodon(model_name, freq, true, freq_params);
-        if (freq == FREQ_USER_DEFINED && def_freq != FREQ_USER_DEFINED) // mechanistic model
+        // A mechanistic model with nucleotide-targeted frequencies (MG-style,
+        // CF_TARGET_NT) cannot take user-defined codon frequencies: keep the
+        // frequency type the model chose (F3X4). A codon-targeted model
+        // (GY-style) can, so a +FU{...} request is honoured (issue #192).
+        if (freq == FREQ_USER_DEFINED && def_freq != FREQ_USER_DEFINED && codon_freq_style == CF_TARGET_NT)
             freq = def_freq;
 	} else {
 		def_freq = initCodon(name.substr(0, pos).c_str(), freq, false, freq_params);

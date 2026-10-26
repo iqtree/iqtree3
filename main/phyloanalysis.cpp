@@ -57,7 +57,7 @@
 #include "whtest/whtest_wrapper.h"
 #include "model/partitionmodel.h"
 #include "model/modelmixture.h"
-#include "model/modelfactorymixlen.h"
+#include "model/modelfactory.h"
 //#include "guidedbootstrap.h"
 #include "model/modelset.h"
 #include "utils/timeutil.h"
@@ -66,6 +66,8 @@
 #include "timetree.h"
 #include <Eigen/Eigenvalues>
 #include <unsupported/Eigen/MatrixFunctions>
+
+#include "utils/mutsel_wrapper.h"
 
 using namespace Eigen;
 using Eigen::Map;
@@ -84,11 +86,12 @@ extern "C" {
 void reportReferences(Params &params, ofstream &out) {
 
     out << "To cite IQ-TREE 3 please use:" << endl << endl
-    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Hector Banos, Andrew J. Roger," << endl
-    << "Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman, Matthew W. Hahn," << endl
-    << "Gavin Huttley, Robert Lanfear, Bui Quang Minh (2025)" << endl
+    << "Thomas K.F. Wong, Nhan Ly-Trong, Huaiyan Ren, Piyumal Demotte, Hector Banos," << endl
+    << "Andrew J. Roger, Edward Susko, Chris Bielow, Nicola De Maio, Nick Goldman," << endl
+    << "Matthew W. Hahn, Mario dos Reis, Le Sy Vinh, Gavin Huttley, Robert Lanfear, Bui Quang Minh (2026)" << endl
     << "IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models." << endl
-    << "Submitted." << endl << endl;
+    << "Molecular Biology and Evolution, msag117." << endl
+    << "https://doi.org/10.1093/molbev/msag117" << endl << endl;
 
     if (params.dating_method == "mcmctree") {
         out << "Since you used IQ2MC dating method please also cite: " << endl << endl
@@ -978,30 +981,18 @@ void reportTree(ofstream &out, Params &params, PhyloTree &tree, double tree_lh, 
     out << "Bayesian information criterion (BIC) score: " << BIC_score << endl;
 
     // mAIC report
-    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED && !params.contain_nonrev) {
+    if (tree.isSuperTree() && params.partition_type != TOPO_UNLINKED) {
         // compute mAIC/mBIC/mAICc if it is a partition model
-        int ntrees; //mix_df;
-        double mix_lh;
+        double mar_lh = tree.getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
-        mix_lh = tree.getModelFactory()->computeMarginalLh();
-        if (mix_lh < 0) {
-            PhyloSuperTree *stree = (PhyloSuperTree*) &tree;
-            ntrees = stree->size();
-            //mix_df = df + ntrees - 1;  // Ed Susko: The weights are fixed by the partition length, so there are no extra degrees of freedom
-            //nsites = tree.getAlnNSite();
+        double mAIC, mAICc, mBIC;
+        computeInformationScores(mar_lh, df, ssize, mAIC, mAICc, mBIC);
 
-            double mAIC, mAICc, mBIC;
-            computeInformationScores(mix_lh, df, ssize, mAIC, mAICc, mBIC);
-
-            out << endl;
-            out << "Marginal log-likelihood of the tree: " << mix_lh << endl;
-            out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << endl;
-            //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
-            //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
-        } else {
-            out << endl;
-            out << "mAIC calculation is skipped because not all partition sequence types are same" << endl;
-        }
+        out << endl;
+        out << "Marginal log-likelihood of the tree: " << mar_lh << endl;
+        out << "Marginal Akaike information criterion (mAIC) score: " << mAIC << endl;
+        //out << "Marginal corrected Akaike information criterion (mAICc) score: " << mAICc << endl;
+        //out << "Marginal Bayesian information criterion (mBIC) score: " << mBIC << endl;
     }
 
     if (ssize <= df && main_tree) {
@@ -1344,7 +1335,7 @@ void printOutfilesInfo(Params &params, IQTree &tree) {
         cout << "  Logl of intermediate trees:    " << params.out_prefix <<  ".ditrees_lh" << endl;
     }
 
-    if (params.gbo_replicates) {
+    if (params.gbo_replicates && tree.leafNum > 3) {
         cout << endl << "Ultrafast " << RESAMPLE_NAME << " approximation results written to:" << endl;
         if (!tree.isSuperTreeUnlinked())
             cout << "  Split support values:          " << params.out_prefix << ".splits.nex" << endl
@@ -1806,7 +1797,7 @@ void reportPhyloAnalysis(Params &params, IQTree &tree, ModelCheckpoint &model_in
          << "Burn-in: " << params.tree_burnin << endl << endl;
          }*/
 
-        if (params.consensus_type == CT_CONSENSUS_TREE && !tree.isSuperTreeUnlinked()) {
+        if (params.consensus_type == CT_CONSENSUS_TREE && !tree.isSuperTreeUnlinked() && tree.leafNum > 3) {
             out << "CONSENSUS TREE" << endl << "--------------" << endl << endl;
             out << "Consensus tree is constructed from "
                     << (params.num_bootstrap_samples ? params.num_bootstrap_samples : params.gbo_replicates)
@@ -2650,7 +2641,30 @@ void runApproximateBranchLengths(Params &params, IQTree &iqtree) {
 
 }
 
+// For MUTSEL model write a different file since we here only have the actual substitution rate
+void printMutselSiteRates(Alignment &alignment, const char *rate_file) {
+    DoubleVector site_rates = computeMutselSiteRates(alignment);
+    try {
+        ofstream out;
+        out.exceptions(ios::failbit | ios::badbit);
+        out.open(rate_file);
+        out.setf(ios::fixed, ios::floatfield);
+        out.precision(5);
+        out << "Site\tRate" << endl;
+        for (size_t i = 0; i < site_rates.size(); ++i)
+            out << i + 1 << "\t" << site_rates[i] << endl;
+        out.close();
+    } catch (ios::failure) {
+        outError(ERR_WRITE_OUTPUT, rate_file);
+    }
+    cout << "Site rates printed to " << rate_file << endl;
+}
+
 void printSiteRates(IQTree &iqtree, const char *rate_file, bool bayes) {
+    if (Params::getInstance().model_name.rfind("MUTSEL") == 0) {
+        printMutselSiteRates(*iqtree.aln, rate_file);
+        return;
+    }
     try {
         ofstream out;
         out.exceptions(ios::failbit | ios::badbit);
@@ -2668,7 +2682,7 @@ void printSiteRates(IQTree &iqtree, const char *rate_file, bool bayes) {
             << "#   Site:   Site ID within partition (starting from 1 for each partition)" << endl;
         } else
             out << "#   Site:   Alignment site ID" << endl;
-        
+
         if (bayes)
             out << "#   Rate:   Posterior mean site rate weighted by posterior probability" << endl
                 << "#   Cat:    Category with highest posterior (0=invariable, 1=slow, etc)" << endl
@@ -3521,9 +3535,31 @@ void startTreeReconstruction(Params &params, IQTree* &iqtree, ModelCheckpoint &m
     string best_subst_name, best_rate_name;
     map <string, vector<string> > nest_network;
     runModelFinder(params, *iqtree, model_info, best_subst_name, best_rate_name, nest_network);
-    
     runMixtureFinder(params, iqtree, model_info);
-    
+
+    // ModelFinder or MixtureFinder could selected a heterotachy rate model,
+    // so we need to check and possibly switch the tree type
+    if (posRateHeterotachy(iqtree->aln->model_name) != string::npos && !iqtree->isMixlen()) {
+        ASSERT(!iqtree->isSuperTree() && !iqtree->isTreeMix());
+        // create a new instance
+        IQTree* iqtree_new = new PhyloTreeMixlen(iqtree->aln);
+        iqtree_new->setCheckpoint(iqtree->getCheckpoint());
+        if (!iqtree->constraintTree.empty()) {
+            iqtree_new->constraintTree.readConstraint(iqtree->constraintTree);
+        }
+        iqtree_new->removed_seqs = iqtree->removed_seqs;
+        iqtree_new->twin_seqs = iqtree->twin_seqs;
+        if (params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) {
+            /* Initialized all data structure for PLL*/
+            iqtree_new->initializePLL(params);
+        }
+        iqtree_new->setParams(&params);
+        iqtree_new->copyPhyloTree(iqtree, false);
+        // replace iqtree object
+        delete iqtree;
+        iqtree = iqtree_new;
+    }
+
     // if users want to perform tree dating (with mcmc)
     // and if ModelFinder was run, the traversal starting node was incidently deleted (after copyTree and restoreCheckpoint)
     // we have to delete tree nodes to force IQ-TREE to re-read the tree from the treefile
@@ -3574,11 +3610,6 @@ void optimizeConTree(Params &params, IQTree *tree) {
     tree->getCheckpoint()->put("contree", contree);
 }
 
-// check whether it is tree-mixture model
-bool isTreeMixture(Params& params) {
-    return (params.model_name.find("+T") != string::npos);
-}
-
 void runTreeReconstruction(Params &params, IQTree* &iqtree) {
 
     iqtree->aln->checkAbsentStates("alignment");
@@ -3599,39 +3630,11 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     if ((params.start_tree == STT_BIONJ || params.iqp || params.leastSquareBranch) && !iqtree->root) {
         computeInitialDist(params, *iqtree);
     }
-    
+
     /******************** Pass the parameter object params to IQTree *******************/
     iqtree->setParams(&params);
-    
-    ModelsBlock *models_block = readModelsDefinition(params);
 
     initializeParams(params, *iqtree);
-
-    if (posRateHeterotachy(iqtree->aln->model_name) != string::npos && !iqtree->isMixlen()) {
-        // rate mixture
-        
-        if (iqtree->isTreeMix()) {
-            outError("Tree-mixture model does not work with rate mixture");
-        }
-        
-        // create a new instance
-        IQTree* iqtree_new = new PhyloTreeMixlen(iqtree->aln, 0);
-        iqtree_new->setCheckpoint(iqtree->getCheckpoint());
-        if (!iqtree->constraintTree.empty())
-            iqtree_new->constraintTree.readConstraint(iqtree->constraintTree);
-        iqtree_new->removed_seqs = iqtree->removed_seqs;
-        iqtree_new->twin_seqs = iqtree->twin_seqs;
-        if (params.start_tree == STT_PLL_PARSIMONY || params.start_tree == STT_RANDOM_TREE || params.pll) {
-            /* Initialized all data structure for PLL*/
-            iqtree_new->initializePLL(params);
-        }
-        iqtree_new->setParams(&params);
-        iqtree_new->copyPhyloTree(iqtree, false);
-
-        // replace iqtree object
-        delete iqtree;
-        iqtree = iqtree_new;
-    }
 
     if (!params.compute_ml_tree_only) {
         iqtree->setRootNode(params.root);
@@ -3647,17 +3650,13 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     iqtree->initSettings(params);
 
     /*********************** INITIAL MODEL OPTIMIZATION *****************/
-
-
     if (!iqtree->getModelFactory()) {
+        ModelsBlock *models_block = readModelsDefinition(params);
         iqtree->initializeModel(params, iqtree->aln->model_name, models_block);
+        delete models_block;
     }
-    if (iqtree->getRate()->isHeterotachy() && !iqtree->isMixlen()) {
-        ASSERT(0 && "Heterotachy tree not properly created");
-    }
-//    iqtree.restoreCheckpoint();
 
-    delete models_block;
+//    iqtree.restoreCheckpoint();
 
     // UpperBounds analysis. Here, to analyse the initial tree without any tree search or optimization
     /*
@@ -4061,7 +4060,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         }
     }
 
-    if (params.gbo_replicates > 0) {
+    if (params.gbo_replicates > 0 && iqtree->leafNum > 3) {
         cout << "Creating " << RESAMPLE_NAME << " support values..." << endl;
         if (!params.online_bootstrap)
             outError("Obsolete feature");
@@ -4075,6 +4074,12 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         cout << iqtree->collapseInternalBranches(nullptr, nullptr, params.min_branch_length*4);
         cout << " collapsed" << endl;
     }
+
+    // Pre-compute the marginal log-likelihood (mAIC) here, before the total runtime is
+    // reported, so its cost is included in the reported time. reportTree then just loads
+    // and prints the cached value like AIC/BIC.
+    if (iqtree->isSuperTree() && params.partition_type != TOPO_UNLINKED)
+        iqtree->getModelFactory()->getMarginalLh(params.remove_empty_seq);
 
     printFinalSearchInfo(params, *iqtree, search_cpu_time, search_real_time);
 
@@ -4099,7 +4104,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     }
     */
     
-    if (params.gbo_replicates && params.online_bootstrap && !iqtree->isSuperTreeUnlinked()) {
+    if (params.gbo_replicates && params.online_bootstrap && !iqtree->isSuperTreeUnlinked() && iqtree->leafNum > 3) {
         
         cout << endl << "Computing " << RESAMPLE_NAME << " consensus tree..." << endl;
         string splitsfile = params.out_prefix;
@@ -4261,32 +4266,26 @@ void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree 
         init_random(params.ran_seed);
         
         IQTree *iqtree;
-        if (alignment->isSuperAlignment()){
-            if(params.partition_type != BRLEN_OPTIMIZE){
-                iqtree = new PhyloSuperTreePlen((SuperAlignment*) alignment, (PhyloSuperTree*) tree);
+        if (alignment->isSuperAlignment()) {
+            if (params.partition_type != BRLEN_OPTIMIZE) {
+                iqtree = new PhyloSuperTreePlen((SuperAlignment*)alignment, (PhyloSuperTree*)tree);
             } else {
-                iqtree = new PhyloSuperTree((SuperAlignment*) alignment, (PhyloSuperTree*) tree);
+                iqtree = new PhyloSuperTree((SuperAlignment*)alignment, (PhyloSuperTree*)tree);
             }
         } else {
-            // allocate heterotachy tree if neccessary
-            int pos = posRateHeterotachy(alignment->model_name);
-            
-            if (params.num_mixlen > 1) {
-                iqtree = new PhyloTreeMixlen(alignment, params.num_mixlen);
-            } else if (pos != string::npos) {
-                iqtree = new PhyloTreeMixlen(alignment, 0);
-            } else
+            if (posRateHeterotachy(alignment->model_name) != string::npos) {
+                iqtree = new PhyloTreeMixlen(alignment);
+            } else {
                 iqtree = new IQTree(alignment);
+            }
         }
-        
         if (!tree->constraintTree.empty()) {
             iqtree->constraintTree.readConstraint(tree->constraintTree);
         }
-        
         // set checkpoint
         iqtree->setCheckpoint(tree->getCheckpoint());
         iqtree->num_precision = tree->num_precision;
-        
+        // run reconstruction for this tree
         runTreeReconstruction(params, iqtree);
         // read in the output tree file
         stringstream ss;
@@ -4344,17 +4343,21 @@ void runMultipleTreeReconstruction(Params &params, Alignment *alignment, IQTree 
     
     cout << "Run " << best_run+1 <<  " gave best log-likelihood: " << runLnL[best_run] << endl;
 
-    // initialize tree and model strucgture
-    ModelsBlock *models_block = readModelsDefinition(params);
+    // initialize tree and model structure
     tree->setParams(&params);
+    // restore thread count for tree search after ModelFinder's per-partition reduction
+    if (params.num_threads_max > params.num_threads) {
+        params.num_threads = params.num_threads_max;
+#ifdef _OPENMP
+        omp_set_num_threads(params.num_threads);
+#endif
+    }
     tree->setNumThreads(params.num_threads);
     if (!tree->getModelFactory()) {
+        ModelsBlock *models_block = readModelsDefinition(params);
         tree->initializeModel(params, tree->aln->model_name, models_block);
+        delete models_block;
     }
-    if (tree->getRate()->isHeterotachy() && !tree->isMixlen()) {
-        ASSERT(0 && "Heterotachy tree not properly created");
-    }
-    delete models_block;
 
     // restore the tree and model from the best run
     tree->getCheckpoint()->startStruct("run" + convertIntToString(best_run+1));
@@ -4667,52 +4670,50 @@ void runStandardBootstrap(Params &params, Alignment *alignment, IQTree *tree) {
         finish_random();
         randstream = saved_randstream;
 
-        if (params.print_tree_lh && MPIHelper::getInstance().isMaster()) {
-            double prob;
-            bootstrap_alignment->multinomialProb(*alignment, prob);
-            ofstream boot_lh;
-            if (sample == 0)
-                boot_lh.open(bootlh_name.c_str());
-            else
-                boot_lh.open(bootlh_name.c_str(), ios_base::out | ios_base::app);
-            boot_lh << "0\t" << prob << endl;
-            boot_lh.close();
+        if (MPIHelper::getInstance().isMaster()) {
+            if (params.print_tree_lh) {
+                double prob;
+                bootstrap_alignment->multinomialProb(*alignment, prob);
+                ofstream boot_lh;
+                if (sample == 0) {
+                    boot_lh.open(bootlh_name.c_str());
+                } else {
+                    boot_lh.open(bootlh_name.c_str(), ios_base::out | ios_base::app);
+                }
+                boot_lh << sample << "\t" << prob << endl;
+                boot_lh.close();
+            }
+            if (params.print_bootaln) {
+                bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
+            }
+            if (params.print_boot_site_freq) {
+                string sample_name = (string)params.out_prefix + "." + convertIntToString(sample);
+                printSiteStateFreq((sample_name + ".bootsitefreq").c_str(), bootstrap_alignment);
+                bootstrap_alignment->printAlignment(params.aln_output_format, (sample_name + ".bootaln").c_str());
+            }
         }
+
         IQTree *boot_tree;
-        if (alignment->isSuperAlignment()){
-            if(params.partition_type != BRLEN_OPTIMIZE){
-                boot_tree = new PhyloSuperTreePlen((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) tree);
+        if (alignment->isSuperAlignment()) {
+            if (params.partition_type != BRLEN_OPTIMIZE) {
+                boot_tree = new PhyloSuperTreePlen((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)tree);
             } else {
-                boot_tree = new PhyloSuperTree((SuperAlignment*) bootstrap_alignment, (PhyloSuperTree*) tree);
+                boot_tree = new PhyloSuperTree((SuperAlignment*)bootstrap_alignment, (PhyloSuperTree*)tree);
             }
         } else {
-            // allocate heterotachy tree if neccessary
-            int pos = posRateHeterotachy(alignment->model_name);
-            
-            if (params.num_mixlen > 1) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, params.num_mixlen);
-            } else if (pos != string::npos) {
-                boot_tree = new PhyloTreeMixlen(bootstrap_alignment, 0);
-            } else
+            if (posRateHeterotachy(alignment->model_name) != string::npos) {
+                boot_tree = new PhyloTreeMixlen(bootstrap_alignment);
+            } else {
                 boot_tree = new IQTree(bootstrap_alignment);
+            }
         }
-        if (params.print_bootaln && MPIHelper::getInstance().isMaster()) {
-            bootstrap_alignment->printAlignment(params.aln_output_format, bootaln_name.c_str(), true);
-        }
-
-        if (params.print_boot_site_freq && MPIHelper::getInstance().isMaster()) {
-            printSiteStateFreq((((string)params.out_prefix)+"."+convertIntToString(sample)+".bootsitefreq").c_str(), bootstrap_alignment);
-                bootstrap_alignment->printAlignment(params.aln_output_format, (((string)params.out_prefix)+"."+convertIntToString(sample)+".bootaln").c_str());
-        }
-
         if (!tree->constraintTree.empty()) {
             boot_tree->constraintTree.readConstraint(tree->constraintTree);
         }
-
         // set checkpoint
         boot_tree->setCheckpoint(tree->getCheckpoint());
         boot_tree->num_precision = tree->num_precision;
-
+        // run reconstruction for this tree
         runTreeReconstruction(params, boot_tree);
         // read in the output tree file
         stringstream ss;
@@ -4888,14 +4889,13 @@ void convertAlignment(Params &params, IQTree *iqtree) {
             ((SuperAlignment*)alignment)->printPartitionRaxml(partition_info.c_str());
         }
     } else if (params.gap_masked_aln) {
-        Alignment out_aln;
         Alignment masked_aln(params.gap_masked_aln, params.sequence_type, params.intype, params.model_name);
-        out_aln.createGapMaskedAlignment(&masked_aln, alignment);
-        out_aln.printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
-                exclude_sites, params.ref_seq_name);
-        string str = params.gap_masked_aln;
-        str += ".sitegaps";
-        out_aln.printSiteGaps(str.c_str());
+        Alignment *out_aln = alignment->createGapMaskedAlignment(&masked_aln);
+        out_aln->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
+                                exclude_sites, params.ref_seq_name);
+        string str = (string)params.gap_masked_aln + ".sitegaps";
+        out_aln->printSiteGaps(str.c_str());
+        delete out_aln;
     } else  {
         alignment->printAlignment(params.aln_output_format, params.aln_output, false, params.aln_site_list,
                 exclude_sites, params.ref_seq_name);
@@ -4906,24 +4906,26 @@ void convertAlignment(Params &params, IQTree *iqtree) {
     2016-08-04: compute a site frequency model for profile mixture model
 */
 void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
-
-    cout << endl << "===> COMPUTING SITE FREQUENCY MODEL BASED ON TREE FILE " << params.tree_freq_file << endl;
     ASSERT(params.tree_freq_file);
-    PhyloTree *tree = new PhyloTree(alignment);
+    cout << endl << "===> COMPUTING SITE FREQUENCY MODEL BASED ON TREE FILE " << params.tree_freq_file << endl;
+    double saved_min_branch_length = params.min_branch_length;
+    params.min_branch_length = 1e-6;
+    IQTree *tree;
+    if (posRateHeterotachy(alignment->model_name) != string::npos) {
+        tree = new PhyloTreeMixlen(alignment);
+    } else {
+        tree = new IQTree(alignment);
+    }
     tree->setParams(&params);
+    tree->setLikelihoodKernel(params.SSE);
+    tree->setNumThreads(params.num_threads);
     bool myrooted = params.is_rooted;
     tree->readTree(params.tree_freq_file, myrooted);
-    tree->setAlignment(alignment);
     tree->setRootNode(params.root);
-    
+    tree->setAlignment(alignment);
     ModelsBlock *models_block = readModelsDefinition(params);
     tree->setModelFactory(new ModelFactory(params, alignment->model_name, tree, models_block));
     delete models_block;
-    tree->setModel(tree->getModelFactory()->model);
-    tree->setRate(tree->getModelFactory()->site_rate);
-    tree->setLikelihoodKernel(params.SSE);
-    tree->setNumThreads(params.num_threads);
-    
     if (!tree->getModel()->isMixture())
         outError("No mixture model was specified!");
     uint64_t mem_size = tree->getMemoryRequired();
@@ -4947,19 +4949,16 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
     size_t nptn = alignment->getNPattern(), nstates = alignment->num_states;
     double *ptn_state_freq = new double[nptn*nstates];
     tree->computePatternStateFreq(ptn_state_freq);
-    alignment->site_state_freq.resize(nptn);
     for (size_t ptn = 0; ptn < nptn; ptn++) {
         double *f = new double[nstates];
         memcpy(f, ptn_state_freq+ptn*nstates, sizeof(double)*nstates);
-        alignment->site_state_freq[ptn] = f;
+        alignment->ptn_state_freq.push_back(f);
     }
-    alignment->getSitePatternIndex(alignment->site_model);
     printSiteStateFreq(((string)params.out_prefix+".sitefreq").c_str(), tree, ptn_state_freq);
     params.print_site_state_freq = WSF_NONE;
-    
     delete [] ptn_state_freq;
     delete tree;
-    
+    params.min_branch_length = saved_min_branch_length;
     cout << endl << "===> CONTINUE ANALYSIS USING THE INFERRED SITE FREQUENCY MODEL" << endl;
 }
 
@@ -4970,47 +4969,41 @@ void computeSiteFrequencyModel(Params &params, Alignment *alignment) {
 
 IQTree *newIQTree(Params &params, Alignment *alignment) {
     IQTree *tree;
-    
-    // check whether it is a tree mixture model
-    bool isTreeMix = isTreeMixture(params);
-    
+    // check whether it is a multitree mixture model
+    bool isTreeMix = (params.model_name.find("+T") != string::npos);
     if (alignment->isSuperAlignment()) {
         if (params.partition_type == TOPO_UNLINKED) {
-            if (isTreeMix)
-                outError("Error! The topology-unlinked option is not supported for multitree mixture model");
+            if (isTreeMix) {
+                outError("Topology-unlinked partition model is not supported for multitree mixture model");
+            }
             tree = new PhyloSuperTreeUnlinked((SuperAlignment*)alignment);
-        } else if(params.partition_type != BRLEN_OPTIMIZE){
-            if (isTreeMix)
-                outError("Error! The proportional edge option is not supported for multitree mixture model");
-            // initialize supertree - Proportional Edges case
+        } else if (params.partition_type != BRLEN_OPTIMIZE) {
+            if (isTreeMix) {
+                outError("Edge-linked partition models are not supported for multitree mixture model");
+            }
             tree = new PhyloSuperTreePlen((SuperAlignment*)alignment, params.partition_type);
         } else {
             if (isTreeMix) {
                 tree = new PhyloSuperHmm((SuperAlignment*)alignment, params);
             } else {
-                // initialize supertree stuff if user specifies partition file with -sp option
                 tree = new PhyloSuperTree((SuperAlignment*)alignment);
             }
         }
-        // this alignment will actually be of type SuperAlignment
-        //        alignment = tree->aln;
-        if (((PhyloSuperTree*)tree)->rescale_codon_brlen)
+        if (((PhyloSuperTree*)tree)->rescale_codon_brlen) {
             cout << "NOTE: Mixed codon and other data, branch lengths of codon partitions are rescaled by 3!" << endl;
-        
+        }
     } else {
-        // allocate heterotachy tree if neccessary
-        int pos = posRateHeterotachy(alignment->model_name);
-        
-        if (params.num_mixlen > 1) {
-            tree = new PhyloTreeMixlen(alignment, params.num_mixlen);
-        } else if (pos != string::npos) {
-            tree = new PhyloTreeMixlen(alignment, 0);
+        if (posRateHeterotachy(alignment->model_name) != string::npos) {
+            if (isTreeMix) {
+                outError("Heterotachy rate model is not supported for multitree mixture model");
+            }
+            tree = new PhyloTreeMixlen(alignment);
         } else if (isTreeMix) {
             tree = new IQTreeMixHmm(params, alignment);
-        } else
+        } else {
             tree = new IQTree(alignment);
+        }
     }
-
     return tree;
 }
 
@@ -5261,11 +5254,13 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             alignment = new SuperAlignment(params);
     } else if (params.partition_file) {
         // Partition model analysis
-        if (!align_is_given)
-            if (params.partition_type == TOPO_UNLINKED)
+        if (!align_is_given) {
+            if (params.partition_type == TOPO_UNLINKED) {
                 alignment = new SuperAlignmentUnlinked(params);
-            else
+            } else {
                 alignment = new SuperAlignment(params);
+            }
+        }
     } else {
         if (!align_is_given)
             alignment = createAlignment(params.aln_file, params.sequence_type, params.intype, params.model_name);
@@ -5278,18 +5273,39 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 
         // Initialize site-frequency model
         if (params.tree_freq_file) {
-            if (checkpoint->getBool("finishedSiteFreqFile")) {
-                alignment->readSiteStateFreq(((string)params.out_prefix + ".sitefreq").c_str());
-                params.print_site_state_freq = WSF_NONE;
-                cout << "CHECKPOINT: Site frequency model restored" << endl;
+            if (params.model_name.rfind("MUTSEL") == 0) {
+                if (checkpoint->getBool("finishedSiteModelFile")) {
+                    read_site_model_file((string)params.out_prefix + ".sitemodel", *alignment);
+                    alignment->model_name = params.model_name;
+                    params.print_site_state_freq = WSF_NONE;
+                    cout << "CHECKPOINT: Site model restored" << endl;
+                } else {
+                    computeMutselSiteFrequencyModel(params, alignment);
+                    alignment->model_name = params.model_name;
+                    checkpoint->putBool("finishedSiteModelFile", true);
+                    checkpoint->dump();
+                }
             } else {
-                computeSiteFrequencyModel(params, alignment);
-                checkpoint->putBool("finishedSiteFreqFile", true);
-                checkpoint->dump();
+                if (checkpoint->getBool("finishedSiteFreqFile")) {
+                    alignment->readSiteStateFreq(((string)params.out_prefix + ".sitefreq").c_str());
+                    params.print_site_state_freq = WSF_NONE;
+                    cout << "CHECKPOINT: Site frequency model restored" << endl;
+                } else {
+                    computeSiteFrequencyModel(params, alignment);
+                    checkpoint->putBool("finishedSiteFreqFile", true);
+                    checkpoint->dump();
+                }
             }
         }
         if (params.site_freq_file) {
             alignment->readSiteStateFreq(params.site_freq_file);
+        }
+        if (!params.site_model_file.empty()) {
+            read_site_model_file(params.site_model_file, *alignment);
+            std::cout << "INFO: Site model read from " << params.site_model_file << std::endl;
+            alignment->model_name = "MUTSEL";
+            params.model_name = alignment->model_name;
+            params.print_site_state_freq = WSF_NONE;
         }
     }
 
@@ -5307,6 +5323,14 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
     tree = newIQTree(params, alignment);
 
     tree->setCheckpoint(checkpoint);
+    // Increase the maximum branch length if MutSel is used because the time unit is different.
+    if (params.model_name.rfind("MUTSEL") == 0) {
+        // Minh/Thomas: Better have some option like --max-mutsel-brlen with the
+        // default of 200.0. So users can change. We don't like hard-coded
+        // constant in the code
+        // Also this has to be in the utils.cpp file, not here, which is hard to debug.
+        params.max_branch_length = 200.0;
+    }
     if (tree->isTreeMix()) {
         ((IQTreeMix*) tree)->setMinBranchLen(params);
     } else if (params.min_branch_length <= 0.0) {
@@ -5325,6 +5349,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
             cout << "NOTE: minimal branch length is increased to " << params.min_branch_length << " because PoMo infers number of mutations and frequency shifts" << endl;
             cout.precision(3);
         }
+
     }
     // Increase the minimum branch length if PoMo is used.
     if (alignment->seq_type == SEQ_POMO) {
@@ -5443,7 +5468,7 @@ void runPhyloAnalysis(Params &params, Checkpoint *checkpoint, IQTree *&tree, Ali
 //        if (params.model_name.find("LINK") != string::npos || params.model_name.find("MERGE") != string::npos)
 //            outError("-m TESTMERGE is not allowed when doing standard bootstrap. Please first\nfind partition scheme on the original alignment and use it for bootstrap analysis");
         if (alignment->getNSeq() < 4)
-            outError("It makes no sense to perform bootstrap with less than 4 sequences.");
+            outWarning("It makes no sense to perform bootstrap with less than 4 sequences.");
         runStandardBootstrap(params, alignment, tree);
     }
 
@@ -5580,25 +5605,25 @@ bool runCMaple(Params &params)
                 sub_model = cmaple::ModelBase::DEFAULT;
             }
             cmaple::Model model(sub_model, aln.getSeqType());
+            
+            // transfer CMAPLE params
+            std::unique_ptr<cmaple::Params> cmaple_params =
+            cmaple::ParamsBuilder()
+            .withComputeSPRTA(params.compute_SPRTA)
+            .withComputeSPRTAZeroBranches(params.SPRTA_zero_branches)
+            .withOutAlterSPR(params.out_alter_spr)
+            .withLocalRef(params.cmaple_use_local_ref)
+            .build();
 
             // Initialize a Tree
             const std::string input_treefile(params.user_file ? params.user_file : "");
-            cmaple::Tree tree(&aln, &model, input_treefile, (params.fixed_branch_length == BRLEN_FIX), cmaple::ParamsBuilder().build());
-            
-            // transfer SPRTA options if any
-            if (params.compute_SPRTA)
-            {
-                tree.params->compute_SPRTA = params.compute_SPRTA;
-                tree.params->compute_SPRTA_zero_length_branches = params.SPRTA_zero_branches;
-                tree.params->print_SPRTA_less_info_seqs = params.SPRTA_zero_branches;
-                tree.params->output_alternative_spr = params.out_alter_spr;
-            }
+            cmaple::Tree tree(&aln, &model, input_treefile, (params.fixed_branch_length == BRLEN_FIX), std::move(cmaple_params));
 
             // Infer a phylogenetic tree
             const cmaple::Tree::TreeSearchType tree_search_type = cmaple::Tree::parseTreeSearchType(params.tree_search_type_str);
             std::ostream null_stream(0);
             std::ostream& out_stream = cmaple::verbose_mode >= cmaple::VB_MED ? std::cout : null_stream;
-            tree.infer(params.num_threads, tree_search_type, params.shallow_tree_search, out_stream);
+            tree.infer(params.num_threads, tree_search_type, params.shallow_tree_search, params.compute_SPRTA, out_stream);
 
             // Compute branch supports (if users want to do so)
             if (params.aLRT_replicates)
@@ -5649,6 +5674,16 @@ bool runCMaple(Params &params)
                 out << tree.exportTSV();
                 out.close();
             }
+            
+            // export MAT if selected
+            if(params.cmaple_output_MAT)
+            {
+                std::string filename = output_treefile + ".mat.nex";
+                std::cout << "Writing MAT to file " << filename << std::endl;
+                ofstream out = ofstream(filename);
+                out << tree.exportNexus(tree_format, false, true);
+                out.close();
+            }
 
             // Show model parameters
             if (cmaple::verbose_mode > cmaple::VB_QUIET)
@@ -5664,10 +5699,12 @@ bool runCMaple(Params &params)
             // Show information about output files
             std::cout << "Analysis results written to:" << std::endl;
             std::cout << "Maximum-likelihood tree:       " << output_treefile << std::endl;
+            if (params.cmaple_output_MAT)
+                std::cout << "Estimated MAT:                 " << output_treefile + ".mat.nex" << std::endl;
             if (params.compute_SPRTA)
-                std::cout << "Tree in NEXUS format:      " << output_treefile + ".nex" << std::endl;
+                std::cout << "Tree in NEXUS format:          " << output_treefile + ".nex" << std::endl;
             if (params.compute_SPRTA && params.out_alter_spr)
-                std::cout << "Meta data in TSV format:   " << output_treefile + ".tsv" << std::endl;
+                std::cout << "Meta data in TSV format:       " << output_treefile + ".tsv" << std::endl;
             std::cout << "Screen log file:               " << prefix + ".log" << std::endl << std::endl;
 
             // show runtime
@@ -5703,80 +5740,65 @@ bool runCMaple(Params &params)
     are unlinked between partitions
  */
 void runUnlinkedPhyloAnalysis(Params &params, Checkpoint *checkpoint) {
-    SuperAlignment *super_aln;
-    
     ASSERT(params.partition_file);
-    
     /****************** read in alignment **********************/
-    // Partition model analysis
-    super_aln = new SuperAlignmentUnlinked(params);
+    SuperAlignment *super_aln = new SuperAlignmentUnlinked(params);
     PhyloSuperTree *super_tree = new PhyloSuperTree(super_aln);
- 
     /**** do separate tree reconstruction for each partition ***/
-    
     MTreeSet part_trees;
-    
     if (params.user_file) {
         // reading user tree file for all partitions
         bool is_rooted = false;
         part_trees.readTrees(params.user_file, is_rooted, 0, super_aln->partitions.size());
-        if (is_rooted)
+        if (is_rooted) {
             outError("Rooted trees not allowed: ", params.user_file);
-        if (part_trees.size() != super_aln->partitions.size())
+        }
+        if (part_trees.size() != super_aln->partitions.size()) {
             outError("User tree file does not have the same number of trees as partitions");
+        }
         params.user_file = nullptr;
     }
-
     ModelCheckpoint *model_info = new ModelCheckpoint;
-    int part = 0;
-    for (auto alnit = super_aln->partitions.begin(); alnit != super_aln->partitions.end(); alnit++, part++) {
-        
-        checkpoint->startStruct((*alnit)->name);
-
-        // allocate heterotachy tree if neccessary
-        int pos = posRateHeterotachy((*alnit)->model_name);
+    for (size_t part = 0; part < super_aln->partitions.size(); ++part) {
+        Alignment *part_aln = super_aln->partitions[part];
+        checkpoint->startStruct(part_aln->name);
         IQTree *tree;
-        
-        if (params.num_mixlen > 1) {
-            tree = new PhyloTreeMixlen((*alnit), params.num_mixlen);
-        } else if (pos != string::npos) {
-            tree = new PhyloTreeMixlen((*alnit), 0);
-        } else
-            tree = new IQTree((*alnit));
-
+        if (posRateHeterotachy(part_aln->model_name) != string::npos) {
+            tree = new PhyloTreeMixlen(part_aln);
+        } else {
+            tree = new IQTree(part_aln);
+        }
         tree->setCheckpoint(checkpoint);
         if (checkpoint->getBool("finished")) {
             tree->restoreCheckpoint();
         } else {
-            if (!part_trees.empty())
+            if (!part_trees.empty()) {
                 tree->copyTree(part_trees[part]);
-
+            }
             startTreeReconstruction(params, tree, *model_info);
             // call main tree reconstruction
-            if (params.num_runs == 1)
+            if (params.num_runs == 1) {
                 runTreeReconstruction(params, tree);
-            else
+            } else {
                 runMultipleTreeReconstruction(params, tree->aln, tree);
+            }
             checkpoint->putBool("finished", true);
             checkpoint->dump();
         }
-
         super_tree->at(part)->copyTree(tree);
-        
         delete tree;
         checkpoint->endStruct();
     }
-    
     IQTree *iqtree = super_tree;
     super_tree->setCheckpoint(checkpoint);
     startTreeReconstruction(params, iqtree, *model_info);
     runTreeReconstruction(params, iqtree);
-    if (MPIHelper::getInstance().isMaster())
+    if (MPIHelper::getInstance().isMaster()) {
         reportPhyloAnalysis(params, *iqtree, *model_info);
-
+    }
+    delete model_info;
     delete super_tree;
     delete super_aln;
-    delete model_info;
 }
 
 void assignBranchSupportNew(Params &params) {
@@ -6360,5 +6382,5 @@ void runRootstrap(Params &params) {
     else
         tree.computeRootstrapUnrooted(trees, params.root, false);
     cout << getRealTime() - start_time << " sec" << endl;
-    
+
 }

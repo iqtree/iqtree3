@@ -5,59 +5,42 @@
 //  Created by Minh Bui on 24/08/15.
 //
 //
-
 #include "phylotreemixlen.h"
 #include "phylonodemixlen.h"
-#include "model/modelfactorymixlen.h"
-#include "model/modelmixture.h"
 #include "model/ratefree.h"
 #include "utils/MPIHelper.h"
 
-#ifdef USE_CPPOPTLIB
-#include "cppoptlib/solver/newtondescentsolver.h"
-#include "cppoptlib/solver/lbfgsbsolver.h"
-#endif
+PhyloTreeMixlen::PhyloTreeMixlen()
+: IQTree(), mixlen(1), cur_mixture(-1), initializing_mixlen(false) {}
 
-PhyloTreeMixlen::PhyloTreeMixlen() : IQTree()
-#ifdef USE_CPPOPTLIB
-, cppoptlib::BoundedProblem<double>()
-#endif
-{
-	mixlen = 1;
-    cur_mixture = -1;
-//    relative_treelen = nullptr;
-    initializing_mixlen = false;
-}
+PhyloTreeMixlen::PhyloTreeMixlen(Alignment *aln)
+: IQTree(aln), mixlen(1), cur_mixture(-1), initializing_mixlen(false) {}
 
-PhyloTreeMixlen::PhyloTreeMixlen(Alignment *aln, int mixlen) : IQTree(aln)
-#ifdef USE_CPPOPTLIB
-, cppoptlib::BoundedProblem<double>(mixlen)
-#endif
-{
-//	cout << "Initializing heterotachy mixture branch lengths" << endl;
-    cur_mixture = -1;
-//    relative_treelen = nullptr;
-    initializing_mixlen = false;
-    setMixlen(mixlen);
-}
-
-PhyloTreeMixlen::~PhyloTreeMixlen() {
-//    if (relative_treelen)
-//        aligned_free(relative_treelen);
+void PhyloTreeMixlen::setCurMixture(int c) {
+    ASSERT(c >= -1 && c < (int)mixlen);
+    cur_mixture = c;
 }
 
 void PhyloTreeMixlen::startCheckpoint() {
-    if (mixlen > 0)
-        checkpoint->startStruct("PhyloTreeMixlen" + convertIntToString(getMixlen()));
-    else
+    if (mixlen > 1) {
+        checkpoint->startStruct("PhyloTreeMixlen" + convertIntToString(mixlen));
+    } else {
         PhyloTree::startCheckpoint();
+    }
 }
 
 void PhyloTreeMixlen::saveCheckpoint() {
-    if (mixlen > 0) {
+    if (mixlen > 1) {
         startCheckpoint();
-        if (this->relative_treelen.size() > 0) {
-            ASSERT(mixlen == this->relative_treelen.size());
+        if (relative_treelen.size() > 0) {
+            ASSERT(mixlen == relative_treelen.size());
+            // Here you actually changed the checkpoint file! the key is very different now.
+            // Have a look at the macro CKP_ARRAY_SAVE. If you view the ckp.gz file,
+            // it makes this line look like:
+            // &relative_treelen[0]: 527.8043991, 568.0718784
+            // whereas normally it looks like:
+            // relative_treelen: 527.8043991, 568.0718784
+            //CKP_ARRAY_SAVE(mixlen, &relative_treelen[0]); <-- this changes checkpoint key
             double relative_treelen[mixlen];
             for (int i = 0; i < mixlen; i++)
                 relative_treelen[i] = this->relative_treelen[i];
@@ -68,12 +51,14 @@ void PhyloTreeMixlen::saveCheckpoint() {
     IQTree::saveCheckpoint();
 }
 
-/** 
-    restore object from the checkpoint
-*/
 void PhyloTreeMixlen::restoreCheckpoint() {
-    if (mixlen > 0) {
+    if (mixlen > 1) {
         startCheckpoint();
+        // Minh: Again, the following is a bug, reverting now
+//        DoubleVector restored_relative_treelen(mixlen, 0.0);
+//        if (CKP_ARRAY_RESTORE(mixlen, &restored_relative_treelen[0])) {
+//            relative_treelen = restored_relative_treelen;
+//        }
         double relative_treelen[mixlen];
         if (CKP_ARRAY_RESTORE(mixlen, relative_treelen)) {
             this->relative_treelen.resize(mixlen);
@@ -83,43 +68,24 @@ void PhyloTreeMixlen::restoreCheckpoint() {
         endCheckpoint();
     }
     IQTree::restoreCheckpoint();
-    if (!root) {
-        // if not success, try to restore from PhyloTree
-        int orig_mixlen = mixlen;
-        mixlen = 0;
-        PhyloTree::restoreCheckpoint();
-        mixlen = orig_mixlen;
-    }
 }
 
 Node* PhyloTreeMixlen::newNode(int node_id, const char* node_name) {
-    return (Node*) (new PhyloNodeMixlen(node_id, node_name));
+    return (Node*)(new PhyloNodeMixlen(node_id, node_name));
 }
 
 Node* PhyloTreeMixlen::newNode(int node_id, int node_name) {
-    return (Node*) (new PhyloNodeMixlen(node_id, node_name));
-}
-
-void PhyloTreeMixlen::setMixlen(int mixlen) {
-	this->mixlen = mixlen;
+    return (Node*)(new PhyloNodeMixlen(node_id, node_name));
 }
 
 void PhyloTreeMixlen::readTreeString(const string &tree_string) {
     IQTree::readTreeString(tree_string);
-    treeLengths(relative_treelen);
-    if (mixlen > 0 && relative_treelen[0] == 0.0)
-        relative_treelen.clear();
-}
-
-void PhyloTreeMixlen::initializeModel(Params &params, string model_name, ModelsBlock *models_block) {
-    try {
-        if (!getModelFactory()) {
-            setModelFactory(new ModelFactoryMixlen(params, model_name, this, models_block));
+    if (mixlen > 1) {
+        treeLengths(relative_treelen);
+        if (relative_treelen[0] == 0.0) {
+            relative_treelen.clear();
         }
-    } catch (string & str) {
-        outError(str);
     }
-    IQTree::initializeModel(params, model_name, models_block);
 }
 
 void PhyloTreeMixlen::treeLengths(DoubleVector &lenvec, Node *node, Node *dad) {
@@ -133,6 +99,15 @@ void PhyloTreeMixlen::treeLengths(DoubleVector &lenvec, Node *node, Node *dad) {
     }
 }
 
+void PhyloTreeMixlen::setModelFactory(ModelFactory *model_fac) {
+    IQTree::setModelFactory(model_fac);
+    if (site_rate) {
+        ASSERT(site_rate->isHeterotachy());
+        mixlen = site_rate->getNRate();
+        // clear, as we now have new weights and mixlen
+        relative_treelen.clear();
+    }
+}
 
 void PhyloTreeMixlen::initializeMixBranches(PhyloNode *node, PhyloNode *dad) {
     if (!node) {
@@ -297,6 +272,7 @@ void PhyloTreeMixlen::initializeMixlen(double tolerance, bool write_info) {
     }
 
     if (((PhyloNeighborMixlen*)root->neighbors[0])->lengths.size() != mixlen) {
+        ASSERT(relative_treelen.size() == mixlen);
         // assign branch length from rate model
         DoubleVector saved_treelen = relative_treelen;
         DoubleVector lenvec;
@@ -349,31 +325,6 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
 
     theta_computed = false;
 
-#ifdef USE_CPPOPTLIB
-    if (params->optimize_alg_mixlen.find("cppopt") != string::npos) {
-        //----- using cppoptlib ------//
-
-        TVector lower_bound(mixlen), upper_bound(mixlen), variables(mixlen);
-
-    //    variables.resize(mixlen);
-        for (i = 0; i < mixlen; i++) {
-            lower_bound[i] = params->min_branch_length;
-            variables[i] = current_it->getLength(i);
-            upper_bound[i] = params->max_branch_length;
-        }
-
-        setBoxConstraint(lower_bound, upper_bound);
-
-        cppoptlib::NewtonDescentSolver<PhyloTreeMixlen> solver;
-    //    cppoptlib::LbfgsbSolver<PhyloTreeMixlen> solver;
-        solver.minimize(*this, variables);
-        for (i = 0; i < mixlen; i++) {
-            current_it->setLength(i, variables[i]);
-            current_it_back->setLength(i, variables[i]);
-        }
-    } else
-#endif
-
     if (params->optimize_alg_mixlen.find("newton") != string::npos) {
 
         //----- Newton-Raphson -----//
@@ -423,10 +374,10 @@ void PhyloTreeMixlen::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool
         }
 
     } else {
-
-        if (!model_factory->fused_mix_rate && getModel()->isMixture())
-            outError("Please use option -optlen BFGS to disable EM algorithm");
-        
+        if (getModel()->isSiteSpecificModel() || (getModel()->isMixture() && !model_factory->fused_mix_rate)) {
+            outError("Site-specific and non-fused mixture models cannot use EM algorithm for heterotachous branch length optimization. ",
+                     "Please apply the -optlen BFGS option to use BFGS algorithm instead");
+        }
         // EM algorithm
         size_t nptn = aln->getNPattern();
         size_t nmix = site_rate->getNRate();
@@ -687,208 +638,15 @@ void PhyloTreeMixlen::printResultTree(string suffix) {
         cout << "Best tree printed to " << tree_file_name << endl;
 }
 
-
-/*************** Using cppoptlib for branch length optimization ***********/
-
-#ifdef USE_CPPOPTLIB
-double PhyloTreeMixlen::value(const TVector &x) {
-    double xx[mixlen+1];
-    for (int i = 0; i < mixlen; i++)
-        xx[i+1] = x(i);
-    return targetFunk(xx);
-}
-
-void PhyloTreeMixlen::gradient(const TVector &x, TVector &grad) {
-    int i;
-    double xx[mixlen];
-    for (i = 0; i < mixlen; i++)
-        xx[i] = x(i);
-    double df[mixlen+1], ddf[mixlen*mixlen];
-    computeFuncDervMulti(xx, df, ddf);
-    for (i = 0; i < mixlen; i++)
-        grad(i) = df[i];
-}
-
-void PhyloTreeMixlen::hessian(const TVector &x, THessian &hessian) {
-    int i, j;
-    double xx[mixlen];
-    for (i = 0; i < mixlen; i++)
-        xx[i] = x(i);
-    int mixlen2 = mixlen*mixlen;
-    double df[mixlen+1], ddf[mixlen2];
-    computeFuncDervMulti(xx, df, ddf);
-
-    for (i = 0; i < mixlen; i++)
-        for (j = 0; j < mixlen; j++)
-            hessian(i, j) = ddf[i*mixlen+j];
-}
-#endif
-
-/**
- * clear the array "relative_treelen"
- */
-void PhyloTreeMixlen::clear_relative_treelen() {
-    relative_treelen.clear();
-}
-
 // defining log-likelihood derivative function for EM algorithm
 void PhyloTreeMixlen::computeFuncDerv(double value, double &df, double &ddf) {
-
-    if (cur_mixture < 0)
+    if (initializing_mixlen) {
         return PhyloTree::computeFuncDerv(value, df, ddf);
-
+    }
+    ASSERT(cur_mixture >= 0);
     current_it->setLength(cur_mixture, value);
     current_it_back->setLength(cur_mixture, value);
-
     (this->*computeLikelihoodDervMixlenPointer)(current_it, (PhyloNode*) current_it_back->node, df, ddf);
-
-	df = -df;
-    ddf = -ddf;
-    return;
-
-
-    PhyloNeighbor* dad_branch = current_it;
-    PhyloNode *dad = (PhyloNode*) current_it_back->node;
-
-    PhyloNode *node = (PhyloNode*) dad_branch->node;
-    PhyloNeighbor *node_branch = (PhyloNeighbor*) node->findNeighbor(dad);
-    if (!central_partial_lh)
-        initializeAllPartialLh();
-    if (node->isLeaf()) {
-    	PhyloNode *tmp_node = dad;
-    	dad = node;
-    	node = tmp_node;
-    	PhyloNeighbor *tmp_nei = dad_branch;
-    	dad_branch = node_branch;
-    	node_branch = tmp_nei;
-    }
-    
-    ASSERT((dad_branch->partial_lh_computed & 1) || node->isLeaf());
-    ASSERT((node_branch->partial_lh_computed & 1) || dad->isLeaf());
-
-    size_t nstates = aln->num_states;
-    size_t ncat = site_rate->getNRate();
-    size_t nmixture = model->getNMixtures();
-
-    size_t block = ncat * nstates * nmixture;
-    size_t statemix = nstates * nmixture;
-    size_t statecat = nstates * ncat;
-    size_t orig_nptn = aln->size();
-    size_t nptn = aln->size()+model_factory->unobserved_ptns.size();
-    size_t maxptn = get_safe_upper_limit(nptn);
-    double *eval = model->getEigenvalues();
-    ASSERT(eval);
-
-	ASSERT(theta_all);
-	if (!theta_computed) {
-		// precompute theta for fast branch length optimization
-
-	    if (dad->isLeaf()) {
-	    	// special treatment for TIP-INTERNAL NODE case
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-            for (size_t ptn = 0; ptn < nptn; ptn++) {
-                const double *partial_lh_dad = dad_branch->partial_lh + (ptn*block);
-                double *theta = theta_all + (ptn*block);
-                
-                // TODO: check with vectorclass!
-                const double *lh_tip = tip_partial_lh +
-                ((int)((ptn < orig_nptn) ? (aln->at(ptn))[dad->id] :  model_factory->unobserved_ptns[ptn-orig_nptn][dad->id]))*statemix;
-                for (size_t m = 0; m < nmixture; m++) {
-                    for (size_t i = 0; i < statecat; i++) {
-                        theta[(m*statecat)+i] = lh_tip[(m*nstates) + (i%nstates)] * partial_lh_dad[(m*statecat)+i];
-                    }
-                }
-            }
-			// ascertainment bias correction
-	    } else {
-	    	// both dad and node are internal nodes
-		    const double *partial_lh_node = node_branch->partial_lh;
-		    const double *partial_lh_dad = dad_branch->partial_lh;
-
-            size_t all_entries = nptn*block;
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-            for (size_t i = 0; i < all_entries; i++) {
-                theta_all[i] = partial_lh_node[i] * partial_lh_dad[i];
-            }
-        }
-        if (nptn < maxptn) {
-            // copy dummy values
-            for (size_t ptn = nptn; ptn < maxptn; ptn++)
-                memcpy(&theta_all[ptn*block], &theta_all[(ptn-1)*block], block*sizeof(double));
-        }
-        theta_computed = true;
-    }
-
-    double *val0 = new double[statecat];
-    double *val1 = new double[statecat];
-    double *val2 = new double[statecat];
-    for (size_t c = 0; c < ncat; c++) {
-        double prop = site_rate->getProp(c);
-        for (size_t i = 0; i < nstates; i++) {
-            double cof = eval[cur_mixture*nstates+i]*site_rate->getRate(c);
-            // length for heterotachy model
-            double val = exp(cof*dad_branch->getLength(cur_mixture)) * prop * model->getMixtureWeight(cur_mixture);
-            double val1_ = cof*val;
-            val0[((c)*nstates)+i] = val;
-            val1[((c)*nstates)+i] = val1_;
-            val2[((c)*nstates)+i] = cof*val1_;
-        }
-    }
-
-    double my_df = 0.0, my_ddf = 0.0, prob_const = 0.0, df_const = 0.0, ddf_const = 0.0;
-
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+:my_df,my_ddf,prob_const,df_const,ddf_const)
-#endif
-    for (size_t ptn = 0; ptn < nptn; ptn++) {
-        double lh_ptn = ptn_invar[ptn], df_ptn = 0.0, ddf_ptn = 0.0;
-        const double *theta = theta_all + (ptn*block) + (cur_mixture*statecat);
-        for (size_t i = 0; i < statecat; i++) {
-            lh_ptn += val0[i] * theta[i];
-            df_ptn += val1[i] * theta[i];
-            ddf_ptn += val2[i] * theta[i];
-        }
-        lh_ptn = fabs(lh_ptn);
-        if (ptn < orig_nptn) {
-            double df_frac = df_ptn / lh_ptn;
-            double ddf_frac = ddf_ptn / lh_ptn;
-            double freq = ptn_freq[ptn];
-            double tmp1 = df_frac * freq;
-            double tmp2 = ddf_frac * freq;
-            my_df += tmp1;
-            my_ddf += tmp2 - tmp1 * df_frac;
-        } else {
-            // ascertainment bias correction
-            prob_const += lh_ptn;
-            df_const += df_ptn;
-            ddf_const += ddf_ptn;
-        }
-    }
-    df = my_df;
-    ddf = my_ddf;
-    if (std::isnan(df) || std::isinf(df)) {
-        df = 0.0;
-        ddf = 0.0;
-    }
-    if (orig_nptn < nptn) {
-        // ascertainment bias correction
-        prob_const = 1.0 - prob_const;
-        double df_frac = df_const / prob_const;
-        double ddf_frac = ddf_const / prob_const;
-        size_t nsites = aln->getNSite();
-        df += nsites * df_frac;
-        ddf += nsites *(ddf_frac + df_frac*df_frac);
-    }
-
-    delete [] val2;
-    delete [] val1;
-    delete [] val0;
-
     df = -df;
     ddf = -ddf;
 }
-
