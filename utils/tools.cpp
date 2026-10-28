@@ -681,17 +681,34 @@ Exponential_Weibull 0.230347 0.308228 0.204545 0.331749 0.228132 0.220478 0.2738
         infile.close();
 }
 
+static void parse_random_numbers(Distribution &distribution, size_t num_numbers)
+{
+    if (distribution.random_numbers.size() >= num_numbers)
+        return;
+    
+    // Continue parsing from where we were up to
+    istringstream iss_random_numbers(distribution.random_numbers_str);
+    iss_random_numbers.seekg(distribution.parsed_pos);
+
+    double random_number = distribution.random_numbers.empty() ? 0 : distribution.random_numbers.back();
+    while (distribution.random_numbers.size() < num_numbers)
+    {
+        iss_random_numbers >> random_number;
+        distribution.random_numbers.push_back(random_number);
+    }
+    distribution.parsed_pos = iss_random_numbers.tellg();
+}
+
 double random_number_from_distribution(string distribution_name, bool non_negative)
 {
     // randomly generate a number from a uniform distribution
     if (distribution_name.compare("uniform") == 0)
         return random_double();
         
-    Distribution distribution = Params::getInstance().distributions[distribution_name];
-    string random_numbers_str = distribution.random_numbers_str;
+    Distribution& distribution = Params::getInstance().distributions[distribution_name];
     
     // check whether distribution_name could be found
-    if (random_numbers_str.length() == 0)
+    if (distribution.random_numbers_str.length() == 0)
     {
         if (distribution_name.length()>0)
             outError("Expecting a double or a distribution name, but found "+distribution_name+". Could not found the distribution named " + distribution_name);
@@ -703,15 +720,10 @@ double random_number_from_distribution(string distribution_name, bool non_negati
     double random_number;
     for (int attempt = 0; attempt < 1000; ++attempt)
     {
-        // convert random_numbers_str to istringstream
-        istringstream iss_random_numbers(random_numbers_str);
-        
         // draw a random number
-        int rand_index = random_int(distribution.pool_size) + 1;
-        
-        // extract the selected number from iss_random_numbers
-        for (int i = 0; i<rand_index; i++)
-            iss_random_numbers >> random_number;
+        int rand_index = random_int(distribution.pool_size);
+        parse_random_numbers(distribution, rand_index + 1);
+        random_number = distribution.random_numbers[rand_index];
         
         // don't need to retry if the random number meets the output requirement
         if (!non_negative || random_number >= 0)

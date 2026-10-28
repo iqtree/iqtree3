@@ -152,6 +152,8 @@ namespace __gnu_cxx {
 struct Distribution {
   string random_numbers_str;
   int pool_size;
+  vector<double> random_numbers;
+  streampos parsed_pos = 0;
 } ;
 
 /**
