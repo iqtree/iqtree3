@@ -2572,6 +2572,9 @@ void Alignment::doReadFasta(char *filename, char *sequence_type, StrVector &sequ
             if (line == "") {
                 continue;
             }
+            if (line[0] == ';' && sequences.empty()) {
+                continue; // comment line before the first record (original Pearson FASTA format)
+            }
             //cout << line << endl;
             if (line[0] == '>') { // next sequence
                 string::size_type pos = line.find_first_of("\n\r");
