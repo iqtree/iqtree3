@@ -12,6 +12,10 @@ IQ-TREE
 
 Efficient and versatile phylogenomic software by maximum likelihood <http://www.iqtree.org>
 
+NOTE: The DGM-star model is implemented in the [fix_gamma](https://github.com/iqtree/iqtree3/tree/fix_gamma) branch of the code.
+It will be merged to the master branch once the manuscript is accepted for publication.
+Preprint is currently available at: <https://doi.org/10.64898/2026.10.30.763052>.
+
 Introduction
 ------------
 
