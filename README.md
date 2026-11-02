@@ -12,6 +12,13 @@ IQ-TREE
 
 Efficient and versatile phylogenomic software by maximum likelihood <http://www.iqtree.org>
 
+This version implements the DGM-star (Discrete-Gamma-Model Star) model, as a drop-in
+replacement to the Gamma model [+G] of site rate heterogeneity among sites. This model addresses
+the branch length estimation bias raised by [Ferretti et al., 2026](https://doi.org/10.1093/sysbio/syag037).
+A preprint describing this model is available at: <https://doi.org/10.64898/2026.10.30.763052>.
+As a quick usage, change `-m GTR+G` option to `-m GTR+Gs`. Alternatively, users can also add `--gamma-star`
+option to the command line.
+
 Introduction
 ------------
 
