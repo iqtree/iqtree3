@@ -1506,7 +1506,7 @@ void SuperAlignment::createBootstrapAlignment(IntVector &pattern_freq, const cha
 }
 
 
-void SuperAlignment::createBootstrapAlignment(int *pattern_freq, const char *spec, int *rstream) {
+void SuperAlignment::createBootstrapAlignment(int *pattern_freq, const char *spec, int *rstream, double jackknife_prop) {
 	ASSERT(isSuperAlignment());
 //	if (spec && strncmp(spec, "GENE", 4) != 0) outError("Unsupported yet. ", __func__);
 
@@ -1520,14 +1520,14 @@ void SuperAlignment::createBootstrapAlignment(int *pattern_freq, const char *spe
 		}
 		memset(pattern_freq, 0, nptn * sizeof(int));
         IntVector gene_freq;
-        random_resampling(partitions.size(), gene_freq, rstream);
+        random_resampling(partitions.size(), gene_freq, rstream, jackknife_prop);
         for (int part = 0; part < partitions.size(); part++) {
             for (int rep = 0; rep < gene_freq[part]; rep++) {
                 Alignment *aln = partitions[part];
                 if (strncmp(spec,"GENESITE",8) == 0) {
                     // then resampling sites in resampled gene
                     IntVector sample;
-                    random_resampling(aln->getNSite(), sample, rstream);
+                    random_resampling(aln->getNSite(), sample, rstream, jackknife_prop);
                     for (int site = 0; site < sample.size(); site++) {
                         for (int rep2 = 0; rep2 < sample[site]; rep2++) {
                             int ptn_id = aln->getPatternID(site);
@@ -1546,9 +1546,9 @@ void SuperAlignment::createBootstrapAlignment(int *pattern_freq, const char *spe
 		int offset = 0;
 		for (vector<Alignment*>::iterator it = partitions.begin(); it != partitions.end(); it++) {
             if (spec && strncmp(spec, "SCALE=", 6) == 0) {
-                (*it)->createBootstrapAlignment(pattern_freq + offset, spec, rstream);
+                (*it)->createBootstrapAlignment(pattern_freq + offset, spec, rstream, jackknife_prop);
             } else {
-                (*it)->createBootstrapAlignment(pattern_freq + offset, nullptr, rstream);
+                (*it)->createBootstrapAlignment(pattern_freq + offset, nullptr, rstream, jackknife_prop);
             }
 			offset += (*it)->getNPattern();
 		}
