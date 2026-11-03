@@ -503,6 +503,13 @@ public:
     */
     virtual void checkAbsentStates(string msg);
 
+    /*
+        check if the alignment contains only one single state
+        @param[in] state the state to check, if not specified, there is no constraint on the only single state
+        @return TRUE if the alignment contains only one single state; otherwise return FALSE
+    */
+    bool containSingleStateOnly(const int& state = -1);
+
     /**
             check proper and undupplicated sequence names
      */
@@ -694,6 +701,20 @@ public:
      *  Metadata are copied
      */
     Alignment *convertCodonToDNA() const;
+
+    /**
+        convert an alignment into binary (gap/non-gap) alignment
+        @param[in] model_name name of model for the new alignment
+        @return a pointer to a new alignment
+    */
+    virtual Alignment* convertToBin(const string& model_name = "GTR2");
+
+    /**
+        convert an alignment into binary (gap/non-gap) alignment
+        @param[in] model_name name of model for the new alignment
+        @param[out] output_aln a pointer to a new alignment
+    */
+    void convertToBin(Alignment* output_aln, const string& model_name);
 
     /**
      @param quartet ID of four taxa

@@ -1369,6 +1369,21 @@ void PhyloSuperTree::initMarginalAncestralState(ostream &out, bool &orig_kernel_
 void PhyloSuperTree::computeMarginalAncestralState(PhyloNeighbor *dad_branch, PhyloNode *dad,
     double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
 
+    computeMarginalState(true, dad_branch, dad,
+                         ptn_ancestral_prob, ptn_ancestral_seq);
+}
+
+void PhyloSuperTree::computeMarginalExtantState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+    double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
+
+    computeMarginalState(false, dad_branch, dad,
+                         ptn_ancestral_prob, ptn_ancestral_seq);
+}
+
+
+void PhyloSuperTree::computeMarginalState(bool compute_ancestral, PhyloNeighbor *dad_branch, PhyloNode *dad,
+                                  double *ptn_ancestral_prob, int *ptn_ancestral_seq)
+{
     SuperNeighbor *snei = (SuperNeighbor*)dad_branch;
     SuperNeighbor *snei_back = (SuperNeighbor*)dad_branch->node->findNeighbor(dad);
     int part = 0;
@@ -1376,8 +1391,20 @@ void PhyloSuperTree::computeMarginalAncestralState(PhyloNeighbor *dad_branch, Ph
         size_t nptn = (*it)->getAlnNPattern();
         size_t nstates = (*it)->model->num_states;
         if (snei->link_neighbors[part]) {
-            (*it)->computeMarginalAncestralState(snei->link_neighbors[part], (PhyloNode*)snei_back->link_neighbors[part]->node,
-                ptn_ancestral_prob, ptn_ancestral_seq);
+            // compute an ancestral sequence
+            if (compute_ancestral)
+            {
+                (*it)->computeMarginalAncestralState(snei->link_neighbors[part],
+                                                     (PhyloNode*)snei_back->link_neighbors[part]->node,
+                                                     ptn_ancestral_prob, ptn_ancestral_seq);
+            }
+            // otherwise, compute an extant sequence
+            else
+            {
+                (*it)->computeMarginalExtantState(snei->link_neighbors[part],
+                                                  (PhyloNode*)snei_back->link_neighbors[part]->node,
+                                                  ptn_ancestral_prob, ptn_ancestral_seq);
+            }
         } else {
             // branch does not exist in partition tree
             double eqprob = 1.0/nstates;
@@ -1420,24 +1447,84 @@ void PhyloSuperTree::computeSubtreeAncestralState(PhyloNeighbor *dad_branch, Phy
 }
 
 void PhyloSuperTree::writeMarginalAncestralState(ostream &out, PhyloNode *node,
-    double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
+    double *ptn_ancestral_prob, int *ptn_ancestral_seq, const bool gapped_seq_reconstruction, PhyloTree* gsr_supertree, double *ptn_gsr_prob, int *ptn_gsr_seq) {
     int part = 1;
+    
+    ASSERT(!gsr_supertree || (ptn_gsr_prob && ptn_gsr_seq && gsr_supertree->isSuperTree()));
+    const size_t gsr_nstates = 2;
+    
     for (auto it = begin(); it != end(); ++it, ++part) {
         size_t nsites  = (*it)->getAlnNSite();
         int    nstates = (*it)->model->num_states;
+        
+        // extract the tree partition for gapped sequence reconstruction
+        PhyloTree* gsr_tree = gsr_supertree ? ((PhyloSuperTree*) gsr_supertree)->at(part - 1) : nullptr;
+        
         for (size_t site = 0; site < nsites; ++site) {
             int ptn = (*it)->aln->getPatternID(site);
             out << node->name << "\t" << part << "\t" << site+1 << "\t";
-            out << (*it)->aln->convertStateBackStr(ptn_ancestral_seq[ptn]);
-            const double *state_prob = ptn_ancestral_prob + (ptn*nstates);
-            for (int j = 0; j < nstates; ++j) {
-                out << "\t" << state_prob[j];
+            string predicted_state = (*it)->aln->convertStateBackStr(ptn_ancestral_seq[ptn]);
+            
+            // if using gapped sequence reconstruction
+            if (gapped_seq_reconstruction)
+            {
+                // initial default values
+                // to handle the special case: the alignment contains all non-gap characters
+                // -> output p_gap = 0 to all positions
+                double p_gap = 0;
+                double p_non_gap = 1.0;
+                
+                // normal case
+                if (gsr_tree)
+                {
+                    // extract the current pattern
+                    int gsr_ptn = gsr_tree->aln->getPatternID(site);
+                    
+                    // overwrite the predicted character if it's likely be a gap
+                    if (ptn_gsr_seq[gsr_ptn] == 0)
+                        predicted_state = (*it)->aln->convertStateBackStr((*it)->aln->STATE_UNKNOWN);
+                    
+                    // extract the probability of gap and non-gap
+                    double *gsr_state_prob = ptn_gsr_prob + gsr_ptn * gsr_nstates;
+                    p_gap = gsr_state_prob[0];
+                    p_non_gap = gsr_state_prob[1];
+                }
+                
+                // write the predicted non-gap character
+                out << predicted_state;
+                
+                // normalize and print the probability of each non-gap state
+                // NOTE: this could be speeded up by vectorization
+                const double *state_prob = ptn_ancestral_prob + ptn*nstates;
+                for (size_t j = 0; j < nstates; ++j) {
+                    out << "\t" << state_prob[j] * p_non_gap;
+                }
+
+                // print p_gap
+                out << "\t" << p_gap;
+            }
+            // otherwise, using normal non-gapped sequence reconstruction
+            else
+            {
+                out << predicted_state;
+                const double *state_prob = ptn_ancestral_prob + (ptn*nstates);
+                for (int j = 0; j < nstates; ++j) {
+                    out << "\t" << state_prob[j];
+                }
             }
             out << endl;
         }
         size_t nptn = (*it)->getAlnNPattern();
         ptn_ancestral_prob += nptn*nstates;
         ptn_ancestral_seq += nptn;
+        
+        // if using gapped sequence reconstruction -> move pointers
+        if (gsr_tree)
+        {
+            size_t gsr_nptn = gsr_tree->getAlnNPattern();
+            ptn_gsr_prob += gsr_nptn * gsr_nstates;
+            ptn_gsr_seq += gsr_nptn;
+        }
     }
 }
 
@@ -1561,5 +1648,25 @@ void PhyloSuperTree::printBestPartitionParams(const char *filename) {
         cout << "Partition information was printed to " << filename << endl;
     } catch (ios::failure &) {
         outError(ERR_WRITE_OUTPUT, filename);
+    }
+}
+
+void PhyloSuperTree::validatePartitionModel()
+{
+    // don't check if there is no partition
+    if (empty()) return;
+    
+    // don't check if the model is null
+    if (!front()->model) return;
+    
+    // init type of model using the first partition
+    const bool is_reversible = front()->model->isReversible();
+    
+    // loop over all other partitions
+    for (iterator it = begin(); it != end(); it++) {
+        if ((*it)->model != nullptr && (*it)->model->isReversible() != is_reversible)
+        {
+            outError("All partitions must use EITHER reversible OR non-reversible models. Please check!");
+        }
     }
 }

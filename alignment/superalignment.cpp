@@ -1891,3 +1891,28 @@ void SuperAlignment::orderPatternByNumChars(int pat_type) {
     // TODO compute pars_lower_bound (lower bound of pars score for remaining patterns)
     delete [] pars_lower_bound;
 }
+
+SuperAlignment* SuperAlignment::convertToBin(const string& new_model_name)
+{
+    SuperAlignment* new_aln = new SuperAlignment;
+    // convert the base alignment
+    Alignment::convertToBin(new_aln, new_model_name);
+    
+    // convert alignment members one by one
+    for (vector<Alignment*>::iterator it = partitions.begin(); it != partitions.end(); it++) {
+        new_aln->partitions.push_back((*it)->convertToBin(new_model_name));
+    }
+    
+    // clone SuperAlignment-specific variables
+    new_aln->max_num_states = 2;
+    new_aln->taxa_index = taxa_index;
+    // discard the binary gap/non-gap patterns written by Alignment::convertToBin() above:
+    // SuperAlignment::buildPattern() (called via init() below) builds its own
+    // partition-presence pattern instead, and asserts the pattern list starts empty
+    new_aln->clear();
+    new_aln->pattern_index.clear();
+    new_aln->site_pattern.clear();
+    new_aln->init();
+    
+    return new_aln;
+}

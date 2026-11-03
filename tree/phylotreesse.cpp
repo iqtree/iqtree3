@@ -126,13 +126,17 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
     if (!aln) {
 #if INSTRSET < 2
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH>;
+        computeLikelihoodBranchESRPointer = &PhyloTree::computeLikelihoodBranchESRGenericSIMD<Vec1d, SAFE_LH>;
         computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH>;
         computeLikelihoodDervMixlenPointer = nullptr;
         computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericSIMD<Vec1d, SAFE_LH>;
-        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, SAFE_LH>;
+        // computeLikelihoodFromBufferGenericSIMD has no SAFE_NUMERIC template parameter
+        // (it only reads back the already-computed theta_all buffer)
+        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d>;
         sse = LK_386;
 #else
         computeLikelihoodBranchPointer = nullptr;
+        computeLikelihoodBranchESRPointer = nullptr;
         computeLikelihoodDervPointer = nullptr;
         computeLikelihoodDervMixlenPointer = nullptr;
         computePartialLikelihoodPointer = nullptr;
@@ -175,20 +179,25 @@ void PhyloTree::setLikelihoodKernel(LikelihoodKernel lk) {
     //--- naive kernel for site-specific model ---
     if (model_factory && model_factory->model->isSiteSpecificModel()) {
         computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH, false, true>;
+        computeLikelihoodBranchESRPointer = &PhyloTree::computeLikelihoodBranchESRGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH, false, true>;
         computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericSIMD<Vec1d, SAFE_LH, false, true>;
-        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, SAFE_LH, false, true>;
+        // computeLikelihoodFromBufferGenericSIMD has no SAFE_NUMERIC template parameter
+        // (it only reads back the already-computed theta_all buffer)
+        computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, false, true>;
         return;
     }
 
     //--- naive (no SIMD) kernel ---
     computeLikelihoodBranchPointer = &PhyloTree::computeLikelihoodBranchGenericSIMD<Vec1d, SAFE_LH>;
+    computeLikelihoodBranchESRPointer = &PhyloTree::computeLikelihoodBranchESRGenericSIMD<Vec1d, SAFE_LH>;
     computeLikelihoodDervPointer = &PhyloTree::computeLikelihoodDervGenericSIMD<Vec1d, SAFE_LH>;
     computeLikelihoodDervMixlenPointer = nullptr;
     computePartialLikelihoodPointer = &PhyloTree::computePartialLikelihoodGenericSIMD<Vec1d, SAFE_LH>;
-    computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d, SAFE_LH>;
+    computeLikelihoodFromBufferPointer = &PhyloTree::computeLikelihoodFromBufferGenericSIMD<Vec1d>;
 #else
     computeLikelihoodBranchPointer = nullptr;
+    computeLikelihoodBranchESRPointer = nullptr;
     computeLikelihoodDervPointer = nullptr;
     computeLikelihoodDervMixlenPointer = nullptr;
     computePartialLikelihoodPointer = nullptr;
@@ -214,6 +223,10 @@ void PhyloTree::computePartialLikelihood(TraversalInfo &info, size_t ptn_left, s
 double PhyloTree::computeLikelihoodBranch(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
 	return (this->*computeLikelihoodBranchPointer)(dad_branch, dad, save_log_value);
 
+}
+
+double PhyloTree::computeLikelihoodBranchESR(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+    return (this->*computeLikelihoodBranchESRPointer)(dad_branch, dad, save_log_value);
 }
 
 void PhyloTree::computeLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf) {
@@ -1458,15 +1471,34 @@ void PhyloTree::initMarginalAncestralState(ostream &out, bool &orig_kernel_nonre
 
 void PhyloTree::computeMarginalAncestralState(PhyloNeighbor *dad_branch, PhyloNode *dad,
     double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
+
+    // compute _pattern_lh_cat_state using NONREV kernel
+    computeLikelihoodBranch(dad_branch, dad);
+
+    // compute the Ancestral state probability from the branch's likelihood
+    computeMarginalState(dad_branch, dad,
+                         ptn_ancestral_prob, ptn_ancestral_seq);
+}
+
+void PhyloTree::computeMarginalExtantState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+    double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
+
+    // compute _pattern_lh_cat_state using NONREV kernel
+    computeLikelihoodBranchESR(dad_branch, dad);
+
+    // compute the Extant state probability from the branch's likelihood
+    computeMarginalState(dad_branch, dad,
+                         ptn_ancestral_prob, ptn_ancestral_seq);
+}
+
+void PhyloTree::computeMarginalState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+    double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
     size_t nptn = getAlnNPattern();
     size_t nstates = model->num_states;
     size_t nstates_vector = nstates * vector_size;
     size_t ncat_mix = (model_factory->fused_mix_rate) ? site_rate->getNRate() : site_rate->getNRate()*model->getNMixtures();
     double state_freq[nstates];
     model->getStateFrequency(state_freq);
-
-    // compute _pattern_lh_cat_state using NONREV kernel
-    computeLikelihoodBranch(dad_branch, dad);
 
     double *lh_state = _pattern_lh_cat_state;
     memset(ptn_ancestral_prob, 0, sizeof(double)*nptn*nstates);
@@ -1509,19 +1541,71 @@ void PhyloTree::computeMarginalAncestralState(PhyloNeighbor *dad_branch, PhyloNo
 
 }
 
-void PhyloTree::writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq) {
+void PhyloTree::writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq, const bool gapped_seq_reconstruction, PhyloTree* gsr_tree, double *ptn_gsr_prob, int *ptn_gsr_seq) {
     size_t nsites = aln->getNSite();
     size_t nstates = model->num_states;
+    const size_t gsr_nstates = 2;
+    
+    ASSERT(!gsr_tree || (ptn_gsr_prob && ptn_gsr_seq));
+    
     for (size_t site = 0; site < nsites; ++site) {
         int ptn = aln->getPatternID(site);
         out << node->name << "\t" << site+1 << "\t";
 //        if (params->print_ancestral_sequence == AST_JOINT)
 //            out << aln->convertStateBackStr(joint_ancestral_node[ptn]) << "\t";
-        out << aln->convertStateBackStr(ptn_ancestral_seq[ptn]);
-        const double *state_prob = ptn_ancestral_prob + (ptn*nstates);
-        for (size_t j = 0; j < nstates; j++) {
-            out << "\t" << state_prob[j];
+        string predicted_state = aln->convertStateBackStr(ptn_ancestral_seq[ptn]);
+        
+        // if using gapped sequence reconstruction
+        if (gapped_seq_reconstruction)
+        {
+            // initial default values
+            // to handle the special case: the alignment contains all non-gap characters
+            // -> output p_gap = 0 to all positions
+            double p_gap = 0;
+            double p_non_gap = 1.0;
+            
+            // normal case
+            if (gsr_tree)
+            {
+                // extract the current pattern
+                int gsr_ptn = gsr_tree->aln->getPatternID(site);
+                
+                // overwrite the predicted character if it's likely be a gap
+                if (ptn_gsr_seq[gsr_ptn] == 0)
+                    predicted_state = aln->convertStateBackStr(aln->STATE_UNKNOWN);
+                
+                // extract the probability of gap and non-gap
+                double *gsr_state_prob = ptn_gsr_prob + gsr_ptn * gsr_nstates;
+                p_gap = gsr_state_prob[0];
+                p_non_gap = gsr_state_prob[1];
+            }
+            
+            // write the predicted non-gap character
+            out << predicted_state;
+                
+            // normalize and print the probability of each non-gap state
+            // NOTE: this could be speeded up by vectorization
+            const double *state_prob = ptn_ancestral_prob + ptn*nstates;
+            for (size_t j = 0; j < nstates; j++) {
+                out << "\t" << state_prob[j] * p_non_gap;
+            }
+
+            // print p_gap
+            out << "\t" << p_gap;
         }
+        // otherwise, using normal non-gapped sequence reconstruction
+        else
+        {
+            // print the predicted character
+            out << predicted_state;
+
+            // print the probability of each non-gap state
+            const double *state_prob = ptn_ancestral_prob + ptn*nstates;
+            for (size_t j = 0; j < nstates; j++) {
+                out << "\t" << state_prob[j];
+            }
+        }
+        
         out << endl;
     }
 

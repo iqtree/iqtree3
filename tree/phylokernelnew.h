@@ -2669,10 +2669,36 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
 
 #ifdef KERNEL_FIX_STATES
 template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA, const bool SITE_MODEL>
-double PhyloTree::computeLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value)
+double PhyloTree::computeLikelihoodBranchESRSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+    // return implComputingLikelihoodBranchSIMD<VectorClass, SAFE_NUMERIC, nstates, FMA, SITE_MODEL>(dad_branch, dad, true, save_log_value);
 #else
 template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool SITE_MODEL>
-double PhyloTree::computeLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value)
+double PhyloTree::computeLikelihoodBranchESRGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+    // return implComputingLikelihoodBranchGenericSIMD<VectorClass, SAFE_NUMERIC, FMA, SITE_MODEL>(dad_branch, dad, true, save_log_value);
+#endif
+    outError("To reconstruct extant sequences, we must use the Non-reversible implementations!");
+    
+    // We'll never reach this line but we still need to return a number to avoid warnings from compilers
+    return 0;
+}
+
+#ifdef KERNEL_FIX_STATES
+template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA, const bool SITE_MODEL>
+double PhyloTree::computeLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+    return implComputingLikelihoodBranchSIMD<VectorClass, SAFE_NUMERIC, nstates, FMA, SITE_MODEL>(dad_branch, dad, false, save_log_value);
+#else
+template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool SITE_MODEL>
+double PhyloTree::computeLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+    return implComputingLikelihoodBranchGenericSIMD<VectorClass, SAFE_NUMERIC, FMA, SITE_MODEL>(dad_branch, dad, false, save_log_value);
+#endif
+}
+
+#ifdef KERNEL_FIX_STATES
+template <class VectorClass, const bool SAFE_NUMERIC, const int nstates, const bool FMA, const bool SITE_MODEL>
+double PhyloTree::implComputingLikelihoodBranchSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value)
+#else
+template <class VectorClass, const bool SAFE_NUMERIC, const bool FMA, const bool SITE_MODEL>
+double PhyloTree::implComputingLikelihoodBranchGenericSIMD(PhyloNeighbor *dad_branch, PhyloNode *dad, bool computing_esr, bool save_log_value)
 #endif
 {
     // cout << "PhyloTree::computeLikelihoodBrachGenericSIMD enter" << endl << flush;

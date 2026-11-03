@@ -63,18 +63,28 @@ ModelUnrest::ModelUnrest(PhyloTree *tree, string model_params, StateFreqType fre
 
 void ModelUnrest::writeInfo(ostream &out) {
 		out << "UNREST rate values:";
-		out << "  A-C: " << rates[0];
-		out << "  A-G: " << rates[1];
-		out << "  A-T: " << rates[2];
-		out << "  C-A: " << rates[3];
-		out << "  C-G: " << rates[4];
-		out << "  C-T: " << rates[5];
-		out << "  G-A: " << rates[6];
-		out << "  G-C: " << rates[7];
-		out << "  G-T: " << rates[8];
-		out << "  T-A: " << rates[9];
-		out << "  T-C: " << rates[10];
-		out << "  T-G: " << rates[11];
+    // UNREST2
+    if (num_states == 2)
+    {
+        out << "  0-1: " << rates[0];
+        out << "  1-0: " << rates[1];
+    }
+    // normal UNREST for DNA
+    else
+    {
+        out << "  A-C: " << rates[0];
+        out << "  A-G: " << rates[1];
+        out << "  A-T: " << rates[2];
+        out << "  C-A: " << rates[3];
+        out << "  C-G: " << rates[4];
+        out << "  C-T: " << rates[5];
+        out << "  G-A: " << rates[6];
+        out << "  G-C: " << rates[7];
+        out << "  G-T: " << rates[8];
+        out << "  T-A: " << rates[9];
+        out << "  T-C: " << rates[10];
+        out << "  T-G: " << rates[11];
+    }
 		out << endl;
 }
 

@@ -506,7 +506,9 @@ void PhyloTree::computeAncestralSiteConcordance(Branch &branch, int nquartets, i
 //        computeMarginalAncestralState(nei, (PhyloNode*)(*it)->node,
 //            ptn_ancestral_prob, marginal_ancestral_seq);
         if (verbose_mode >= VB_MED)
+        {
             writeMarginalAncestralState(cout, (PhyloNode*)((*it)->node), ptn_ancestral_prob, ptn_ancestral_seq);
+        }
         first_ancestral_prob.push_back(ptn_ancestral_prob);
         first_ancestral_seq.push_back(ptn_ancestral_seq);
     }

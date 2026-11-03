@@ -2259,43 +2259,9 @@ int main(int argc, char *argv[]) {
     parseArg(argc, argv, Params::getInstance());
 
     // 2015-12-05
-    Checkpoint *checkpoint = new Checkpoint;
     string filename = (string)Params::getInstance().out_prefix +".ckp.gz";
-    checkpoint->setFileName(filename);
-    
     bool append_log = false;
-    
-    if (!Params::getInstance().ignore_checkpoint && fileExists(filename)) {
-        checkpoint->load();
-        if (checkpoint->hasKey("finished")) {
-            if (checkpoint->getBool("finished")) {
-                if (Params::getInstance().force_unfinished) {
-                    if (MPIHelper::getInstance().isMaster())
-                        cout << "NOTE: Continue analysis although a previous run already finished" << endl;
-                } else {
-                    delete checkpoint;
-                    if (MPIHelper::getInstance().isMaster())
-                        outError("Checkpoint (" + filename + ") indicates that a previous run successfully finished\n" +
-                            "Use `-redo` option if you really want to redo the analysis and overwrite all output files.\n" +
-                            "Use `--redo-tree` option if you want to restore ModelFinder and only redo tree search.\n" +
-                            "Use `--undo` option if you want to continue previous run when changing/adding options."
-                        );
-                    else
-                        exit(EXIT_SUCCESS);
-                    exit(EXIT_FAILURE);
-                } 
-            } else {
-                append_log = true;
-            }
-        } else {
-            if (MPIHelper::getInstance().isMaster())
-                outWarning("Ignore invalid checkpoint file " + filename);
-            checkpoint->clear();
-        }
-    }
-
-    if (MPIHelper::getInstance().isWorker())
-        checkpoint->setFileName("");
+    Checkpoint *checkpoint = initAndCheckCheckpoint(filename, Params::getInstance(), append_log);
 
     _log_file = Params::getInstance().out_prefix;
     _log_file += ".log";

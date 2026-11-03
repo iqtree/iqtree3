@@ -426,6 +426,28 @@ public:
         double *ptn_ancestral_prob, int *ptn_ancestral_seq) override;
 
     /**
+        compute extant sequence probability for a leaf node by marginal reconstruction
+        (Yang, Kumar and Nei 1995)
+        @param dad_branch branch leading to an internal node where to obtain ancestral sequence
+        @param dad dad of the target internal node
+        @param[out] ptn_ancestral_prob pattern ancestral probability vector of dad_branch->node
+        @param[out] ptn_ancestral_seq vector of state with highest probability
+    */
+    virtual void computeMarginalExtantState(PhyloNeighbor *dad_branch, PhyloNode *dad,
+        double *ptn_ancestral_prob, int *ptn_ancestral_seq) override;
+
+    /**
+        compute sequence probability for an internal/extant node by marginal reconstruction
+        (Yang, Kumar and Nei 1995)
+        @param[in] compute_ancestral TRUE to compute an ancestral sequence, otherwise, compute an extant sequence
+        @param dad_branch branch leading to an internal/leaf node where to obtain ancestral/extant sequence
+        @param dad dad of the target internal/leaf node
+        @param[out] ptn_ancestral_prob pattern ancestral/extant probability vector of dad_branch->node
+    */
+    virtual void computeMarginalState(bool compute_ancestral, PhyloNeighbor *dad_branch, PhyloNode *dad,
+                                      double *ptn_ancestral_prob, int *ptn_ancestral_seq);
+
+    /**
         compute ancestral sequence probability for an internal node by partial_lh of that subtree
         @param dad_branch branch leading to an internal node where to obtain ancestral sequence
         @param dad dad of the target internal node
@@ -434,7 +456,18 @@ public:
     virtual void computeSubtreeAncestralState(PhyloNeighbor *dad_branch, PhyloNode *dad,
         double *ptn_ancestral_prob, int *ptn_ancestral_seq) override;
 
-    virtual void writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq) override;
+    /**
+        write reconstructed (gapped/non-gapped) ancestral/extant sequence to an output stream
+        @param[in|out] out output stream
+        @param[in] node node of interest
+        @param[in] ptn_ancestral_prob non-gapped pattern ancestral probability vector
+        @param[in] marginal_ancestral_seq non-gapped state
+        @param[in] gapped_seq_reconstruction TRUE if using gapped_seq_reconstruction
+        @param[in] gsr_tree phylogenetic tree used
+        @param[in] ptn_gsr_prob gapped pattern ancestral probability vector
+        @param[in] ptn_gsr_seq gapped state
+    */
+    virtual void writeMarginalAncestralState(ostream &out, PhyloNode *node, double *ptn_ancestral_prob, int *ptn_ancestral_seq, const bool gapped_seq_reconstruction = false, PhyloTree* gsr_tree = nullptr, double *ptn_gsr_prob = nullptr, int *ptn_gsr_seq = nullptr) override;
 
     /**
         end computing ancestral sequence probability for an internal node by marginal reconstruction
@@ -475,6 +508,11 @@ public:
         @param filename output file name
      */
     void printBestPartitionParams(const char *filename);
+    
+    /**
+        validate partition models: all partitions must use either reversible or non-reversible models
+     */
+    void validatePartitionModel();
 
     
     /** True when mixed codon with other data type */

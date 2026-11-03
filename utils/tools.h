@@ -2057,6 +2057,15 @@ public:
 
     /** minimum probability to assign an ancestral state */
     double min_ancestral_prob;
+    
+    /** TRUE to print extant ancestral sequences */
+    bool print_extant_seqs;
+    
+    /** TRUE to reconstruct (ancestral/extant) sequences with gap prediction */
+    bool gapped_seq_reconstruction;
+    
+    /** TRUE to allow nonrev (UNREST) models for binary data */
+    bool allow_nonrev_bin;
 
     /**
         0: print nothing

@@ -546,7 +546,8 @@ double RateFree::optimizeWithEM() {
             phylo_tree->printTree(cout, WT_BR_LEN+WT_NEWLINE);
             writeInfo(cout);
         }
-        ASSERT(score < 0);
+        // NHANLT: update the assertion to cover cases of single-state alignment <=> score = 0
+        ASSERT(score <= 0);
         
         if (step > 0) {
             if (score <= old_score-0.1) {
