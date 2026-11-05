@@ -396,6 +396,35 @@ double PhyloSuperTree::computeDist(int seq1, int seq2, double initial_dist, doub
     return aln_pair.optimizeDist(initial_dist, var);
 }
 
+void PhyloSuperTree::prepareToComputeDistances() {
+#ifdef _OPENMP
+    int threads = omp_get_max_threads();
+#else
+    int threads = 1;
+#endif
+    distanceProcessors.reserve(threads);
+    for (threads -= distanceProcessors.size(); 0 < threads; --threads) {
+        distanceProcessors.push_back(newDistanceProcessor());
+    }
+    // partition trees use their own alignment summaries, only needed to optimize the distances
+    if (model_factory && site_rate) {
+        for (iterator it = begin(); it != end(); it++) {
+            (*it)->prepareDistanceSummary();
+        }
+    }
+}
+
+void PhyloSuperTree::doneComputingDistances() {
+    PhyloTree::doneComputingDistances();
+    for (iterator it = begin(); it != end(); it++) {
+        (*it)->doneComputingDistances();
+    }
+}
+
+AlignmentPairwise *PhyloSuperTree::newDistanceProcessor() {
+    return new SuperAlignmentPairwise(this);
+}
+
 void PhyloSuperTree::linkBranch(int part, SuperNeighbor *nei, SuperNeighbor *dad_nei) {
 	SuperNode *node = (SuperNode*)dad_nei->node;
 	const SuperNode *dad = (SuperNode*)nei->node;

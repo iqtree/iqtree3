@@ -90,6 +90,11 @@ public:
 
     virtual double computeDist(int seq1, int seq2, double initial_dist, double &var) override;
 
+    /**
+            @return a new distance processor using partition rates
+     */
+    virtual AlignmentPairwise *newDistanceProcessor() override;
+
 	/**
 		create sub-trees T|Y_1,...,T|Y_k of the current super-tree T
 		and map F={f_1,...,f_k} the edges of supertree T to edges of subtrees T|Y_i

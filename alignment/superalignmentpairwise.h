@@ -31,6 +31,13 @@ class SuperAlignmentPairwise : public AlignmentPairwise
 {
 public:
     SuperAlignmentPairwise();
+
+	/**
+		construct the pairwise alignments of all partitions, sequences are set later by setSequenceNumbers()
+		@param atree input super tree
+	*/
+	SuperAlignmentPairwise(PhyloSuperTree *atree);
+
 	/**
 		construct the pairwise alignment from two sequences of a multiple alignment
 		@param aln input multiple alignment
@@ -39,7 +46,27 @@ public:
 	*/
 	SuperAlignmentPairwise(PhyloSuperTree *atree, int seq1, int seq2);
 
+	SuperAlignmentPairwise(const SuperAlignmentPairwise&) = delete;
+	SuperAlignmentPairwise& operator=(const SuperAlignmentPairwise&) = delete;
+
     ~SuperAlignmentPairwise();
+
+	/**
+		set the two sequences for every partition containing both of them
+		@param seq1 ID of the first sequence
+		@param seq2 ID of the second sequence
+	*/
+	virtual void setSequenceNumbers(int seq1, int seq2);
+
+	/**
+		compute the ML distance between two sequences over all partitions
+		@param seq1 ID of the first sequence
+		@param seq2 ID of the second sequence
+		@param initial_dist initial guess, computed from the super alignment if 0
+		@param d2l (OUT) second derivative of likelihood function evaluated at ML distance
+		@return the ML distance
+	*/
+	virtual double recomputeDist(int seq1, int seq2, double initial_dist, double &d2l);
 
 	/**
 		compute the likelihood for a distance between two sequences. Used for the ML optimization of the distance.
@@ -59,7 +86,11 @@ public:
 	*/
 	virtual void computeFuncDerv(double value, double &df, double &ddf);
 
-	vector<AlignmentPairwise> partitions;
+	/** pairwise alignments of all partitions */
+	vector<AlignmentPairwise*> partitions;
+
+	/** IDs of partitions containing both sequences */
+	vector<int> pair_parts;
 
 };
 

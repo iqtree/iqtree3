@@ -3324,6 +3324,10 @@ void PhyloTree::prepareToComputeDistances() {
     for (threads -= distanceProcessors.size(); 0 < threads; --threads) {
         distanceProcessors.emplace_back(new AlignmentPairwise(this));
     }
+    prepareDistanceSummary();
+}
+
+void PhyloTree::prepareDistanceSummary() {
     if (summary!=nullptr && !isSummaryBorrowed) {
         delete summary;
         summary = nullptr;
@@ -3755,7 +3759,8 @@ double PhyloTree::computeDist(Params &params, Alignment *alignment, double* &dis
     }
     if (!params.dist_file) {
         double begin_time = getRealTime();
-        longest_dist = (params.experimental)
+        // the experimental distance does not work for super alignments
+        longest_dist = (params.experimental && !alignment->isSuperAlignment())
             ? computeDist_Experimental(dist_mat, var_mat)
             : computeDist(dist_mat, var_mat);
         if (verbose_mode >= VB_MED) {
