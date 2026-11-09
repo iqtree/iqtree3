@@ -2440,6 +2440,12 @@ protected:
     /** maximum number of partial_lh_slots */
     int64_t max_lh_slots;
 
+    /** number of partial_lh slots central_partial_lh was allocated for */
+    int64_t alloc_lh_slots;
+
+    /** LM_MEM_SAVE: fraction of slots set by a partitioned tree; negative to use params->max_mem_size */
+    double mem_save_fraction;
+
     /** mapping from */
     MemSlotVector mem_slots;
 

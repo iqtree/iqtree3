@@ -269,6 +269,13 @@ protected:
 	vector<uint64_t> partial_lh_entries, scale_num_entries, partial_pars_entries, block_size, scale_block_size,
     branch_block_size, g_matrix_block_size;
 
+    /** LM_MEM_SAVE: slots and slot sizes per partition that central_partial_lh was allocated for */
+    vector<int64_t> mem_save_slots;
+    vector<uint64_t> mem_save_lh_size;
+
+    /** LM_MEM_SAVE: give each partition its own slots in central_partial_lh */
+    void initializeMemSaveSlots();
+
 };
 
 

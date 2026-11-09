@@ -831,6 +831,7 @@ double PhyloSuperTreePlen::swapNNIBranch(double cur_score, PhyloNode *node1, Phy
                     ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->partial_lh = nni_partial_lh + (mem_id*total_block_size + lh_addr);
                     ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->scale_num = nni_scale_num + (mem_id*total_scale_block_size + scale_addr);
                     mem_id++;
+                    at(part)->mem_slots.addSpecialNei((PhyloNeighbor*)*sub_saved_it[(part*6) + id]);
                 }
 
 				// update link_neighbor[part]: for New SuperNeighbor we set the corresponding new PhyloNeighbor on partition part
@@ -848,6 +849,7 @@ double PhyloSuperTreePlen::swapNNIBranch(double cur_score, PhyloNode *node1, Phy
                         ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->partial_lh = nni_partial_lh + (mem_id*total_block_size + lh_addr);
                         ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->scale_num = nni_scale_num + (mem_id*total_scale_block_size + scale_addr);
                         mem_id++;
+                        at(part)->mem_slots.addSpecialNei((PhyloNeighbor*)*sub_saved_it[(part*6) + id]);
                     }
 
 					// update link_neighbor[part]
@@ -902,6 +904,7 @@ double PhyloSuperTreePlen::swapNNIBranch(double cur_score, PhyloNode *node1, Phy
                         ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->partial_lh = nni_partial_lh + (mem_id*total_block_size + lh_addr);
                         ((PhyloNeighbor*) (*sub_saved_it[(part*6) + id]))->scale_num = nni_scale_num + (mem_id*total_scale_block_size + scale_addr);
                         mem_id++;
+                        at(part)->mem_slots.addSpecialNei((PhyloNeighbor*)*sub_saved_it[(part*6) + id]);
                     }
 
 					// If nni5 we update the link neighbors already here, otherwise
@@ -1015,6 +1018,9 @@ double PhyloSuperTreePlen::swapNNIBranch(double cur_score, PhyloNode *node1, Phy
 
 				for(id=0; id<IT_NUM; id++){
 					((PhyloNeighbor*)(*sub_saved_it[(part*6)+id]))->clearPartialLh();
+                    // memory saving: subtree sizes changed, recompute them for the traversal order
+                    if (params->lh_mem_save == LM_MEM_SAVE)
+                        ((PhyloNeighbor*)(*sub_saved_it[(part*6)+id]))->size = 0;
 				}
 				//checkBranchLen();
 			} else if(is_nni[part]==NNI_MANY_EPSILON){
@@ -1379,6 +1385,8 @@ double PhyloSuperTreePlen::swapNNIBranch(double cur_score, PhyloNode *node1, Phy
 
 // Restoring information for SubTrees ------------------------------------------------------------------------------------------------------------
 		for(part = 0; part < ntrees; part++){
+            if (is_nni[part] == NNI_NO_EPSILON || is_nni[part] == NNI_ONE_EPSILON)
+                at(part)->mem_slots.eraseSpecialNei();
 			if(is_nni[part] == NNI_NO_EPSILON){
 				// restore the Neighbors*
 				for (i = IT_NUM-1; i >= 0; i--) {
@@ -1746,6 +1754,11 @@ void PhyloSuperTreePlen::initializeAllPartialLh() {
         (*it)->hessian_diagonal = (*prev_it)->hessian_diagonal + branch_block_size[part];
 	}
 
+    if (params->lh_mem_save == LM_MEM_SAVE) {
+        initializeMemSaveSlots();
+        return;
+    }
+
 	// compute total memory for all partitions
 	uint64_t total_partial_lh_entries = 0, total_scale_num_entries = 0, total_partial_pars_entries = 0;
 	partial_lh_entries.resize(ntrees);
@@ -1826,6 +1839,61 @@ void PhyloSuperTreePlen::initializeAllPartialLh() {
         }
     }
 
+}
+
+void PhyloSuperTreePlen::initializeMemSaveSlots() {
+    int ntrees = size(), part;
+    iterator it;
+    // set max_lh_slots of each partition from the shared -mem budget
+    getMemoryRequired();
+
+    vector<int64_t> slots(ntrees);
+    vector<uint64_t> lh_size(ntrees), scale_size(ntrees), tip_size(ntrees);
+    uint64_t total_lh = 0, total_scale = 0;
+    for (it = begin(), part = 0; it != end(); it++, part++) {
+        slots[part] = (*it)->max_lh_slots;
+        lh_size[part] = (*it)->getPartialLhSize();
+        scale_size[part] = (*it)->getScaleNumSize();
+        tip_size[part] = get_safe_upper_limit((*it)->aln->num_states * ((*it)->aln->STATE_UNKNOWN+1) * (*it)->model->getNMixtures());
+        total_lh += slots[part] * lh_size[part] + tip_size[part];
+        total_scale += slots[part] * scale_size[part];
+    }
+
+    // reuse the memory only if it has the same layout
+    if (central_partial_lh && (slots != mem_save_slots || lh_size != mem_save_lh_size)) {
+        aligned_free(central_partial_lh);
+        aligned_free(central_scale_num);
+    }
+    if (!central_partial_lh) {
+        try {
+            central_partial_lh = aligned_alloc<double>(total_lh);
+            central_scale_num = aligned_alloc<UBYTE>(total_scale);
+        } catch (std::bad_alloc &ba) {
+            outError("Not enough memory for partial likelihood vectors (bad_alloc)");
+        }
+        mem_save_slots = slots;
+        mem_save_lh_size = lh_size;
+    }
+
+    clearAllPartialLH(true);
+    double *lh_addr = central_partial_lh;
+    UBYTE *scale_addr = central_scale_num;
+    UINT *pars_addr = central_partial_pars;
+    tip_partial_lh = nullptr;
+    tip_partial_pars = nullptr;
+    for (it = begin(), part = 0; it != end(); it++, part++) {
+        // slots of this partition, followed by its tip partial_lh
+        (*it)->central_partial_lh = lh_addr;
+        (*it)->central_scale_num = scale_addr;
+        (*it)->clearAllPartialLH(true);
+        (*it)->mem_slots.init(*it, slots[part]);
+        lh_addr += slots[part] * lh_size[part];
+        scale_addr += slots[part] * scale_size[part];
+        (*it)->tip_partial_lh = lh_addr;
+        lh_addr += tip_size[part];
+        (*it)->tip_partial_pars = pars_addr;
+        pars_addr += get_safe_upper_limit_float((*it)->aln->num_states * ((*it)->aln->STATE_UNKNOWN+1));
+    }
 }
 
 void PhyloSuperTreePlen::initializeAllPartialLh(double* &lh_addr, UBYTE* &scale_addr, UINT* &pars_addr, PhyloNode *node, PhyloNode *dad) {

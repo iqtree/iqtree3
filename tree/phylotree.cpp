@@ -110,6 +110,8 @@ void PhyloTree::init() {
     num_threads = 0;
     num_packets = 0;
     max_lh_slots = 0;
+    alloc_lh_slots = 0;
+    mem_save_fraction = -1.0;
     save_all_trees = 0;
     nodeBranchDists = nullptr;
     // FOR: upper bounds
@@ -972,6 +974,7 @@ void PhyloTree::deleteAllPartialLh() {
     //      (so there's no need to do that explicitly any more)
     aligned_free(central_partial_lh);
     aligned_free(central_scale_num);
+    alloc_lh_slots = 0;
     aligned_free(central_partial_pars);
     aligned_free(nni_scale_num);
     aligned_free(nni_partial_lh);
@@ -1040,15 +1043,16 @@ uint64_t PhyloTree::getMemoryRequired(size_t ncategory, bool full_mem) {
         // log2(leafNum)+1 is enough, but can exceed the number of inner nodes
         // for small trees
         int64_t min_lh_slots = min(static_cast<int64_t>(log2(leafNum) + 1.0), max_lh_slots);
-        if (params->max_mem_size == 0.0) {
+        double max_mem_size = (mem_save_fraction >= 0.0) ? mem_save_fraction : params->max_mem_size;
+        if (max_mem_size == 0.0) {
             // just use min_lh_slots
             max_lh_slots = min_lh_slots;
-        } else if (params->max_mem_size <= 1.0) {
+        } else if (max_mem_size <= 1.0) {
             // use the user-provided proportion of max_lh_slots
-            max_lh_slots = static_cast<int64_t>(params->max_mem_size * double(max_lh_slots));
+            max_lh_slots = static_cast<int64_t>(max_mem_size * double(max_lh_slots));
         } else {
             // use the user-provided memory size if not exceeding max_lh_slots
-            int64_t rest_mem = static_cast<int64_t>(params->max_mem_size - double(mem_size));
+            int64_t rest_mem = static_cast<int64_t>(max_mem_size - double(mem_size));
             int64_t user_lh_slots = rest_mem / lh_scale_bytes - IT_NUM;
             if (user_lh_slots < max_lh_slots) {
                 max_lh_slots = user_lh_slots;
@@ -1062,8 +1066,8 @@ uint64_t PhyloTree::getMemoryRequired(size_t ncategory, bool full_mem) {
     }
     // memory for inner_partial_lh and nni_partial_lh
     mem_size += (max_lh_slots + IT_NUM) * lh_scale_bytes;
-    // print a warning if -mem is increased and return mem_size
-    if (mem_increased) {
+    // print a warning if -mem is increased and return mem_size (not per partition)
+    if (mem_increased && mem_save_fraction < 0.0) {
         cout << "WARNING: Too low -mem, automatically increased to "
              << double(mem_size) / 1048576.0 << " MB" << endl;
     }
@@ -1119,12 +1123,19 @@ void PhyloTree::initializeAllPartialLh(int &index, int &indexlh, PhyloNode *node
             nni_scale_num = aligned_alloc<UBYTE>(IT_NUM*scale_block_size);
         }
 
+        if (central_partial_lh && alloc_lh_slots > 0 && max_lh_slots > alloc_lh_slots) {
+            // more slots needed than allocated, e.g. after -mem changed: reallocate
+            aligned_free(central_partial_lh);
+            aligned_free(central_scale_num);
+        }
+
         if (!central_partial_lh) {
             uint64_t tip_partial_lh_size = get_safe_upper_limit(aln->num_states * (aln->STATE_UNKNOWN+1) * model->getNMixtures());
             if (model->isSiteSpecificModel())
                 tip_partial_lh_size = get_safe_upper_limit(aln->size()) * model->num_states * leafNum;
 
             uint64_t mem_size = ((uint64_t)max_lh_slots * block_size) + 4 + tip_partial_lh_size;
+            alloc_lh_slots = max_lh_slots;
 
             if (verbose_mode >= VB_MAX)
                 cout << "Allocating " << mem_size * sizeof(double) << " bytes for partial likelihood vectors" << endl;
