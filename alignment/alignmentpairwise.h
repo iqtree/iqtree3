@@ -112,10 +112,22 @@ public:
 	*/
     virtual ~AlignmentPairwise();
 
+private:
+    /**
+     *  Implementation of both computeFunction() and computeFuncDerv()
+     *  @param value A distance between the two sequences
+     *  @param[out] lh The log-likelihood at this distance
+     *  @param[out] df The log-likelihood first derivative at this distance
+     *  @param[out] ddf The log-likelihood second derivative at this distance
+     */
+    template <bool COMPUTE_DERV>
+    void likelihoodKernelFunction(double value, double &lh, double &df, double &ddf);
+
+public:
     size_t pairCount;
     size_t derivativeCalculationCount;
     size_t costCalculationCount;
-    
+
 protected:
 	PhyloTree* tree;          //multi-species alignment tree from which sequences
                               //to be aligned are to be drawn
@@ -125,13 +137,12 @@ protected:
                               //size is num_states_squared times 1 (or by the number
                               //of categories).
     int        trans_size;    //number of elements (rows x columns) in transition matrices
-    double*    trans_mat;     //used in computeFunction(),
-    double*    sum_trans_mat; //used in computeFunction()
+    double*    trans_mat;     //used in computeFunction() and computeFuncDerv()
     double*    trans_derv1;   //used in computeFuncDerv()
     double*    trans_derv2;   //used in computeFuncDerv()
+    double*    sum_trans;     //used in computeFunction() and computeFuncDerv()
     double*    sum_derv1;     //used in computeFuncDerv()
     double*    sum_derv2;     //used in computeFuncDerv()
-    double*    sum_trans;     //used in computeFuncDerv()
 
     int        seq_id1;
     int        seq_id2;

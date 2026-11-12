@@ -2269,9 +2269,11 @@ void ModelLieMarkov::decomposeRateMatrixClosedForm() {
     }
 }
 
+// OBSOLETE
+/*
 void ModelLieMarkov::computeTransMatrix(double time, double *trans_matrix, int mixture, int selected_row) {
     return ModelMarkov::computeTransMatrix(time, trans_matrix, mixture, selected_row);
-    /*
+
   MatrixExpTechnique technique = phylo_tree->params->matrix_exp_technique;
   if (technique == MET_SCALING_SQUARING || nondiagonalizable ) {
         Matrix4d A = Map<Matrix4d>(rate_matrix);
@@ -2331,6 +2333,5 @@ void ModelLieMarkov::computeTransMatrix(double time, double *trans_matrix, int m
 
     } else
         ModelMarkov::computeTransMatrix(time, trans_matrix);
-     */
 }
-
+*/
