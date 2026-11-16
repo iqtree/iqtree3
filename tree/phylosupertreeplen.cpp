@@ -1683,7 +1683,8 @@ void PhyloSuperTreePlen::initializeAllPartialLh() {
     if(!hessian_diagonal)
         hessian_diagonal = aligned_alloc<double>(total_branch_block_size);
     at(part_order[0])->hessian_diagonal = hessian_diagonal;
-    if(!G_matrix)
+    // only the MCMCTree Hessian output reads G_matrix
+    if(!G_matrix && params->dating_method == "mcmctree")
         G_matrix = aligned_alloc<double>(total_g_matrix_block_size);
     at(part_order[0])->G_matrix = G_matrix;
     if (!_pattern_lh)
@@ -1741,7 +1742,7 @@ void PhyloSuperTreePlen::initializeAllPartialLh() {
 		(*it)->ptn_invar = (*prev_it)->ptn_invar + mem_size[part];
         (*it)->nni_partial_lh = (*prev_it)->nni_partial_lh + IT_NUM*block_size[part];
         (*it)->nni_scale_num = (*prev_it)->nni_scale_num + IT_NUM*scale_block_size[part];
-        (*it)->G_matrix = (*prev_it)->G_matrix + g_matrix_block_size[part];
+        (*it)->G_matrix = (*prev_it)->G_matrix ? (*prev_it)->G_matrix + g_matrix_block_size[part] : nullptr;
         (*it)->gradient_vector = (*prev_it)->gradient_vector + branch_block_size[part];
         (*it)->hessian_diagonal = (*prev_it)->hessian_diagonal + branch_block_size[part];
 	}

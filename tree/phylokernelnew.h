@@ -2276,7 +2276,8 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
     // to access g-matrix elements to store derivatives
     size_t g_matrix_nptn = max_orig_nptn + max(get_safe_upper_limit(model->num_states),
                                                get_safe_upper_limit(model_factory->unobserved_ptns.size()));
-    size_t g_index = branch_id * g_matrix_nptn;
+    // nullptr unless MCMCTree dating needs the Hessian
+    double *g_row = G_matrix ? G_matrix + branch_id * g_matrix_nptn : nullptr;
 
     ASCType ASC_type = model_factory->getASC();
     bool ASC_Holder = (ASC_type == ASC_VARIANT_MISSING || ASC_type == ASC_INFORMATIVE_MISSING);
@@ -2529,7 +2530,8 @@ void PhyloTree::computeLikelihoodDervGenericSIMD(PhyloNeighbor *dad_branch, Phyl
                     ddf_ptn *= inv_lh_ptn;
                     my_ddf += nmul_add(df_ptn, df_ptn, ddf_ptn) * freq;
                     // TODO: need to do further optimization with store_a in vector class
-                    df_ptn.store_a(&G_matrix[g_index + ptn]);
+                    if (g_row)
+                        df_ptn.store_a(&g_row[ptn]);
                 } else {
                     // ascertainment bias correction
                     if (ptn+VectorClass::size() > nptn) {
