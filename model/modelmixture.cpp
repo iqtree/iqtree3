@@ -4146,10 +4146,8 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
     double *new_prop = aligned_alloc<double>(nmix);
     PhyloTree *tree = new PhyloTree;
 
-    // attach memory to save space
-    tree->central_partial_lh = phylo_tree->central_partial_lh;
-    tree->central_scale_num = phylo_tree->central_scale_num;
-    tree->central_partial_pars = phylo_tree->central_partial_pars;
+    // own memory, not phylo_tree's: in edge-linked partition models that memory
+    // belongs to all partitions, which may be computed by other threads
 
     tree->copyPhyloTree(phylo_tree, true);
     tree->optimize_by_newton = phylo_tree->optimize_by_newton;
@@ -4300,11 +4298,6 @@ double ModelMixture::optimizeWithEM(double gradient_epsilon) {
         phylo_tree->clearAllPartialLH();
         if (converged) break;
     }
-
-    // deattach memory
-    tree->central_partial_lh = nullptr;
-    tree->central_scale_num = nullptr;
-    tree->central_partial_pars = nullptr;
 
     delete tree;
     aligned_free(new_prop);
