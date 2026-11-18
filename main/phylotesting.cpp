@@ -7356,7 +7356,7 @@ double runMixtureFinderMain(Params &params, IQTree* &iqtree, ModelCheckpoint &mo
         return onlyMK && onlyFQ;
     };
     if (isOnlyMKAndFQ()) {
-        outError("Error! Running MixtureFinder only with the MK model and the FQ frequency is completely meaningless.\nPlease provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq, if you really want to use MixtureFinder for your multistate data.");
+        outError("Error! MixtureFinder requires multiple models and/or frequencies; using only MK and FQ is not meaningful.\nPlease provide additional models and/or frequencies, such as GTRX, +F, and +FO, using -mset and/or -mfreq for your multistate data.");
     }
 
     if (iqtree->aln->seq_type == SEQ_DNA) {
@@ -7515,7 +7515,7 @@ void runMixtureFinder(Params &params, IQTree* &iqtree, ModelCheckpoint &model_in
         outWarning("Running MixtureFinder for the given data type can take much time. Please consider restricting the set of the models to test as much as possible");
     
     if (iqtree->aln->seq_type == SEQ_PROTEIN && !params.force_aa_mix_finder)
-        outError("Error! We already have the mixture frequency vectors C10–C60 which are effective for modeling amino acid data.\nPlease make sure running MixtureFinder for your amino acid data makes sense.\nIf you are determined to do that, please add an option --force-aa-mix-finder to the command line.");
+        outError("Error! We already have the C10-C60 mixture frequency vectors, which are effective for modeling amino acid data.\nPlease make sure that running MixtureFinder on your amino acid data makes sense.\nIf you still want to run it, please add the --force-aa-mix-finder option to the command line.");
     
 
     // create a new IQTree object for this mixture model
