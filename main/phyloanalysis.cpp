@@ -3030,6 +3030,45 @@ void generateDummyAlignment(PhyloTree* tree, ofstream &dummyAlignment){
     dummyAlignment << endl;
 }
 
+/**
+    Map the data type of the alignment to the MCMCTree 'seqtype' code
+    following the PAML convention: 0: nucleotides; 1: codons; 2: AAs
+    @param tree the (super)tree whose alignment(s) are inspected
+    @return the MCMCTree seqtype code
+*/
+int detectMCMCTreeSeqType(PhyloTree *tree) {
+    // MCMCTree accepts a single seqtype, so for partition models take the type of the
+    // first partition and warn if the partitions are not all of the same data type
+    SeqType seq_type;
+    if (tree->isSuperTree()) {
+        auto *stree = (PhyloSuperTree *) tree;
+        seq_type = stree->front()->aln->seq_type;
+        for (auto part_tree : *stree)
+            if (part_tree->aln->seq_type != seq_type) {
+                outWarning("Partitions have different data types, 'seqtype' in the MCMCTree ctl file is set"
+                           " according to the first partition. Please edit it if needed (only used if usedata = 1).");
+                break;
+            }
+    } else {
+        seq_type = tree->aln->seq_type;
+    }
+
+    switch (seq_type) {
+        case SEQ_DNA:
+            return 0;
+        case SEQ_CODON:
+            return 1;
+        case SEQ_PROTEIN:
+            return 2;
+        default:
+            // MCMCTree has no code for the remaining data types (binary, morphological, ...);
+            // seqtype is ignored anyway under the approximate likelihood method (usedata = 2)
+            outWarning("MCMCTree does not support the data type of the alignment, 'seqtype' in the ctl file is set"
+                       " to 0 (nucleotides). This is only used if usedata = 1.");
+            return 0;
+    }
+}
+
 void printMCMCTreeCtlFile(IQTree *iqtree, ofstream &ctl, ofstream &dummyAlignment, int partition_type = 0) {
     size_t ndata;
     if (iqtree->isSuperTree() && partition_type == BRLEN_OPTIMIZE) {
@@ -3051,7 +3090,7 @@ void printMCMCTreeCtlFile(IQTree *iqtree, ofstream &ctl, ofstream &dummyAlignmen
 
         << "checkpoint = 1 * 0: nothing; 1 : save; 2: resume" << endl
         << "ndata = " << ndata << " * number of partitions" << endl
-        << "seqtype = 0    * 0 : nucleotides; 1: codons; 2: AAs (not required if the approximate likelihood method is used)" << endl
+        << "seqtype = " << detectMCMCTreeSeqType(iqtree) << "    * 0 : nucleotides; 1: codons; 2: AAs (not required if the approximate likelihood method is used)" << endl
         << "usedata = 2    * 0: sampling from priors with no data; 1: exact slow likelihood; 2: approximate likelihood" << endl
         << "clock = "  << Params::getInstance().mcmc_clock << "     * 1: global clock with equal rates; 2: independent rates; 3: correlated rates" << endl
         << "RootAge = <1.0  * safe constraint on root age, used if no fossil for root." << endl << endl
