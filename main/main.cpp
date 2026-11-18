@@ -2195,6 +2195,14 @@ int main(){
 #ifndef BUILD_LIB
 int main(int argc, char *argv[]) {
 
+#if defined(_OPENMP) && defined(__APPLE__) && defined(__aarch64__)
+    // libomp treats Apple Silicon as hybrid and defaults KMP_BLOCKTIME to 0,
+    // so idle threads sleep at once and wake-ups dominate multithreaded runs.
+    // Use non-hybrid default of 200ms unless user has overridden
+    if (!getenv("KMP_BLOCKTIME") && !getenv("OMP_WAIT_POLICY"))
+        setenv("KMP_BLOCKTIME", "200", 0);
+#endif
+
     /*
     Instruction set ID reported by vectorclass::instrset_detect
     0           = 80386 instruction set
