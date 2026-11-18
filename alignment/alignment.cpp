@@ -1671,10 +1671,10 @@ SeqType Alignment::detectSequenceType(StrVector &sequences) {
         if (num_alpha < 10) // two few occurences to decide
             return SEQ_UNKNOWN;
         if (num_nuc == num_alpha) {
-            if (((double)num_proper_nuc / num_alpha > 0.9) && ((num_di_nuc+num_proper_nuc) != num_nuc)){
-                return SEQ_DNA;
-            } else if ((num_proper_nuc+num_di_nuc) >= num_alpha) {
+            if (((num_proper_nuc+num_di_nuc) >= num_alpha) && (Params::getInstance().model_name.find("GT1") != string::npos)) {
                 return SEQ_GENOTYPE;
+            }   else if ((double)num_proper_nuc / num_alpha > 0.9){
+                return SEQ_DNA;
             } else {
                 return SEQ_UNKNOWN;
             }
