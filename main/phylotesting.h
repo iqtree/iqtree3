@@ -32,6 +32,7 @@ const int MF_RUNNING            = 4;
 const int MF_WAITING            = 8;
 const int MF_DONE               = 16;
 const int MF_CANNOT_BE_IGNORED  = 32; // those models added by -madd cannot be filtered out
+const int MF_SKIP_NESTED_INIT   = 64; // nested candidates may be absent for an explicit addition
 
 enum MixtureAction {MA_NONE, MA_FIND_RATE, MA_NUMBER_CLASS, MA_FIND_CLASS, MA_ADD_CLASS};
 

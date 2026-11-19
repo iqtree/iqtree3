@@ -2951,6 +2951,7 @@ void parseArg(int argc, char *argv[], Params &params) {
 				if (cnt >= argc)
 					throw "Use -mrate <rate_set>";
 				params.ratehet_set = argv[cnt];
+				params.ratehet_set_explicit = true;
 				continue;
 			}
             
@@ -5950,6 +5951,9 @@ void usage_iqtree(char* argv[], bool full_command) {
     << "  --mfreq STR,...      List of state frequencies" << endl
     << "  --mrate STR,...      List of rate heterogeneity among sites" << endl
     << "                       (e.g. -mrate E,I,G,I+G,R is used for -m MF)" << endl
+    << "                       With -mset mrbayes, DNA and protein default to eligible" << endl
+    << "                       E,I,G,I+G choices. Explicit -mrate (including AUTO or ALL)," << endl
+    << "                       model modifiers and -madd can bypass this restriction." << endl
     << "  --cmin NUM           Min categories for FreeRate model [+R] (default: 2)" << endl
     << "  --cmax NUM           Max categories for FreeRate model [+R] (default: 10)" << endl
     << "  --merit AIC|AICc|BIC|mAIC" << endl
@@ -7248,6 +7252,7 @@ void Params::setDefault() {
     model_subset = nullptr;
     state_freq_set = nullptr;
     ratehet_set = "AUTO";
+    ratehet_set_explicit = false;
     score_diff_thres = 10.0;
     model_def_file = nullptr;
     modelomatic = false;

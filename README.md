@@ -65,6 +65,16 @@ If you have further questions and feedback, please create a topic at
 For feature requests bug reports please post a topic at
 [Github issues](https://github.com/iqtree/iqtree2/issues).
 
+For DNA and protein ModelFinder runs, `-mset mrbayes` limits the default
+rate candidates to eligible equal, invariable, gamma, and invariable-plus-gamma
+models. Eligibility still depends on the alignment and search mode. An explicit
+`-mrate`, including `AUTO` or `ALL`, restores control over the rate search.
+An explicit `+ASC` in the ModelFinder model specification keeps the
+ascertainment correction on eligible candidates. Explicit rate modifiers and
+`-madd` can also introduce candidates outside the default list. These settings
+control candidate selection. MrBayes template output can still require manual
+validation of the selected model.
+
 Citations
 ---------
 

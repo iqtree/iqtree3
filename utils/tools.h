@@ -1640,6 +1640,7 @@ public:
 
     /** set of rate heterogeneity model for testing */
     string ratehet_set;
+    bool ratehet_set_explicit; // A rate option was supplied, including AUTO or ALL.
 
     /** all models with score worse than the best score + this threshold will be ignored */
     double score_diff_thres;

@@ -86,6 +86,9 @@ jobs:
         run: |
           ./test_scripts/test_iqtree.sh build/iqtree3 time_log_iqtree3.tsv
 
+      - name: Check MrBayes ModelFinder rate candidates
+        run: python3 test_scripts/test_mrbayes_rates.py build/iqtree3
+
       - name: Run verify_results.sh
         run: |
           chmod +x test_scripts/verify_results.sh

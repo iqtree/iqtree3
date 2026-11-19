@@ -1647,9 +1647,21 @@ int CandidateModelSet::generate(Params &params, Alignment *aln, bool separate_ra
     } else
         ratehet_set = params.ratehet_set;
 
-    //bool auto_rate = iEquals(ratehet_set, "AUTO");
-
     getRateHet(seq_type, params.model_name, aln->frac_invariant_sites, ratehet_set, ratehet);
+
+    const bool restrict_mrbayes_rates = !merge_phase && model_set == "mrbayes" &&
+        !params.ratehet_set_explicit && iEquals(ratehet_set, "AUTO") &&
+        (seq_type == SEQ_DNA || seq_type == SEQ_PROTEIN);
+    if (restrict_mrbayes_rates) {
+        const bool explicit_asc = params.model_name.find("+ASC") != string::npos;
+        ratehet.erase(remove_if(ratehet.begin(), ratehet.end(), [explicit_asc](const string &rate) {
+            if (explicit_asc)
+                return rate != "+ASC" && rate != "+ASC+G";
+            return !rate.empty() && rate != "+I" && rate != "+G" && rate != "+I+G";
+        }), ratehet.end());
+        if (ratehet.empty())
+            outError("No eligible MrBayes rate candidates for the requested +ASC correction");
+    }
     
     // add number of rate cateogories for special rate models
     const char *rates[] = {"+R", "*R", "+H", "*H"};
@@ -1714,8 +1726,13 @@ int CandidateModelSet::generate(Params &params, Alignment *aln, bool separate_ra
     if (params.model_extra_set) {
         StrVector extra_model_names;
         convert_string_vec(params.model_extra_set, extra_model_names);
+        // An added model can use a rate dropped from the default search,
+        // so nested models with that rate may have no checkpoint to restore.
+        int extra_flags = MF_CANNOT_BE_IGNORED;
+        if (restrict_mrbayes_rates && seq_type == SEQ_DNA)
+            extra_flags |= MF_SKIP_NESTED_INIT;
         for (auto s : extra_model_names)
-            push_back(CandidateModel(s, "", aln, MF_CANNOT_BE_IGNORED));
+            push_back(CandidateModel(s, "", aln, extra_flags));
     }
     return max_cats;
 }
@@ -2050,7 +2067,8 @@ string CandidateModel::evaluate(Params &params,
             iqtree->setCheckpoint(&in_model_info);
             bool init_success;
             if (mixture_action != MA_FIND_RATE && iqtree->aln->seq_type == SEQ_DNA) {
-                init_success = iqtree->getModelFactory()->initFromNestedModel(nest_network);
+                init_success = !hasFlag(MF_SKIP_NESTED_INIT) &&
+                               iqtree->getModelFactory()->initFromNestedModel(nest_network);
             } else {
                 //reestimating RHAS model
                 init_success = true;

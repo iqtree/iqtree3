@@ -3702,6 +3702,7 @@ void input_options::set_params(Params& params) {
         }
         else if (flags[i] == "-mrate") {
             params.ratehet_set = values[i];
+            params.ratehet_set_explicit = true;
         }
         else if (flags[i] == "-bb") {
             params.gbo_replicates = atoi(values[i].c_str());
