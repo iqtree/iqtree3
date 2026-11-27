@@ -5863,7 +5863,7 @@ void PartitionFinder::initialMPIShareMemory() {
         MPI_Win_create(val_ptr, 0, sizeof(int), MPI_INFO_nullptr, MPI_COMM_WORLD, &win);
     }
 #else
-    win = nullptr;
+    win = MPI_WIN_NULL;
     val_ptr = nullptr;
 #endif // ONESIDE_COMM
 }
